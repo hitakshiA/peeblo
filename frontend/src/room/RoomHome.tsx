@@ -25,15 +25,15 @@ export default function RoomHome() {
     <div className="room">
       <header className="room-top">
         <Link to="/room" className="room-brand"><AppLogo app="peeblo" size={22} /> Peeblo</Link>
-        <div className="room-title"><span className="room-case-id">Miny Labs, Inc. · US receivables</span></div>
+        <div className="room-title"><span className="room-case-id">Accounts receivable teammate</span></div>
         <div className="room-controls">
           <button className="btn ghost" disabled={!!busy} onClick={async () => { setBusy("reset"); await room.reset("eastbridge").finally(() => setBusy("")); load(); }}>{busy === "reset" ? "Resetting sandbox…" : "Reset Eastbridge sandbox"}</button>
         </div>
       </header>
       <nav className="rail">{APPS.map((a) => <div key={a.id} className="rail-app is-used" style={{ ["--brand" as any]: a.color }}><div className="rail-logo"><AppLogo app={a.id} size={22} /></div><div className="rail-meta"><span>{a.name}</span><small>{a.role}</small></div></div>)}</nav>
       <div className="home">
-        <span className="room-case-id">Standing responsibility</span>
-        <h1>Own receivables until every case reaches a verified outcome.</h1>
+        <span className="micro">Standing responsibility · Miny Labs, Inc. · US receivables</span>
+        <h1>Owns receivables <em>until every case</em> reaches a verified outcome.</h1>
         <p className="muted">Detect missing or inaccurate invoices, investigate overdue balances, manage payment promises, reconcile received payments, and escalate anything outside policy.</p>
         <div className="assign">
           <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Hand Peeblo work, e.g. “Crescent Dental says they already paid INV-2296. Can you check?”" />

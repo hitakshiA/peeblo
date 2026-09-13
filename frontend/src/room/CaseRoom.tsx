@@ -55,7 +55,7 @@ export default function CaseRoom() {
 
       <main className="room-grid">
         <section className="col col-agent">
-          <h2>Agent</h2>
+          <h2>Peeblo is thinking</h2>
           <AnimatePresence mode="popLayout">
             {view.currentStep && running && (
               <motion.div key={view.currentStep.id} className="now" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -74,7 +74,7 @@ export default function CaseRoom() {
         </section>
 
         <section className="col col-feed" ref={feedRef}>
-          <h2>Evidence</h2>
+          <h2>Evidence across systems</h2>
           <AnimatePresence initial={false}>
             {view.cards.map((c) => (
               <motion.div key={c.seq} layout initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 26 }}>
@@ -85,7 +85,7 @@ export default function CaseRoom() {
         </section>
 
         <section className="col col-ops">
-          <h2>Changes</h2>
+          <h2>Changes and approvals</h2>
           <AnimatePresence initial={false}>
             {view.opEvents.map((e) => (
               <motion.div key={e.seq} layout initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}>
@@ -138,10 +138,18 @@ function derive(events: RoomEvent[]) {
     if (e.type === "tool.finished") {
       started.delete(e.data.id);
       for (const a of e.data.apps) appsUsed[a] = (appsUsed[a] ?? 0) + 1;
-      if (!["propose_action", "retry_operation", "finish_run", "propose_lesson"].includes(e.data.tool)) cards.push(e);
+      const isAction = e.data.tool === "propose_action" || /^(stripe|qbo|hubspot|jira|slack|customer|billing)_/.test(e.data.tool);
+      const unknownTool = /NoSuchTool|unavailable tool/i.test(JSON.stringify(e.data.output ?? ""));
+      if (!isAction && !unknownTool && !["retry_operation", "finish_run", "propose_lesson"].includes(e.data.tool)) cards.push(e);
       if (e.data.tool === "finish_run") outcome = e.data.input;
     }
-    if (["operation.submitted", "operation.verified", "operation.reconciled", "operation.step", "operation.resuming", "approval.requested", "approval.decided", "interrupt.armed"].includes(e.type)) opEvents.push(e);
+    if (["operation.submitted", "operation.verified"].includes(e.type)) {
+      // One row per operation, showing its latest state.
+      const at = opEvents.findIndex((x) => ["operation.submitted", "operation.verified"].includes(x.type) && x.data.operation_id === e.data.operation_id);
+      if (at >= 0) opEvents.splice(at, 1);
+      opEvents.push(e);
+    }
+    if (["operation.reconciled", "operation.step", "operation.resuming", "approval.requested", "approval.decided", "interrupt.armed"].includes(e.type)) opEvents.push(e);
     if (e.type === "run.finished") { running = false; interrupted = e.data.status === "interrupted"; if (interrupted) opEvents.push(e); if (e.data.case && !outcome) outcome = e.data.case; }
   }
   const current = [...started.values()].pop();
