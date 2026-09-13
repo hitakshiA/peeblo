@@ -31,6 +31,8 @@ const BlogTokensAreTheNewSalary = lazy(
 );
 
 const Workspace = lazy(() => import("./pages/Workspace"));
+const RoomHome = lazy(() => import("./room/RoomHome"));
+const CaseRoom = lazy(() => import("./room/CaseRoom"));
 const Sources = lazy(() => import("./pages/Sources"));
 const Approvals = lazy(() => import("./pages/Approvals"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -96,6 +98,9 @@ export function AppRouter() {
             path="/blog/tokens-are-the-new-salary"
             element={<BlogTokensAreTheNewSalary />}
           />
+
+          <Route path="/room" element={<RoomHome />} />
+          <Route path="/room/:id" element={<CaseRoom />} />
 
           {/* App shell */}
           <Route path="/app" element={<AppShell />}>
