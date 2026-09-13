@@ -180,6 +180,13 @@ export function buildTools(caseId: string, hooks: { interrupt: (reason: string) 
       inputSchema: z.object({ action: z.enum(Object.keys(ACTIONS) as [string, ...string[]]), params: z.record(z.string(), z.any()).optional(), justification: z.string().describe("Evidence-based reason, citing records") }).passthrough(),
       execute: async ({ action, params, justification, ...rest }: any) => guarded(() => propose(caseId, action, { ...rest, ...(params ?? {}) }, justification)),
     }),
+    // Each executor action is also exposed as its own tool (e.g. stripe_void_invoice). Same executor, same authority.
+    ...Object.entries(ACTIONS).map(([kind, spec]) => createTool({
+      name: kind.replace(/\./g, "_"),
+      description: `${spec.description} Parameters: ${spec.params}. Goes through the executor: authority, approval, idempotency and verification apply.`,
+      inputSchema: z.object({ justification: z.string().describe("Evidence-based reason, citing records") }).passthrough(),
+      execute: async ({ justification, ...params }: any) => guarded(() => propose(caseId, kind, params, justification)),
+    })),
     createTool({
       name: "retry_operation",
       description: "Resume an operation whose outcome was uncertain or that was approved. The executor reconciles provider state first, so this never duplicates a write.",

@@ -174,7 +174,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
   },
   "qbo.allocate_payment_across_customers": {
     description: "Apply one received payment to open invoices of MORE THAN ONE QuickBooks customer, when the payer paid on behalf of others (parent paying affiliates, management company paying for a client) and remittance evidence names each invoice. Splits the deposit: the original payment keeps its own customer's share and any unexplained remainder stays unapplied; a linked payment is created for each other customer. Totals must reconcile exactly.",
-    params: "{ payment_id, allocations: [{ customer_id, invoice_id, amount_usd }], evidence_ref }",
+    params: "{ payment_id, allocations: [{ customer_id, invoice_id, amount_usd }], evidence_ref }  (works on fully or partly applied payments; allocates from the unapplied amount)",
     authority: () => "autonomous",
     identity: (p) => ({ payment_id: p.payment_id, allocations: [...(p.allocations ?? [])].map((a: any) => `${a.invoice_id}:${a.amount_usd}`).sort() }),
     amount: (p) => money((p.allocations ?? []).reduce((s: number, a: any) => s + a.amount_usd, 0)),
@@ -183,8 +183,8 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const pay = await qbo.get("Payment", p.payment_id);
       const total = money(p.allocations.reduce((s: number, a: any) => s + a.amount_usd, 0));
       if (!p.evidence_ref) throw new PreconditionError("evidence_ref (remittance advice or contract clause) is required");
-      if ((pay.Line ?? []).length) throw new PreconditionError(`payment ${pay.Id} is already partly applied; use qbo.apply_payment`);
-      if (total > pay.TotalAmt + 0.001) throw new PreconditionError(`allocations $${total} exceed payment $${pay.TotalAmt}`);
+      const unapplied = money(pay.UnappliedAmt ?? pay.TotalAmt - (pay.Line ?? []).reduce((s: number, l: any) => s + l.Amount, 0));
+      if (total > unapplied + 0.001) throw new PreconditionError(`allocations $${total} exceed the unapplied $${unapplied} of payment ${pay.Id}`);
       for (const a of p.allocations) {
         const inv = await qbo.get("Invoice", a.invoice_id);
         if (inv.CustomerRef.value !== a.customer_id) throw new PreconditionError(`invoice ${inv.DocNumber} belongs to customer ${inv.CustomerRef.value}, not ${a.customer_id}`);
@@ -205,8 +205,10 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const fresh = await qbo.get("Payment", p.payment_id);
       const othersTotal = money(others.reduce((s: number, a: any) => s + a.amount_usd, 0));
       const expectedTotal = money(pay.TotalAmt - othersTotal);
-      if (Math.abs(fresh.TotalAmt - expectedTotal) > 0.001 || (own.length && !(fresh.Line ?? []).length)) {
-        await qbo.post("Payment", { Id: fresh.Id, SyncToken: fresh.SyncToken, sparse: true, CustomerRef: fresh.CustomerRef, TotalAmt: expectedTotal, PrivateNote: `${fresh.PrivateNote ?? ""} | split: $${othersTotal} allocated to affiliates per ${p.evidence_ref} [${key}]`.slice(0, 4000), Line: own.map((a: any) => ({ Amount: a.amount_usd, LinkedTxn: [{ TxnId: a.invoice_id, TxnType: "Invoice" }] })) });
+      if (Math.abs(fresh.TotalAmt - expectedTotal) > 0.001 || (own.length && !own.every((a: any) => (fresh.Line ?? []).some((l: any) => l.LinkedTxn.some((t: any) => t.TxnId === a.invoice_id))))) {
+        // Keep any applications that already existed on the original payment, then add this customer's own share.
+        const keep = (fresh.Line ?? []).map((l: any) => ({ Amount: l.Amount, LinkedTxn: l.LinkedTxn }));
+        await qbo.post("Payment", { Id: fresh.Id, SyncToken: fresh.SyncToken, sparse: true, CustomerRef: fresh.CustomerRef, TotalAmt: expectedTotal, PrivateNote: `${fresh.PrivateNote ?? ""} | split: $${othersTotal} allocated to affiliates per ${p.evidence_ref} [${key}]`.slice(0, 4000), Line: [...keep, ...own.map((a: any) => ({ Amount: a.amount_usd, LinkedTxn: [{ TxnId: a.invoice_id, TxnType: "Invoice" }] }))] });
         ctx?.step("qbo.payment_split", `original payment ${fresh.Id} now $${expectedTotal}${own.length ? ` with $${money(own.reduce((s: number, a: any) => s + a.amount_usd, 0))} applied` : ""}`, false);
       } else ctx?.step("qbo.payment_split", `original payment ${fresh.Id} already split`, true);
       return { id: p.payment_id, created_payment_ids: created, original_total: pay.TotalAmt };
@@ -217,6 +219,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const sum = money(pays.reduce((s, x) => s + x.TotalAmt, 0));
       const linked = new Set(pays.flatMap((x) => (x.Line ?? []).flatMap((l: any) => l.LinkedTxn.map((t: any) => t.TxnId))));
       const ok = Math.abs(sum - r.original_total) < 0.01 && invs.every((i) => linked.has(i.Id));
+      // original_total is the deposit before the split; applications made earlier stay on the original payment.
       return { ok, observed: `${invs.map((i) => `${i.DocNumber} balance $${i.Balance}`).join("; ")}; deposit $${r.original_total} preserved across ${pays.length} payments ($${sum}); unapplied $${money(pays.reduce((s, x) => s + (x.UnappliedAmt ?? 0), 0))}` };
     },
   },

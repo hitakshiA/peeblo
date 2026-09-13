@@ -34,10 +34,15 @@ export function appsFor(tool: string, input: any): string[] {
     case "search_documents": case "read_document": return ["dropbox"];
     case "search_jira": return ["jira"];
     case "read_slack": return ["slack"];
+    default: {
+      const direct = tool.match(/^(stripe|qbo|hubspot|jira|slack|customer|billing)_/);
+      if (direct) return [{ qbo: "quickbooks", customer: "hubspot", billing: "stripe" }[direct[1]] ?? direct[1]];
+      if (tool !== "propose_action") return ["peeblo"];
+    }
+    // falls through
     case "propose_action": {
       const app = String(input?.action ?? "").split(".")[0];
       return [{ qbo: "quickbooks", customer: "hubspot" }[app] ?? app];
     }
-    default: return ["peeblo"];
   }
 }
