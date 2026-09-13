@@ -17,7 +17,7 @@ function cachedToken(fetchToken: () => Promise<{ token: string; ttlMs: number }>
 
 export const stripe = {
   call: (path: string, opts: { method?: string; form?: Record<string, string>; idempotencyKey?: string } = {}) =>
-    request(`https://api.stripe.com/v1${path}`, { method: opts.method ?? (opts.form ? "POST" : "GET"), form: opts.form, headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, ...(opts.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}) } }),
+    request(`${process.env.STRIPE_API_BASE ?? "https://api.stripe.com"}/v1${path}`, { method: opts.method ?? (opts.form ? "POST" : "GET"), form: opts.form, headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY_OVERRIDE ?? env.STRIPE_SECRET_KEY}`, ...(opts.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}) } }),
 };
 
 // QuickBooks refresh tokens rotate: only this process refreshes, and it persists the newest token.

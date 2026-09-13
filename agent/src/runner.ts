@@ -104,6 +104,16 @@ export async function runCase(caseId: string, trigger: string, opts: { maxIterat
     result = await agent.run(caseContext(caseId, trigger));
     // A run must end with an explicit, honest outcome; nudge once if the model stopped without reporting.
     const finished = () => (db.prepare("SELECT 1 FROM run_events WHERE run_id = ? AND type = 'tool.finished' AND data LIKE '%\"tool\":\"finish_run\"%'").get(runId));
+    // Transient model/provider failures: continue the same session; durable state makes this safe.
+    for (let attempt = 0; attempt < 2 && !interrupted && result.status === "failed"; attempt++) {
+      const msg = result.error?.message ?? "unknown model error";
+      log(`⚠️ run failed (${msg}); continuing`);
+      emit(caseId, runId, "run.retry", { error: msg, attempt: attempt + 1 });
+      trace?.recordSpan?.({ name: "model-failure-retry", status: "ERROR", error: msg, metadata: { attempt: attempt + 1 } } as any);
+      evidence.add(caseId, "peeblo", `Model run failed (${msg.slice(0, 200)}); continued from durable state`);
+      await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+      result = await agent.continue("The previous step failed due to a transient error. Continue from where you left off; do not repeat completed operations.");
+    }
     if (!interrupted && result.status === "completed" && !finished()) result = await agent.continue("You stopped without calling finish_run. Complete any remaining step that is within authority, then call finish_run with an honest status, summary and next action.");
   } catch (err) {
     activeRuns.delete(caseId);
@@ -119,7 +129,7 @@ export async function runCase(caseId: string, trigger: string, opts: { maxIterat
   if (interrupted) { cases.update(caseId, { status: "open", next_action: `Resume after interruption (${interrupted})` }); }
   emit(caseId, runId, "run.finished", { status: interrupted ? "interrupted" : result.status, reason: interrupted, case: cases.get(caseId), usage: result.usage, iterations: result.iterations });
   trace?.recordSpan?.({ name: "verify-outcome", metadata: { "case.status": c.status, "operations.succeeded": ops.filter((o) => o.status === "succeeded").length, "operations.uncertain": ops.filter((o) => o.status === "uncertain").length, "operations.awaiting_approval": ops.filter((o) => o.status === "awaiting_approval").length } } as any);
-  runs.end(runId, { status: result.status, output: result.outputText, iterations: result.iterations, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, traceId: (trace as any)?.id });
+  runs.end(runId, { status: result.status, output: result.status === "failed" ? `ERROR: ${result.error?.message ?? "unknown"} | ${result.outputText}` : result.outputText, iterations: result.iterations, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, traceId: (trace as any)?.id });
   if (result.status !== "completed") trace?.fail?.(result.error ?? new Error(result.status));
   await (trace as any)?.end?.({ output: { status: c.status, summary: c.summary, next_action: c.next_action, pending_wakeup: wakeups.pending(caseId) } });
   return { run_id: runId, status: interrupted ? "interrupted" : result.status, iterations: result.iterations, usage: result.usage, case: cases.get(caseId)!, error: result.error?.message };
