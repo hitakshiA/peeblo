@@ -13,28 +13,26 @@
 
 <p align="center"><img src="docs/assets/apps-marquee.svg" alt="Connected apps" width="100%"></p>
 
-[![Peeblo approving, interrupting and resuming a correction. Click for the full demo video.](docs/assets/demo-preview.gif)](docs/demo.mp4)
+[![Watch Peeblo fix a $24,000 billing error (2 min demo)](docs/assets/thumbnail.png)](docs/demo.mp4)
 
 ---
 
 ## The problem
 
-- A signed B2B deal turns into an **overdue invoice**.
-- Why it's blocked is scattered across apps:
-  - the invoice is in **Stripe**
-  - AP's rejection is in an email in **HubSpot**
-  - the correct legal entity is in a contract in **Dropbox**
-  - the ledger is in **QuickBooks**
-  - the rule for fixing it is in a **Notion** policy
-- An AR analyst spends hours stitching that together, then has to make risky money changes by hand.
+- **B2B companies have cash stuck in receivables that nobody can collect**, even when the customer wants to pay.
+- The invoice isn't disputed. It's **wrong**: billed to the parent instead of the subsidiary, missing a PO, or paid by a third party the ledger doesn't recognize.
+- The answer is always in the data, but it's **split across five or more tools**: billing, ledger, CRM, inbox, contracts, policies.
+- So finance teams burn **hours per exception** reconstructing context, then make money-moving changes by hand, where one mistake means a duplicate invoice or a wrong write-off.
+- Existing AR automation sends reminders. **Nobody fixes the exception.**
 
 ## What Peeblo is
 
-- **A specialized agent harness for accounts receivable.** It owns billing exceptions until each one reaches a verified outcome.
-- **The model investigates.** It plans, reads every app through tools, cross-checks evidence and proposes a fix.
-- **Code controls money.** A deterministic executor enforces approval limits, prevents duplicate writes, recovers from crashes and re-reads each app to verify.
-- **No per-case scripts.** The same agent and tools handled a wrong bill-to entity, an "already paid" claim, a grouped short-paid wire and a missing PO.
-- **Honest outcomes.** "Billing issue resolved" and "invoice paid" are tracked separately.
+- **Peeblo is the AR teammate that fixes billing exceptions end to end.** It investigates across your finance and business apps, proposes the fix, gets approval, executes it and proves the result.
+- **It's a specialized agent harness, not a chatbot.**
+  - The model does the detective work.
+  - A deterministic executor controls every dollar: approval limits, no duplicate writes, crash recovery, verification.
+- **One agent, many situations.** The same agent, with no case-specific code, has fixed a wrong bill-to entity, matched an "already paid" claim to a third-party payment, split a short-paid grouped wire, and refused to send an invoice without a PO.
+- **It tells the truth about outcomes.** "Billing error fixed" and "cash collected" are different states, and Peeblo reports both.
 
 ## The Peeblo agent harness
 
@@ -63,18 +61,24 @@
 - **Slack:** sends approval requests with the evidence; posts status updates.
 - **Jira:** tracks the billing exception and cross-team follow-ups.
 
-## See it work: the Eastbridge case
+## See it work: an invoice sent to the wrong company
+
+**The situation:** our seeded customer Eastbridge has two similarly named companies, **Eastbridge Holdings** (the parent) and **Eastbridge Logistics** (the subsidiary that signed the contract). A $24,000 quarterly invoice went to the parent. Logistics' AP team rejected it, and it has been overdue since.
+
+**What Peeblo had to work out, with no hints:**
+- Which of the two similar accounts actually signed. There's also a lookalike, *East Bridge Coffee Roasters*.
+- Which of two billing-instruction documents is current: an older one says bill the parent, the executed one says bill Logistics.
+- Whether any payment or credit already exists, and what the policy requires before voiding an issued invoice.
 
 | Before | After (verified by re-reading each app) |
 |---|---|
-| Stripe INV-2310, $24,000, **open**, billed to Eastbridge **Holdings** | Original **void**; exactly **one** replacement, open, billed to Eastbridge **Logistics** LLC |
-| QuickBooks invoice for Holdings, $24,000 | Original $0; INV-2310-R for Logistics, balance $24,000 |
-| AP rejected the invoice in email | Jira exception updated; Slack report posted |
+| Stripe invoice INV-2310, $24,000, **open**, billed to the **parent** | Original **void**; exactly **one** replacement, billed to the **subsidiary** |
+| QuickBooks carries the same wrong invoice | Original zeroed; replacement for the subsidiary, balance $24,000 |
+| AP rejection sitting in an email | Jira exception updated; team notified in Slack |
 
-- **Evidence:** Peeblo found the AP rejection, told apart two similarly named accounts plus a lookalike, and chose the **executed** 2026 billing instructions over a superseded 2025 version.
-- **Approval:** the Notion policy requires approval to void and reissue, so Peeblo requested it with the evidence attached.
-- **Interruption:** the run was stopped right after the Stripe replacement was created. On resume, the executor found the invoice it had already created, wrote **no duplicate**, and finished QuickBooks.
-- **Outcome:** the case ends `waiting`. The billing error is fixed, but the receivable stays open until the customer pays.
+- **Approval:** company policy requires approval to void and reissue, so Peeblo requested it with the evidence attached.
+- **Crash test:** we killed the run right after the new Stripe invoice was created. On resume, Peeblo found the invoice it had already made, created **no duplicate**, and finished QuickBooks.
+- **Honest ending:** the case ends `waiting`. The billing error is fixed; the $24,000 is still owed until the customer pays.
 
 ## Reliability
 
@@ -82,7 +86,7 @@
 
 | Scenario or fault | Environment | Required / forbidden outcome | Result |
 |---|---|---|---|
-| Wrong bill-to entity, approval, **interrupted mid-correction** | Real Stripe + QuickBooks sandboxes | One replacement for Logistics; original void; no duplicate customer | ✅ Pass ([eval](docs/eval-results.md)) |
+| Invoice sent to the wrong company, approval, **interrupted mid-correction** | Real Stripe + QuickBooks sandboxes | One replacement for Logistics; original void; no duplicate customer | ✅ Pass ([eval](docs/eval-results.md)) |
 | "Already paid" via a management company | QuickBooks sandbox | $12,600 applied to INV-2296; lookalike Ridgeview invoices **untouched** | ✅ Pass |
 | Grouped wire across affiliates, $450 short-pay | QuickBooks sandbox | Affiliates paid; exactly $450 left open; **no credit without approval** | ✅ Pass, after an executor fix (below) |
 | Renewal with no valid PO | Stripe sandbox | Invoice **not** sent; follow-up scheduled | ✅ Pass |
