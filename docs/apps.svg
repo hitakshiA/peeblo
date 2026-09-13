@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" font-family="Inter, Helvetica, Arial, sans-serif">
+  <rect width="960" height="330" rx="18" fill="#0f1411"/>
+  <defs><style>.c{fill:#161d19;stroke:#2c3a32;stroke-width:1.5}.h{fill:#eef5f0;font-size:15px;font-weight:600}.t{fill:#9fb3a7;font-size:12px}.r{fill:#7be0a6;font-size:11px;font-weight:600;letter-spacing:.06em}</style></defs>
+  <text x="32" y="42" fill="#eef5f0" font-size="20" font-weight="700">Eight apps, eight kinds of truth</text>
+  <text x="32" y="64" class="t">Peeblo reads each system for what it owns, and writes only through the executor.</text>
+  <g transform="translate(32,90)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#635BFF"/><text x="34" y="26" class="h">Stripe</text><text x="16" y="52" class="r">BILLING DOCUMENTS</text><text x="16" y="72" class="t">invoices, customers, credits</text><text x="16" y="88" class="t">writes: void, reissue, finalize</text>
+  </g>
+  <g transform="translate(260,90)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#2CA01C"/><text x="34" y="26" class="h">QuickBooks</text><text x="16" y="52" class="r">LEDGER AND CASH</text><text x="16" y="72" class="t">AR aging, payments, credit memos</text><text x="16" y="88" class="t">writes: apply cash, void, replace</text>
+  </g>
+  <g transform="translate(488,90)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#00A1E0"/><text x="34" y="26" class="h">Salesforce</text><text x="16" y="52" class="r">ENTERPRISE ACCOUNTS</text><text x="16" y="72" class="t">hierarchy, contacts, deals</text><text x="16" y="88" class="t">read-only for Peeblo</text>
+  </g>
+  <g transform="translate(716,90)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#FF7A59"/><text x="34" y="26" class="h">HubSpot</text><text x="16" y="52" class="r">CONVERSATIONS</text><text x="16" y="72" class="t">AP emails, notes, SMB accounts</text><text x="16" y="88" class="t">writes: notes, logged emails</text>
+  </g>
+  <g transform="translate(32,206)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#0061FF"/><text x="34" y="26" class="h">Dropbox</text><text x="16" y="52" class="r">EXECUTED DOCUMENTS</text><text x="16" y="72" class="t">contracts, W-9s, POs, remittances</text><text x="16" y="88" class="t">versions: latest executed wins</text>
+  </g>
+  <g transform="translate(260,206)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#eeeeee"/><text x="34" y="26" class="h">Notion</text><text x="16" y="52" class="r">POLICY</text><text x="16" y="72" class="t">authority limits, collections,</text><text x="16" y="88" class="t">identity and dispute rules</text>
+  </g>
+  <g transform="translate(488,206)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#E01E5A"/><text x="34" y="26" class="h">Slack</text><text x="16" y="52" class="r">PEOPLE</text><text x="16" y="72" class="t">assignments, approvals,</text><text x="16" y="88" class="t">status reports</text>
+  </g>
+  <g transform="translate(716,206)">
+    <rect class="c" width="212" height="100" rx="12"/><rect x="16" y="16" width="10" height="10" rx="2" fill="#2684FF"/><text x="34" y="26" class="h">Jira</text><text x="16" y="52" class="r">DEPENDENCIES</text><text x="16" y="72" class="t">billing exceptions, defects,</text><text x="16" y="88" class="t">cross-team follow-ups</text>
+  </g>
+</svg>

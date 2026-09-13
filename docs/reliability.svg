@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" font-family="Inter, Helvetica, Arial, sans-serif">
+  <rect width="960" height="300" rx="18" fill="#0f1411"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7be0a6"/></marker>
+    <style>.s{fill:#161d19;stroke:#2c3a32;stroke-width:1.5}.ok{fill:#123524;stroke:#3f9e6b;stroke-width:1.5}.am{fill:#2e2710;stroke:#b8932f;stroke-width:1.5}.bad{fill:#35161a;stroke:#b5474f;stroke-width:1.5}.h{fill:#eef5f0;font-size:14px;font-weight:600}.t{fill:#9fb3a7;font-size:11.5px}.ln{stroke:#7be0a6;stroke-width:1.8;fill:none;marker-end:url(#a)}</style>
+  </defs>
+  <text x="32" y="42" fill="#eef5f0" font-size="20" font-weight="700">Life of a financial write</text>
+  <text x="32" y="64" class="t">Every change is recorded before it happens, checked after it happens, and safe to resume after a crash.</text>
+  <rect class="s" x="32" y="100" width="140" height="70" rx="10"/><text x="46" y="128" class="h">Proposed</text><text x="46" y="150" class="t">by the model</text>
+  <rect class="am" x="206" y="100" width="150" height="70" rx="10"/><text x="220" y="128" class="h">Authority check</text><text x="220" y="150" class="t">policy + approval</text>
+  <rect class="s" x="390" y="100" width="150" height="70" rx="10"/><text x="404" y="128" class="h">Intent logged</text><text x="404" y="150" class="t">idempotency key</text>
+  <rect class="s" x="574" y="100" width="140" height="70" rx="10"/><text x="588" y="128" class="h">Submitted</text><text x="588" y="150" class="t">provider write</text>
+  <rect class="ok" x="748" y="100" width="180" height="70" rx="10"/><text x="762" y="128" class="h">Verified</text><text x="762" y="150" class="t">state re-read and recorded</text>
+  <path class="ln" d="M172 135H204"/><path class="ln" d="M356 135H388"/><path class="ln" d="M540 135H572"/><path class="ln" d="M714 135H746"/>
+  <rect class="bad" x="500" y="208" width="200" height="66" rx="10"/><text x="514" y="234" class="h">Interrupted / timeout</text><text x="514" y="256" class="t">outcome unknown</text>
+  <rect class="ok" x="748" y="208" width="180" height="66" rx="10"/><text x="762" y="234" class="h">Reconcile, then resume</text><text x="762" y="256" class="t">skip steps already done</text>
+  <path class="ln" d="M644 172V206"/><path class="ln" d="M700 241H746"/><path class="ln" d="M838 208V172"/>
+</svg>
