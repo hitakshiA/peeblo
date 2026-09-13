@@ -20,7 +20,7 @@ A signed deal turns into an overdue invoice. The reason is scattered: the invoic
 
 | Layer | What it does |
 |---|---|
-| **Triggers** | A Slack `@Peeblo` mention (Socket Mode), a durable wake-up (for example "day after the promised payment date"), an approval decision, or an assignment from the console. Duplicate events resume the same case. |
+| **Triggers** | A signed Stripe webhook (deduplicated by event ID), a Slack `@Peeblo` mention (Socket Mode), a durable wake-up (for example "day after the promised payment date"), an approval decision, or an assignment from the console. Duplicate events resume the same case. |
 | **Case store** | SQLite holds cases, evidence, the operation intent log, approvals, wake-ups and every run event. Model sessions are disposable, and each run rebuilds its context from these records. |
 | **Reasoning loop** | [Cline SDK](https://docs.cline.bot/sdk/overview) agent runtime on ClinePass **GLM-5.3 Flash**. It gets the standing responsibility, the case state and 17 reusable tools. There are no per-case scripts: the same agent handles a wrong entity, an "already paid" claim or a missing PO. |
 | **Executor** | Deterministic code between the model and the apps. It enforces authority from policy, requests Slack approval bound to the exact change, logs intent with an idempotency key before writing, reconciles uncertain outcomes before retrying, and verifies by re-reading provider state. |
@@ -30,7 +30,7 @@ A signed deal turns into an overdue invoice. The reason is scattered: the invoic
 **Tools the agent chooses from**
 
 - **Read:** `find_customer`, `get_billing_state`, `find_invoice`, `ar_worklist`, `get_crm_context`, `get_conversations`, `read_policy`, `search_documents`, `read_document`, `search_jira`, `read_slack`
-- **Case:** `record_evidence`, `schedule_follow_up`, `propose_lesson`, `finish_run`
+- **Case:** `update_plan` (persistent plan shown in the console), `record_evidence`, `schedule_follow_up`, `propose_lesson`, `finish_run`
 - **Change** (through the executor only): `propose_action`, `retry_operation`
 
 **Actions the executor can perform** (authority comes from the Notion policy)
@@ -118,13 +118,25 @@ _Filled from actual runs; see `agent/src/e2e.ts` and the Lemma traces._
 | Northwind: grouped wire from the parent for three affiliates, $450 short-pay | Affiliate invoices paid, $8,550 applied to INV-2242, $450 credit sent for approval (not written off) | ✅ **Pass, after an honest escalation.** First run: applied the parent's own $8,550, sent the $450 credit for approval (training priced $1,350 in the Enterprise Agreement), and hit an executor limitation (allocation refused a partly-applied payment). Instead of forcing a write it **filed Jira SCRUM-16 describing the gap** and waited. After the fix, the resumed run retried the recorded operation: INV-2240 $18,000 → $0, INV-2241 $15,000 → $0, $0 unapplied, SCRUM-16 updated. Status `waiting` on the $450 approval. |
 | Meridian: renewal draft without PO, asked "can it go out today?" | Invoice not finalized; follow-up scheduled for PO date | ✅ **Pass.** Declined to send: contract and policy require a PO, the only PO on file is last year's and expired. Informed the team and scheduled a wake-up for the date procurement promised. Status `waiting`. |
 
-**Arga (service twins).** `agent/src/arga-test.ts` provisions a Stripe twin, seeds a parent/subsidiary pair with an issued invoice addressed to the wrong one, then runs the executor's approved void + reissue with a **fault injected: the provider accepts the create but the response is lost**. Pass criteria are read back from the twin: original void, exactly one replacement, addressed to the subsidiary.
+**Outcome evaluation (`npm run eval`).** ArgaBench-style executable checks read live Stripe and QuickBooks state after Peeblo worked the cases, plus invariants over the operation log. Results: [`docs/eval-results.md`](docs/eval-results.md).
 
-| Twin run | Result |
+| Run | Result |
 |---|---|
-| `0c323cd4` Stripe twin, 2 passes | ✅ Operation marked `uncertain`, reconciled on retry, **no duplicate**; a rephrased retry mapped to the same operation. Recording: [`docs/evidence/arga-stripe-twin-interrupted-reissue.mp4`](docs/evidence/arga-stripe-twin-interrupted-reissue.mp4), report: [`docs/evidence/arga-stripe-twin-report.json`](docs/evidence/arga-stripe-twin-report.json) |
+| First run | 15/16. Found a real defect: an operation from before the precondition fix was still marked `uncertain` on a resolved case. |
+| After reconciling | **16/16.** The executor's retry re-read QuickBooks, saw the $12,600 was already applied and refused to apply it again. |
 
-Twin limitation found: the Stripe twin did not apply invoice-item amounts (totals remained $0), so amount assertions are only meaningful against the real Stripe sandbox, where the Eastbridge run verified $24,000.
+Checks cover outcomes (correct entity, balances, preserved deposits), forbidden changes (lookalike invoices untouched, no credit without approval, no invoice sent without a PO) and harness invariants (no operation executed twice, every gated write had an approved approval, every write has a recorded verification).
+
+**Arga (service twins).** `agent/src/arga-test.ts` runs the executor against a Stripe twin with injected faults. Pass criteria are read back from the twin.
+
+| Twin run | What is tested | Result |
+|---|---|---|
+| `0c323cd4` | Approved void + reissue where **the provider accepts the create but the response is lost** | ✅ Operation marked `uncertain`, reconciled on retry, no duplicate; a rephrased retry maps to the same operation. [Recording](docs/evidence/arga-stripe-twin-interrupted-reissue.mp4) · [report](docs/evidence/arga-stripe-twin-report.json) |
+| `67a12b23` | **Duplicate event delivery** and a **stale approval** (invoice paid while the void was awaiting approval) | ✅ Second delivery dropped; both map to one case; one customer created; approved void refused because the invoice is now paid. [Recording](docs/evidence/arga-stripe-twin-duplicate-and-stale-approval.mp4) · [report](docs/evidence/arga-stripe-twin-duplicate-and-stale-report.json) |
+
+**Event triggers.** Stripe webhooks (`invoice.payment_failed`, `invoice.overdue`, `invoice.marked_uncollectible`, `charge.dispute.created`) are signature-verified, deduplicated by event ID and open one case per invoice and event type with no human tag. Verified on the live endpoint: first delivery opened a case and started a run, the duplicate was ignored, a forged signature was rejected with 400.
+
+Twin limitation found: the Stripe twin did not apply invoice-item amounts (totals remained $0), so amount assertions run against the real Stripe sandbox instead, where the eval verifies $24,000.
 
 **Lemma (execution traces).** Every run is one trace in the `MultiAgent` project: a generation span per model turn (model, timing, token usage), a tool span per tool call (input, output, error status) and a `verify-outcome` span. The first Eastbridge run produced 48 spans (13 model turns, 33 tool calls). Lemma's issue detection flagged a real failure on its own, **"read_document used nonexistent path"** (the agent guessed a Dropbox path before searching), which led to the search fallback now in `search_documents`.
 
@@ -133,7 +145,7 @@ Twin limitation found: the Stripe twin did not apply invoice-item amounts (total
 - The sandbox date for Stripe due dates cannot be backdated (Stripe requires future due dates without test clocks), so Stripe shows the Aug 1 invoice with its Net 30 terms written on it, and QuickBooks carries the overdue aging.
 - Customer email is recorded as an outbound email on HubSpot rather than sent (no mail connector).
 - Scheduling uses a SQLite wake-up table polled every 15s instead of Temporal; state is durable but a single worker processes runs.
-- App webhooks are not wired yet; work arrives from Slack, the console and scheduled wake-ups.
+- Webhooks are wired for Stripe; QuickBooks, HubSpot and Jira events still arrive through scheduled reviews.
 
 ## Setup
 

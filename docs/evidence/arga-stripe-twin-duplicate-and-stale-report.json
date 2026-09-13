@@ -1,0 +1,26 @@
+{
+  "run_id": "67a12b23-43b7-4db0-8c7e-858be1a1fb9d",
+  "scenario": "duplicate-and-stale",
+  "pass": true,
+  "checks": {
+    "duplicate_event_dropped": true,
+    "one_case_per_problem": true,
+    "exactly_one_customer_created": true,
+    "stale_approval_refused": true
+  },
+  "log": [
+    "Arga run 67a12b23-43b7-4db0-8c7e-858be1a1fb9d · Stripe twin https://pub-r67a12b2343b74db08c7e858be1a1fb9d--stripe.sandbox.argalabs.com",
+    "seeded: in_XVDaU8d5AUIDMnloYmIn6NyM open $0 to Eastbridge Holdings",
+    "event delivered twice -> first accepted, second dropped as duplicate",
+    "both deliveries map to one case -> true",
+    "create customer, delivery 1 -> {\"status\":\"succeeded\",\"operation_id\":\"op_974efee9\",\"verified_state\":\"customer cus_uMasjavx4HwxHkAqJG0KchgA Eastbridge Logistics\",\"provider_id\":\"cus_uMasjavx4Hwx",
+    "create customer, delivery 2 -> {\"status\":\"already_done\",\"operation_id\":\"op_974efee9\",\"verified_state\":\"customer cus_uMasjavx4HwxHkAqJG0KchgA Eastbridge Logistics\"}",
+    "customers created by the executor for Eastbridge Logistics LLC -> 1",
+    "void requested -> awaiting_approval",
+    "meanwhile the customer paid it -> invoice paid",
+    "approver clicks approve -> Approved and executed: failed; operation failed: invoice in_svYyybGrfa5T4S5NpQlEQxLP is now paid; the approved void no longer applies",
+    "invoice after the stale approval -> paid",
+    "checks: {\"duplicate_event_dropped\":true,\"one_case_per_problem\":true,\"exactly_one_customer_created\":true,\"stale_approval_refused\":true}",
+    "PASS"
+  ]
+}
