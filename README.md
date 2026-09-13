@@ -15,6 +15,8 @@
 
 [![Watch Peeblo fix a $24,000 billing error (2 min demo)](docs/assets/thumbnail.png)](https://peeblo.xyz/demo.mp4)
 
+<p align="center"><b>▲ Click the picture above to play the 2-minute demo video</b></p>
+
 ---
 
 ## The problem

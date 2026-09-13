@@ -211,8 +211,8 @@ export default function Landing() {
           <a href="#how">How it works</a>
           <a href="#apps">Integrations</a>
         </div>
-        <a className="button button-light nav-cta" href="#demo">
-          Watch demo <ArrowUpRight size={15} />
+        <a className="button button-light nav-cta" href="/room">
+          Try Peeblo <ArrowUpRight size={15} />
         </a>
       </nav>
       <main id="main">
@@ -237,8 +237,8 @@ export default function Landing() {
               adding more work to your team.
             </p>
             <div className="hero-actions">
-              <a href="#demo" className="button button-green">
-                Watch Peeblo work <ArrowRight size={17} />
+              <a href="/room" className="button button-green">
+                Try Peeblo <ArrowRight size={17} />
               </a>
               <a href="#how" className="text-link">
                 See how it works <ChevronDown size={14} />
@@ -386,8 +386,8 @@ export default function Landing() {
               <br />
               Across your apps, under your rules.
             </p>
-            <a className="button button-light" href="#demo">
-              Watch Peeblo work <ArrowRight size={17} />
+            <a className="button button-light" href="/room">
+              Try Peeblo <ArrowRight size={17} />
             </a>
           </Reveal>
         </section>

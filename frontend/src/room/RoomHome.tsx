@@ -52,7 +52,7 @@ export default function RoomHome() {
   return (
     <div className="room room-home">
       <header className="room-top">
-        <Link to="/room" className="room-brand"><Mark size={26} /> peeblo</Link>
+        <Link to="/" className="room-brand"><Mark size={26} /> peeblo</Link>
         <div className="room-title" />
         <span className={`pill ${online ? "pill-ok" : online === false ? "pill-danger" : ""}`}>{online ? "agent online" : online === false ? "agent offline" : "connecting"}</span>
         <a className="btn ghost" href="https://github.com/hitakshiA/peeblo" target="_blank" rel="noreferrer">How it works</a>

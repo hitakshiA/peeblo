@@ -45,7 +45,7 @@ export default function CaseRoom() {
   return (
     <div className="room room-case">
       <header className="room-top">
-        <Link to="/room" className="room-brand"><Mark size={24} /> peeblo</Link>
+        <Link to="/" className="room-brand"><Mark size={24} /> peeblo</Link>
         <div className="room-title">
           <span className="room-case-id">{id}</span>
           <h1>{director ? "Eastbridge: Q3 invoice rejected by AP" : detail?.title ?? "Case"}</h1>
