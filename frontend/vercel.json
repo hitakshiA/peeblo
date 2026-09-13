@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "headers": [
+    { "source": "/inner-green-assets/:path*", "headers": [
+      { "key": "Access-Control-Allow-Origin", "value": "*" }
+    ] }
+  ],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
