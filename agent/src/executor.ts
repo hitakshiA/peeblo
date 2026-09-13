@@ -58,7 +58,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const reused = Boolean(replacement);
       if (!replacement) {
         replacement = await stripe.call("/invoices", { idempotencyKey: `${key}-invoice`, form: { customer: customerId!, collection_method: "send_invoice", days_until_due: String(p.days_until_due ?? 30), auto_advance: "false", pending_invoice_items_behavior: "exclude", description: original.description ?? "", "metadata[invoice_number]": ref, "metadata[replaces]": p.stripe_invoice_id, "metadata[peeblo_op]": key, ...customFields([{ name: "Invoice ref", value: ref }, { name: "Bill to", value: p.correct_entity.legal_name }, ...(p.correct_entity.tax_id ? [{ name: "Customer EIN", value: p.correct_entity.tax_id }] : [])]) } });
-        for (const [i, l] of original.lines.data.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: customerId!, invoice: replacement.id, description: l.description, quantity: String(l.quantity ?? 1), unit_amount_decimal: String(l.pricing?.unit_amount_decimal ?? l.price?.unit_amount_decimal ?? Math.round(l.amount / (l.quantity ?? 1))), currency: "usd" } });
+        for (const [i, l] of original.lines.data.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: customerId!, invoice: replacement.id, description: l.description, amount: String(l.amount), currency: "usd" } });
       }
       if (replacement.status === "draft" || !reused) replacement = await stripe.call(`/invoices/${replacement.id}/finalize`, { idempotencyKey: `${key}-finalize`, form: { auto_advance: "false" } }).catch(async () => stripe.call(`/invoices/${replacement.id}`));
       step("stripe.create_invoice", `${ref} to ${p.correct_entity.legal_name} ${replacement.id} $${replacement.total / 100}`, reused);
@@ -99,7 +99,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
       if (inv.status !== "draft") throw new Error(`invoice ${p.invoice_id} is ${inv.status}, not draft`);
       if (p.lines) {
         for (const li of inv.lines.data) if (li.invoice_item) await stripe.call(`/invoiceitems/${li.invoice_item}`, { method: "DELETE" });
-        for (const [i, l] of p.lines.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: inv.customer, invoice: inv.id, description: l.description, quantity: String(l.quantity), unit_amount_decimal: cents(l.unit_amount_usd), currency: "usd" } });
+        for (const [i, l] of p.lines.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: inv.customer, invoice: inv.id, description: l.quantity === 1 ? l.description : `${l.description} (${l.quantity} x $${l.unit_amount_usd})`, amount: cents(l.quantity * l.unit_amount_usd), currency: "usd" } });
       }
       if (p.custom_fields) await stripe.call(`/invoices/${inv.id}`, { form: customFields(p.custom_fields) });
       return stripe.call(`/invoices/${inv.id}`);
@@ -133,10 +133,13 @@ export const ACTIONS: Record<string, ActionSpec> = {
     execute: async (p, key) => {
       const fields = [...(p.custom_fields ?? []), { name: "Invoice ref", value: p.invoice_ref }].slice(0, 4);
       const inv = await stripe.call("/invoices", { idempotencyKey: key, form: { customer: p.customer_id, collection_method: "send_invoice", days_until_due: String(p.days_until_due), auto_advance: "false", pending_invoice_items_behavior: "exclude", description: p.memo ?? "", "metadata[invoice_number]": p.invoice_ref, "metadata[peeblo_op]": key, ...(p.replaces_invoice_id ? { "metadata[replaces]": p.replaces_invoice_id } : {}), ...customFields(fields) } });
-      for (const [i, l] of p.lines.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: p.customer_id, invoice: inv.id, description: l.description, quantity: String(l.quantity), unit_amount_decimal: cents(l.unit_amount_usd), currency: "usd" } });
+      for (const [i, l] of p.lines.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: p.customer_id, invoice: inv.id, description: l.quantity === 1 ? l.description : `${l.description} (${l.quantity} x $${l.unit_amount_usd})`, amount: cents(l.quantity * l.unit_amount_usd), currency: "usd" } });
       return p.finalize ? stripe.call(`/invoices/${inv.id}/finalize`, { idempotencyKey: `${key}-finalize`, form: { auto_advance: "false" } }) : stripe.call(`/invoices/${inv.id}`);
     },
-    reconcile: async (_p, key) => (await stripe.call(`/invoices/search?query=${encodeURIComponent(`metadata['peeblo_op']:'${key}'`)}`)).data[0],
+    reconcile: async (p, key) => {
+      const searched = await stripe.call(`/invoices/search?query=${encodeURIComponent(`metadata['peeblo_op']:'${key}'`)}`).then((r: any) => r.data[0]).catch(() => undefined);
+      return searched ?? (await stripe.call(`/invoices?customer=${p.customer_id}&limit=100`)).data.find((i: any) => i.metadata?.peeblo_op === key);
+    },
     verify: async (p, r) => { const inv = await stripe.call(`/invoices/${r.id}`); const want = cents(ACTIONS["stripe.create_invoice"].amount!(p)!); return { ok: String(inv.total) === want && inv.customer === p.customer_id, observed: `${inv.id} ${inv.status} to ${inv.customer_name} total $${inv.total / 100}` }; },
   },
   "stripe.create_credit_note": {
@@ -333,13 +336,13 @@ async function requestApproval(op: OpRow, justification: string) {
   const approverRole = op.authority === "cfo" ? "CFO (Sam Rivera)" : "AR approver";
   const expires = new Date(Date.now() + 48 * 3600_000).toISOString();
   const text = `*Approval needed* (${approverRole}) · case \`${op.case_id}\`\n*Action:* \`${op.kind}\`${op.amount != null ? ` · *Amount:* $${op.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}` : ""}\n*Exact change:* \`\`\`${JSON.stringify(JSON.parse(op.params), null, 1).slice(0, 2500)}\`\`\`\n*Why:* ${justification}\n_Approval covers exactly this change and expires ${expires.slice(0, 16)}Z._`;
-  const msg = await slack.call("chat.postMessage", { channel: env.SLACK_APPROVALS_CHANNEL_ID, text, blocks: [
+  const msg = process.env.PEEBLO_APPROVALS_NO_SLACK ? { ts: "harness" } : await slack.call("chat.postMessage", { channel: env.SLACK_APPROVALS_CHANNEL_ID, text, blocks: [
     { type: "section", text: { type: "mrkdwn", text: text.slice(0, 2900) } },
     ...(op.authority === "cfo" ? [] : [{ type: "actions", elements: [
       { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "peeblo_approve", value: approvalId },
       { type: "button", style: "danger", text: { type: "plain_text", text: "Reject" }, action_id: "peeblo_reject", value: approvalId },
     ] }]),
-  ] });
+  ] }) as any;
   db.prepare("INSERT INTO approvals VALUES (?,?,?,?,?,NULL,?,?,NULL,?)").run(approvalId, op.case_id, op.id, fingerprint, "pending", msg.ts, expires, now());
   setOp(op.id, { status: "awaiting_approval", approval_id: approvalId });
   emit(op.case_id, undefined, "approval.requested", { approval_id: approvalId, operation_id: op.id, kind: op.kind, params: JSON.parse(op.params), amount: op.amount, approver: approverRole, justification, slack_ts: msg.ts });
