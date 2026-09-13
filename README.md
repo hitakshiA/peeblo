@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://peeblo.xyz/demo.mp4"><b>▶ Demo video (2 min)</b></a> ·
-  <a href="https://peeblo.xyz/room"><b>Live demo</b></a> ·
+  <a href="https://peeblo.xyz"><b>Live demo</b></a> ·
   <a href="https://api.peeblo.xyz/api/health">Agent API</a> ·
   <a href="seed/">Seed data</a> ·
   <a href="docs/system-and-reliability.md"><b>System &amp; reliability brief</b></a> ·
