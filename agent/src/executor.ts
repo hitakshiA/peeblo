@@ -21,6 +21,25 @@ interface ActionSpec {
   identity?: (p: Params) => unknown;
   // Multi-step actions whose execute() is idempotent per step; resuming re-runs it and skips completed steps.
   resumable?: boolean;
+  // Checked when the change is proposed, before any approval is requested: referenced records exist and are in the expected state.
+  precheck?: (p: Params) => Promise<string | undefined>;
+}
+
+// Required keys come from the action's declared params signature ("{ a, b?, c: { x, y? } }"); optional keys end in "?".
+function missingParams(sig: string, p: any, prefix = ""): string[] {
+  const body = sig.trim().replace(/^\{/, "").replace(/\}$/, "");
+  const parts: string[] = []; let depth = 0, cur = "";
+  for (const ch of body) { if (ch === "{" || ch === "[") depth++; if (ch === "}" || ch === "]") depth--; if (ch === "," && depth === 0) { parts.push(cur); cur = ""; } else cur += ch; }
+  if (cur.trim()) parts.push(cur);
+  const missing: string[] = [];
+  for (const part of parts) {
+    const [rawKey, ...rest] = part.split(":"); const key = rawKey.trim(); const nested = rest.join(":").trim();
+    if (!key || key.endsWith("?") || !/^[a-z_]+$/i.test(key)) continue;
+    const v = p?.[key];
+    if (v === undefined || v === null || v === "" || v === "undefined") missing.push(prefix + key);
+    else if (nested.startsWith("{") && typeof v === "object") missing.push(...missingParams(nested, v, `${prefix}${key}.`));
+  }
+  return missing;
 }
 interface ExecContext { step: (name: string, detail: string, reused: boolean) => void; checkpoint: (name: string) => void }
 
@@ -38,6 +57,15 @@ export const ACTIONS: Record<string, ActionSpec> = {
     identity: (p) => ({ stripe_invoice_id: p.stripe_invoice_id, qbo_invoice_id: p.qbo_invoice_id, legal_name: p.correct_entity?.legal_name }),
     amount: () => undefined,
     resumable: true,
+    precheck: async (p) => {
+      if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(p.correct_entity?.email ?? ""))) return `correct_entity.email "${p.correct_entity?.email}" is not a valid email address`;
+      const inv = await stripe.call(`/invoices/${p.stripe_invoice_id}`).catch(() => undefined);
+      if (!inv) return `Stripe invoice ${p.stripe_invoice_id} was not found; pass the in_... id from get_billing_state`;
+      if (inv.status !== "open") return `Stripe invoice ${p.stripe_invoice_id} is ${inv.status}, not open`;
+      const q = await qbo.get("Invoice", String(p.qbo_invoice_id)).catch(() => undefined);
+      if (!q) return `QuickBooks invoice ${p.qbo_invoice_id} was not found; pass the numeric QuickBooks Id`;
+      return undefined;
+    },
     execute: async (p, key, ctx) => {
       const step = (name: string, detail: string, reused: boolean) => ctx?.step(name, detail, reused);
       const original = await stripe.call(`/invoices/${p.stripe_invoice_id}?expand[]=lines`);
@@ -364,6 +392,8 @@ export async function propose(caseId: string, kind: string, params: Params, just
   const spec = ACTIONS[kind];
   if (params && typeof params.params === "object") params = { ...params, ...params.params };
   if (!spec) return { status: "rejected", error: `unknown action ${kind}`, available: Object.keys(ACTIONS) };
+  const missing = spec.params ? missingParams(spec.params, params) : [];
+  if (missing.length) return { status: "invalid_params", error: `missing required params: ${missing.join(", ")}`, expected: spec.params, guidance: "Nothing was recorded or sent for approval. Re-read the records and propose again with every required field." };
   const idempotencyKey = `peeblo-${hash({ caseId, kind, identity: spec.identity ? spec.identity(params) : params })}`;
   const existing = db.prepare("SELECT * FROM operations WHERE idempotency_key = ?").get(idempotencyKey) as OpRow | undefined;
   if (existing) {
@@ -372,6 +402,10 @@ export async function propose(caseId: string, kind: string, params: Params, just
     if (["uncertain", "submitted", "approved"].includes(existing.status)) return run(existing);
     if (existing.status === "failed") return { status: "failed_previously", operation_id: existing.id, error: existing.error, guidance: "This exact change already failed. Change the approach or parameters instead of repeating it." };
     if (existing.status === "rejected") return { status: "rejected_by_approver", operation_id: existing.id };
+  }
+  if (!existing && spec.precheck) {
+    const problem = await spec.precheck(params);
+    if (problem) return { status: "invalid_params", error: problem, guidance: "Nothing was recorded or sent for approval. Fix the parameters and propose again." };
   }
   const amount = spec.amount?.(params);
   const authority = spec.authority(params);
