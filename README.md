@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/assets/banner.svg" alt="Peeblo: a specialized agent harness for accounts receivable" width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/hitakshiA/peeblo/raw/main/docs/demo.mp4"><b>▶ Demo video (2 min)</b></a> ·
+  <a href="https://peeblo.xyz/demo.mp4"><b>▶ Demo video (2 min)</b></a> ·
   <a href="https://peeblo.xyz/room"><b>Live demo</b></a> ·
   <a href="https://api.peeblo.xyz/api/health">Agent API</a> ·
   <a href="seed/">Seed data</a> ·
@@ -13,7 +13,7 @@
 
 <p align="center"><img src="docs/assets/apps-marquee.svg" alt="Connected apps" width="100%"></p>
 
-[![Watch Peeblo fix a $24,000 billing error (2 min demo)](docs/assets/thumbnail.png)](https://github.com/hitakshiA/peeblo/raw/main/docs/demo.mp4)
+[![Watch Peeblo fix a $24,000 billing error (2 min demo)](docs/assets/thumbnail.png)](https://peeblo.xyz/demo.mp4)
 
 ---
 

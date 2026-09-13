@@ -13,3 +13,4 @@ seed/state/
 *.db
 *.db-*
 frontend/output/
+frontend/public/demo.mp4
