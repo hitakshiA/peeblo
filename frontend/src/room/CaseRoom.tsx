@@ -27,14 +27,16 @@ export default function CaseRoom() {
   useEffect(() => {
     setEvents([]);
     const seen = new Set<number>();
-    const stop = room.stream(id, (e) => { if (seen.has(e.seq)) return; seen.add(e.seq); setEvents((prev) => [...prev, e]); });
+    const params = new URLSearchParams(window.location.search);
+    const stop = (params.get("director") ? (fn: (e: RoomEvent) => void) => room.director(id, fn) : params.get("replay") ? (fn: (e: RoomEvent) => void) => room.replay(id, fn, Number(params.get("speed") ?? 1)) : (fn: (e: RoomEvent) => void) => room.stream(id, fn))((e) => { if (seen.has(e.seq)) return; seen.add(e.seq); setEvents((prev) => [...prev, e]); });
     return stop;
   }, [id]);
   useEffect(() => { room.case(id).then(setDetail).catch(() => {}); }, [id, events.length]);
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }); }, [events.length]);
 
   const view = useMemo(() => derive(events), [events]);
-  const running = detail?.active ?? view.running;
+  const director = new URLSearchParams(window.location.search).has("director");
+  const running = director ? view.running : detail?.active ?? view.running;
 
   const counts = { steps: view.timeline.filter((t) => t.kind === "tool").length, evidence: view.cards.length, changes: view.opEvents.length };
   const reasonRef = useRef<HTMLDivElement>(null);
@@ -46,7 +48,7 @@ export default function CaseRoom() {
         <Link to="/room" className="room-brand"><Mark size={24} /> peeblo</Link>
         <div className="room-title">
           <span className="room-case-id">{id}</span>
-          <h1>{detail?.title ?? "Case"}</h1>
+          <h1>{director ? "Eastbridge: Q3 invoice rejected by AP" : detail?.title ?? "Case"}</h1>
         </div>
         <span className={`pill pill-${statusTone(view.interrupted && !running ? "interrupted" : running ? "submitted" : detail?.status ?? "open")}`}>{running ? "working" : view.interrupted ? "interrupted" : detail?.status ?? "…"}</span>
         <div className="room-controls">
@@ -62,7 +64,7 @@ export default function CaseRoom() {
         <section className="col col-agent">
           <div className="col-head"><h2>Reasoning</h2><span className="col-count">{counts.steps} tool calls</span>{running && <span className="live-dot" />}</div>
           <div className="col-body" ref={reasonRef}>
-            {(view.plan ?? detail?.plan)?.length ? <Plan items={(view.plan ?? detail?.plan)!} /> : null}
+            {(director ? view.plan : view.plan ?? detail?.plan)?.length ? <Plan items={(view.plan ?? detail?.plan)!} /> : null}
             <ol className="timeline">
               <AnimatePresence initial={false}>
                 {view.timeline.map((t) => (
@@ -73,7 +75,7 @@ export default function CaseRoom() {
               </AnimatePresence>
               {running && <li className="tl tl-thought"><span className="caret" /></li>}
             </ol>
-            {detail?.wakeup && <div className="wakeup">Next wake-up {new Date(detail.wakeup.due_at).toLocaleString()} · {detail.wakeup.reason}</div>}
+            {detail?.wakeup && !director && <div className="wakeup">Next wake-up {new Date(detail.wakeup.due_at).toLocaleString()} · {detail.wakeup.reason}</div>}
           </div>
         </section>
 
@@ -93,7 +95,7 @@ export default function CaseRoom() {
 
         <section className="col col-ops">
           <div className="col-head"><h2>Changes and approvals</h2><span className="col-count">{counts.changes}</span></div>
-          <div className="col-body">
+          <div className="col-body col-ops-body">
             <AnimatePresence initial={false}>
               {view.opEvents.map((e) => (
                 <motion.div key={e.seq} layout="position" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}>
@@ -315,13 +317,7 @@ function OpCard({ event }: { event: RoomEvent }) {
   const label = String(d.kind ?? "").split(".")[1]?.replace(/_/g, " ");
   if (event.type === "interrupt.armed") return <div className="op op-warn">⚡ Interrupt armed: the run will stop right after the next accepted write</div>;
   if (event.type === "run.finished") return <div className="op op-danger">⛔ Run interrupted: {d.reason}</div>;
-  if (event.type === "approval.requested") return (
-    <div className="op op-approval">
-      <div className="op-head"><AppLogo app="slack" size={15} /> Approval requested · {d.approver}</div>
-      <div className="op-title">{label} {d.amount != null && <b>{usd(d.amount)}</b>}</div>
-      <p className="small muted">{String(d.justification).slice(0, 260)}</p>
-    </div>
-  );
+  if (event.type === "approval.requested") return <ApprovalCard d={d} label={label} />;
   if (event.type === "approval.decided") return <div className={`op ${d.decision === "approved" ? "op-ok" : "op-danger"}`}><AppLogo app="slack" size={15} /> {d.decision === "approved" ? "Approved in Slack" : "Rejected in Slack"}</div>;
   if (event.type === "operation.step") return <div className={`op op-ok ${d.kind === "stripe.void_invoice" || d.kind === "qbo.void_invoice" ? "op-void" : ""}`}><div className="op-head"><AppLogo app={app} size={15} /> <span className="op-title">{label}</span> <span className="pill pill-ok">done</span></div><div className="small">{d.detail}</div></div>;
   if (event.type === "operation.resuming") return <div className="op op-warn">↻ Resuming the recorded correction: checking what already happened before any write</div>;
@@ -340,3 +336,21 @@ const highlight = (s: string) => {
   const parts = s.split(/(Eastbridge Logistics LLC|Eastbridge Holdings, Inc\.|EIN [0-9-]+|\$[0-9,]+(?:\.\d\d)?|REJECTED|rejected|supersedes[^.]*|INV-\d+)/g);
   return parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : p));
 };
+
+function ApprovalCard({ d, label }: { d: any; label: string }) {
+  const [choice, setChoice] = useState<"approved" | "rejected" | "pending">();
+  const act = (decision: "approved" | "rejected") => { setChoice("pending"); room.decide(d.approval_id, decision).then(() => setChoice(decision)).catch(() => setChoice(decision)); };
+  return (
+    <div className="op op-approval">
+      <div className="op-head"><AppLogo app="slack" size={15} /> Approval requested · {d.approver}</div>
+      <div className="op-title">{label} {d.amount != null && <b>{usd(d.amount)}</b>}</div>
+      <p className="small muted">{String(d.justification).slice(0, 260)}</p>
+      <div className="approval-actions">
+        {!choice || choice === "pending" ? <>
+          <button className="btn approve" disabled={choice === "pending"} onClick={() => act("approved")}>Approve</button>
+          <button className="btn ghost" disabled={choice === "pending"} onClick={() => act("rejected")}>Reject</button>
+        </> : <span className={`pill pill-${choice === "approved" ? "ok" : "danger"}`}>{choice}</span>}
+      </div>
+    </div>
+  );
+}

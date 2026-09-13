@@ -323,3 +323,7 @@ mark { background: none; color: var(--r-ink); box-shadow: inset 0 -0.45em 0 oklc
 .plan-item.is-blocked { color: var(--r-amber); }
 .plan-item.is-blocked .plan-box { border-color: var(--r-amber); background: oklch(0.8 0.12 80 / 0.2); }
 .plan-note { font-style: normal; color: var(--r-faint); }
+
+.approval-actions { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
+.approval-actions .btn { height: 34px; padding: 0 16px; font-size: 13px; }
+.approval-actions .btn.approve { background: var(--r-green, oklch(0.78 0.12 155)); color: oklch(0.16 0.01 155); border-color: transparent; }

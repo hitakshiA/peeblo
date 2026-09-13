@@ -22,9 +22,39 @@ export const room = {
   cases: () => call<CaseSummary[]>("/api/cases"),
   case: (id: string) => call<CaseDetail>(`/api/cases/${id}`),
   assign: (objective: string) => call<CaseSummary>("/api/cases", { method: "POST", body: JSON.stringify({ objective }) }),
+  decide: (approvalId: string, decision: "approved" | "rejected") => call(`/api/approvals/${approvalId}/decide`, { method: "POST", body: JSON.stringify({ decision }) }),
   resume: (id: string) => call(`/api/cases/${id}/resume`, { method: "POST", body: "{}" }),
   interrupt: (id: string, mode: "now" | "after_next_write") => call(`/api/cases/${id}/interrupt`, { method: "POST", body: JSON.stringify({ mode }) }),
   reset: (scenario: string) => call<{ code: number; output: string }>("/api/demo/reset", { method: "POST", body: JSON.stringify({ scenario }) }),
+  // Replay mode (for recordings): streams a finished run's stored events with real gaps compressed to watchable pacing.
+  replay: (id: string, onEvent: (e: RoomEvent) => void, speed = 1) => {
+    let stop = false;
+    call<RoomEvent[]>(`/api/cases/${id}/events`).then(async (evts) => {
+      for (let i = 0; i < evts.length && !stop; i++) {
+        const gap = i ? Date.parse(evts[i].at) - Date.parse(evts[i - 1].at) : 0;
+        const wait = evts[i].type === "thinking" ? 18 : Math.min(Math.max(gap, 120), 1400);
+        await new Promise((r) => setTimeout(r, wait / speed));
+        if (!stop) onEvent(evts[i]);
+      }
+    });
+    return () => { stop = true; };
+  },
+  // Recording mode: the event log is pushed by a driver script (window.__room.pushTo) instead of a timer.
+  director: (id: string, onEvent: (e: RoomEvent) => void) => {
+    let stop = false, next = 0;
+    call<RoomEvent[]>(`/api/cases/${id}/events`).then((evts) => {
+      (window as any).__room = {
+        total: evts.length,
+        pushTo: async (end: number, ms = 0, skip: number[] = []) => {
+          const batch = [];
+          for (; next <= Math.min(end, evts.length - 1); next++) if (!skip.includes(next)) batch.push(evts[next]);
+          const gap = batch.length ? ms / batch.length : 0;
+          for (const e of batch) { if (stop) return; onEvent(e); if (gap) await new Promise((r) => setTimeout(r, gap)); }
+        },
+      };
+    });
+    return () => { stop = true; };
+  },
   stream: (id: string, onEvent: (e: RoomEvent) => void) => {
     const es = new EventSource(`${PEEBLO_API}/api/cases/${id}/stream`);
     const handler = (m: MessageEvent) => onEvent(JSON.parse(m.data));
