@@ -25,9 +25,18 @@ interface ActionSpec {
   precheck?: (p: Params) => Promise<string | undefined>;
 }
 
+// Top-level parameter names declared in an action's params signature, with whether each is optional.
+export function paramKeys(sig: string): { key: string; optional: boolean; hint: string }[] {
+  const body = sig.trim().replace(/^\{/, "").replace(/\}[^}]*$/, "");
+  const parts: string[] = []; let depth = 0, cur = "";
+  for (const ch of body) { if (ch === "{" || ch === "[") depth++; if (ch === "}" || ch === "]") depth--; if (ch === "," && depth === 0) { parts.push(cur); cur = ""; } else cur += ch; }
+  if (cur.trim()) parts.push(cur);
+  return parts.map((part) => { const [rawKey, ...rest] = part.split(":"); const k = rawKey.trim(); return { key: k.replace(/\?$/, ""), optional: k.endsWith("?"), hint: rest.join(":").trim() }; }).filter((x) => /^[a-z_]+$/i.test(x.key));
+}
+
 // Required keys come from the action's declared params signature ("{ a, b?, c: { x, y? } }"); optional keys end in "?".
 function missingParams(sig: string, p: any, prefix = ""): string[] {
-  const body = sig.trim().replace(/^\{/, "").replace(/\}$/, "");
+  const body = sig.trim().replace(/^\{/, "").replace(/\}[^}]*$/, "");
   const parts: string[] = []; let depth = 0, cur = "";
   for (const ch of body) { if (ch === "{" || ch === "[") depth++; if (ch === "}" || ch === "]") depth--; if (ch === "," && depth === 0) { parts.push(cur); cur = ""; } else cur += ch; }
   if (cur.trim()) parts.push(cur);

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { stripe, qbo, salesforce, hubspot, notion, jira, dropbox, slack, env, pdfText } from "./connectors.ts";
 import { cases, evidence, wakeups, lessons, plans, now } from "./store.ts";
 import { emit } from "./bus.ts";
-import { ACTIONS, propose, retry, InterruptedError } from "./executor.ts";
+import { ACTIONS, paramKeys, propose, retry, InterruptedError } from "./executor.ts";
 
 // Reusable capabilities, not case scripts. Reads return compact facts with provider IDs so the model
 // can cite evidence; every write goes through the executor.
@@ -191,7 +191,8 @@ export function buildTools(caseId: string, hooks: { interrupt: (reason: string) 
     ...Object.entries(ACTIONS).map(([kind, spec]) => createTool({
       name: kind.replace(/\./g, "_"),
       description: `${spec.description} Parameters: ${spec.params}. Goes through the executor: authority, approval, idempotency and verification apply.`,
-      inputSchema: z.object({ justification: z.string().describe("Evidence-based reason, citing records") }).passthrough(),
+      // The schema lists every declared parameter so the model's arguments reach the executor (a bare passthrough schema dropped them).
+      inputSchema: z.object({ justification: z.string().describe("Evidence-based reason, citing records"), ...Object.fromEntries(paramKeys(spec.params).map(({ key, optional, hint }) => [key, (optional ? z.any().optional() : z.any()).describe(hint || key)])) }).passthrough(),
       execute: async ({ justification, ...params }: any) => guarded(() => propose(caseId, kind, params, justification)),
     })),
     createTool({

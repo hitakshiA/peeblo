@@ -5,7 +5,7 @@
   <a href="https://peeblo.xyz/room"><b>Live demo</b></a> ·
   <a href="https://api.peeblo.xyz/api/health">Agent API</a> ·
   <a href="seed/">Seed data</a> ·
-  <a href="#reliability">Reliability results</a> ·
+  <a href="docs/system-and-reliability.md"><b>System &amp; reliability brief</b></a> ·
   <a href="docs/eval-results.md">Eval report</a>
 </p>
 
@@ -79,10 +79,12 @@
 | AP rejection sitting in an email | Jira exception updated; team notified in Slack |
 
 - **Approval:** company policy requires approval to void and reissue, so Peeblo requested it with the evidence attached.
-- **Crash test:** we killed the run right after the new Stripe invoice was created. On resume, Peeblo found the invoice it had already made, created **no duplicate**, and finished QuickBooks.
+- **Interruption test:** the harness injected an interruption right after the new Stripe invoice was created. On resume, Peeblo found the invoice it had already made, created **no duplicate**, and finished QuickBooks.
 - **Honest ending:** the case ends `waiting`. The billing error is fixed; the $24,000 is still owed until the customer pays.
 
 ## Reliability
+
+> **Full technical brief:** [docs/system-and-reliability.md](docs/system-and-reliability.md) covers design decisions, guarantees, failure modes, evidence and limits.
 
 ### Results
 
@@ -99,7 +101,7 @@
 **Repeat trial from a clean reset (Sep 13, 22:22 UTC):**
 - Reset the wrong-company scenario, then ran the full agent (investigate, then approval, then a forced interruption, then resume), then re-ran the checks against live Stripe and QuickBooks.
 - Trial 1: **8/8 checks passed.** That covers exactly one replacement, the original void, no duplicate customer, and every write approved and verified.
-- The agent took 15.5 minutes end to end. Trials 2 and 3 are in progress.
+- Trials 2 and 3 **failed (5/8)**: the agent's approved proposal had missing record IDs. The write failed safely and nothing wrong changed, but the correction never completed. Root cause: parameter validation happened after approval, and direct action tools dropped arguments. Both are now fixed. See the brief, section 7.
 
 **How to read these numbers:**
 - **16/16** is checks, not runs. [`npm run eval`](agent/src/eval.ts) reads live Stripe and QuickBooks state after the cases ran, plus invariants over the operation log:
