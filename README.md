@@ -74,6 +74,27 @@ A signed deal turns into an overdue invoice. The reason is scattered: the invoic
 
 The same agent and tools also run the other seeded cases (see Reliability).
 
+## What Peeblo can do
+
+One standing responsibility, many situations. Status reflects this build, tested against the seeded sandbox apps.
+
+| Responsibility (from the product spec) | Status |
+|---|---|
+| Repair incorrect billing identities (void and reissue to the right legal entity) | ✅ demonstrated, including interruption recovery |
+| Investigate "already paid" claims and apply incoming cash, including payments made on behalf of others | ✅ demonstrated |
+| Handle partial and grouped payments; short-pays routed to approval, never written off silently | ✅ demonstrated |
+| Resolve missing purchase orders (hold the invoice, follow up) | ✅ demonstrated |
+| Coordinate disputes and billing defects with Jira; report in Slack | ✅ demonstrated |
+| Track promises to pay and follow-ups with durable wake-ups | ✅ supported (scheduler + wake-ups in every case) |
+| Validate draft invoices against contracts; add PO numbers; finalize | ✅ supported by tools and actions |
+| Prepare credits and credit notes within authority | ✅ supported, approval-gated by amount |
+| Find deals that never became invoices; prepare new customers | ✅ supported (CRM + Stripe tools, create customer/invoice actions) |
+| Detect Stripe ↔ QuickBooks sync failures and duplicates | 🟡 tools read both sides; seeded cases exist, not yet run |
+| Answer billing questions, prepare statements, prioritize collections, daily AR briefing | 🟡 read tools exist (`ar_worklist`, conversations, ledger); templates are logged, not emailed |
+| Customer portals (Coupa, Ariba), bank feeds, usage metering | ⏳ planned connectors (browser agent for portals) |
+
+The seeded world has 50 accounts across the apps, including deliberate lookalikes (Eastbridge vs East Bridge Coffee, Ridgeview school district vs Ridgeview Capital, Northwind Group vs Northwind Traders), superseded documents, expired POs, a duplicate QuickBooks invoice, a Stripe payment missing from the ledger, and a disputed usage charge.
+
 ## Reliability
 
 ![Life of a financial write](docs/reliability.svg)
@@ -93,9 +114,9 @@ _Filled from actual runs; see `agent/src/e2e.ts` and the Lemma traces._
 | Scenario (same agent, no case-specific code) | Expected end state | Result |
 |---|---|---|
 | Eastbridge: wrong bill-to entity, approval, interrupted mid-correction, resume | Stripe original void and one replacement to Logistics; QuickBooks original $0 and one replacement for Logistics; no duplicates; Jira and Slack updated | ✅ **Pass.** The agent chose the correction and requested approval itself. The run was interrupted after the Stripe replacement; on resume the executor skipped completed steps and finished QuickBooks. Verified: Stripe original `void`, one replacement INV-2310 `open` to Eastbridge Logistics LLC $24,000; QuickBooks original $0, INV-2310-R to Eastbridge Logistics, balance $24,000. Case left `waiting` (receivable open) with a follow-up scheduled. |
-| Crescent Dental: "we already paid", payment from a different payer | $12,600 applied to INV-2296 only after matching the remittance | _pending_ |
-| Northwind: grouped wire with $450 short-pay | Two invoices paid, $8,550 applied to INV-2242, $450 credit sent for approval (not written off) | _pending_ |
-| Meridian: renewal draft without PO | Invoice not finalized; follow-up scheduled for PO date | _pending_ |
+| Crescent Dental: "we already paid", payment from a different payer | $12,600 applied to INV-2296 only after matching the remittance | ✅ **Pass.** Found the $12,600 ACH parked under CDG Partners LLC, proved the payer relationship from the remittance advice and the order form clause, allocated it (verified: INV-2296 balance $0, deposit preserved across 2 payments, $0 unapplied), confirmed to the customer and the team. Status `resolved`. |
+| Northwind: grouped wire from the parent for three affiliates, $450 short-pay | Affiliate invoices paid, $8,550 applied to INV-2242, $450 credit sent for approval (not written off) | ✅ **Pass, after an honest escalation.** First run: applied the parent's own $8,550, sent the $450 credit for approval (training priced $1,350 in the Enterprise Agreement), and hit an executor limitation (allocation refused a partly-applied payment). Instead of forcing a write it **filed Jira SCRUM-16 describing the gap** and waited. After the fix, the resumed run retried the recorded operation: INV-2240 $18,000 → $0, INV-2241 $15,000 → $0, $0 unapplied, SCRUM-16 updated. Status `waiting` on the $450 approval. |
+| Meridian: renewal draft without PO, asked "can it go out today?" | Invoice not finalized; follow-up scheduled for PO date | ✅ **Pass.** Declined to send: contract and policy require a PO, the only PO on file is last year's and expired. Informed the team and scheduled a wake-up for the date procurement promised. Status `waiting`. |
 
 **Arga (service twins).** `agent/src/arga-test.ts` provisions a Stripe twin, seeds a parent/subsidiary pair with an issued invoice addressed to the wrong one, then runs the executor's approved void + reissue with a **fault injected: the provider accepts the create but the response is lost**. Pass criteria are read back from the twin: original void, exactly one replacement, addressed to the subsidiary.
 
