@@ -16,6 +16,7 @@ export default function RoomHome() {
   const [online, setOnline] = useState<boolean | null>(null);
   const [launching, setLaunching] = useState<{ scene: Scene | null; objective: string; step: number } | null>(null);
   const [custom, setCustom] = useState("");
+  const [open, setOpen] = useState<Scene | null>(() => SCENES.find((x) => x.id === new URLSearchParams(window.location.search).get("case")) ?? null);
   const [filter, setFilter] = useState<"all" | "working" | "waiting" | "resolved">("all");
   const nav = useNavigate();
 
@@ -72,7 +73,7 @@ export default function RoomHome() {
       </section>
 
       <section className="deck">
-        {SCENES.map((s, i) => <CaseFile key={s.id} scene={s} tilt={TILT[i % TILT.length]} delay={0.1 + i * 0.07} onLaunch={() => launch(s, s.objective)} />)}
+        {SCENES.map((s, i) => <CaseFile key={s.id} scene={s} tilt={TILT[i % TILT.length]} delay={0.1 + i * 0.07} onLaunch={() => setOpen(s)} />)}
         <motion.div className="file file-custom" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.55 }}>
           <div><span className="micro">Your own case</span><h3>Write it the way a colleague would.</h3></div>
           <textarea value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="e.g. Keystone Apparel says they paid by card last week but QuickBooks still shows them overdue." />
@@ -112,6 +113,7 @@ export default function RoomHome() {
         {!shown.length && <p className="muted small">Nothing here yet.</p>}
       </section>
 
+      <AnimatePresence>{open && !launching && <SceneBrief scene={open} onClose={() => setOpen(null)} onStart={() => launch(open, open.objective)} />}</AnimatePresence>
       <AnimatePresence>{launching && <LaunchSequence launching={launching} />}</AnimatePresence>
     </div>
   );
@@ -122,6 +124,7 @@ function CaseFile({ scene, tilt, delay, onLaunch }: { scene: Scene; tilt: number
   const [hover, setHover] = useState(false);
   return (
     <motion.button
+      layoutId={`file-${scene.id}`}
       className="file"
       onClick={onLaunch}
       onHoverStart={() => setHover(true)}
@@ -145,7 +148,7 @@ function CaseFile({ scene, tilt, delay, onLaunch }: { scene: Scene; tilt: number
       <span className="micro">Peeblo has to work out</span>
       <ul>{scene.figureOut.map((f) => <li key={f}>{f}</li>)}</ul>
       <Constellation apps={scene.apps} active={hover} />
-      <span className="file-cta">Launch live run <span aria-hidden>→</span></span>
+      <span className="file-cta">Read the case <span aria-hidden>→</span></span>
     </motion.button>
   );
 }
@@ -166,6 +169,70 @@ function Constellation({ apps, active }: { apps: string[]; active: boolean }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// The full scenario, expanded out of its case file: situation, what each app holds, traps, and what "correct" means.
+function SceneBrief({ scene, onClose, onStart }: { scene: Scene; onClose: () => void; onStart: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+  const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } };
+  return (
+    <motion.div className="brief-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.article layoutId={`file-${scene.id}`} className="brief" onClick={(e) => e.stopPropagation()} transition={spring} role="dialog" aria-modal="true" aria-label={scene.title}>
+        <motion.div className="brief-inner" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.05, delayChildren: 0.15 } } }}>
+          <motion.header variants={item} className="brief-head">
+            <span className="micro">File {scene.index} · {scene.customer}</span>
+            <button className="brief-close" onClick={onClose} aria-label="Close">Esc</button>
+          </motion.header>
+          <motion.div variants={item} className="brief-title">
+            <h2>{scene.title}</h2>
+            <span className="file-amount">{scene.amount}</span>
+          </motion.div>
+          <div className="brief-grid">
+            <div className="brief-left">
+              <motion.section variants={item}>
+                <span className="micro">The situation</span>
+                <p className="brief-story">{scene.story}</p>
+              </motion.section>
+              <motion.section variants={item}>
+                <span className="micro">What Peeblo is told</span>
+                <blockquote className="brief-quote">“{scene.objective}”<cite>{scene.from}</cite></blockquote>
+                <p className="small muted">That message is the only input. No hints, no script.</p>
+              </motion.section>
+              <motion.section variants={item}>
+                <span className="micro">Where it can go wrong</span>
+                <ul className="brief-list trap">{scene.traps.map((t) => <li key={t}>{t}</li>)}</ul>
+              </motion.section>
+              <motion.section variants={item}>
+                <span className="micro">A correct outcome</span>
+                <ul className="brief-list ok">{scene.success.map((t) => <li key={t}>{t}</li>)}</ul>
+              </motion.section>
+            </div>
+            <motion.aside variants={item} className="brief-apps">
+              <span className="micro">Apps Peeblo will use</span>
+              <motion.ol initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.06, delayChildren: 0.3 } } }}>
+                {scene.appNotes.map(({ app, note }) => (
+                  <motion.li key={app} variants={{ hidden: { opacity: 0, x: 12 }, show: { opacity: 1, x: 0 } }}>
+                    <span className="brief-logo"><AppLogo app={app} size={18} /></span>
+                    <div><b>{APPS.find((a) => a.id === app)?.name}</b><p>{note}</p></div>
+                  </motion.li>
+                ))}
+              </motion.ol>
+              <div className="brief-authority"><span className="pill pill-amber">{scene.authority}</span></div>
+            </motion.aside>
+          </div>
+          <motion.footer variants={item} className="brief-foot">
+            <p className="small muted">Starts a real run on the sandbox apps. You can watch every read, approval and verified change.</p>
+            <button className="btn" onClick={onStart}>Start this case <span aria-hidden>→</span></button>
+          </motion.footer>
+        </motion.div>
+      </motion.article>
+    </motion.div>
   );
 }
 

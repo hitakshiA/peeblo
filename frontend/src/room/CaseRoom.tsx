@@ -36,15 +36,19 @@ export default function CaseRoom() {
   const view = useMemo(() => derive(events), [events]);
   const running = detail?.active ?? view.running;
 
+  const counts = { steps: view.timeline.filter((t) => t.kind === "tool").length, evidence: view.cards.length, changes: view.opEvents.length };
+  const reasonRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { reasonRef.current?.scrollTo({ top: reasonRef.current.scrollHeight, behavior: "smooth" }); }, [view.timeline.length]);
+
   return (
-    <div className="room">
+    <div className="room room-case">
       <header className="room-top">
         <Link to="/room" className="room-brand"><Mark size={24} /> peeblo</Link>
         <div className="room-title">
           <span className="room-case-id">{id}</span>
           <h1>{detail?.title ?? "Case"}</h1>
         </div>
-        <span className={`pill pill-${statusTone(view.interrupted && !running ? "interrupted" : detail?.status ?? "open")}`}>{running ? "working" : view.interrupted ? "interrupted" : detail?.status ?? "…"}</span>
+        <span className={`pill pill-${statusTone(view.interrupted && !running ? "interrupted" : running ? "submitted" : detail?.status ?? "open")}`}>{running ? "working" : view.interrupted ? "interrupted" : detail?.status ?? "…"}</span>
         <div className="room-controls">
           {running && <button className="btn ghost" onClick={() => room.interrupt(id, "after_next_write")}>Interrupt after next write</button>}
           {running && <button className="btn danger" onClick={() => room.interrupt(id, "now")}>Interrupt now</button>}
@@ -56,53 +60,97 @@ export default function CaseRoom() {
 
       <main className="room-grid">
         <section className="col col-agent">
-          <h2>Peeblo is thinking</h2>
-          <AnimatePresence mode="popLayout">
-            {view.currentStep && running && (
-              <motion.div key={view.currentStep.id} className="now" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <span className="spinner" />
-                <div><div className="now-label">{TOOL_LABEL[view.currentStep.tool] ?? view.currentStep.tool}</div><div className="now-apps">{view.currentStep.apps.map((a: string) => <AppLogo key={a} app={a} size={14} />)}</div></div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div className="thinking">
-            {view.thoughts.slice(-6).map((t, i, arr) => (
-              <motion.p key={t.seq} initial={{ opacity: 0 }} animate={{ opacity: i === arr.length - 1 ? 1 : 0.45 }} transition={{ duration: 0.4 }}>{t.text}</motion.p>
-            ))}
-            {running && <span className="caret" />}
+          <div className="col-head"><h2>Reasoning</h2><span className="col-count">{counts.steps} tool calls</span>{running && <span className="live-dot" />}</div>
+          <div className="col-body" ref={reasonRef}>
+            <ol className="timeline">
+              <AnimatePresence initial={false}>
+                {view.timeline.map((t) => (
+                  <motion.li key={t.key} layout="position" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 28 }} className={`tl tl-${t.kind} ${t.kind === "tool" ? `is-${t.status}` : ""}`}>
+                    {t.kind === "thought" ? <p>{t.text}</p> : t.kind === "run" ? <span className="run-divider">Resumed run</span> : <ToolStep t={t} />}
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+              {running && <li className="tl tl-thought"><span className="caret" /></li>}
+            </ol>
+            {detail?.wakeup && <div className="wakeup">Next wake-up {new Date(detail.wakeup.due_at).toLocaleString()} · {detail.wakeup.reason}</div>}
           </div>
-          {detail?.wakeup && <div className="wakeup">⏰ Follow-up {new Date(detail.wakeup.due_at).toLocaleString()} · {detail.wakeup.reason}</div>}
         </section>
 
-        <section className="col col-feed" ref={feedRef}>
-          <h2>Evidence across systems</h2>
-          <AnimatePresence initial={false}>
-            {view.cards.map((c) => (
-              <motion.div key={c.seq} layout initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 26 }}>
-                <EvidenceCard event={c} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
+        <section className="col col-feed">
+          <div className="col-head"><h2>Evidence across systems</h2><span className="col-count">{counts.evidence} records</span></div>
+          <div className="col-body" ref={feedRef}>
+            <AnimatePresence initial={false}>
+              {view.cards.map((c) => (
+                <motion.div key={c.seq} layout="position" initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 260, damping: 26 }}>
+                  <EvidenceCard event={c} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {!view.cards.length && <p className="empty">Evidence appears here as Peeblo reads each system.</p>}
+          </div>
         </section>
 
         <section className="col col-ops">
-          <h2>Changes and approvals</h2>
-          <AnimatePresence initial={false}>
-            {view.opEvents.map((e) => (
-              <motion.div key={e.seq} layout initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}>
-                <OpCard event={e} />
+          <div className="col-head"><h2>Changes and approvals</h2><span className="col-count">{counts.changes}</span></div>
+          <div className="col-body">
+            <AnimatePresence initial={false}>
+              {view.opEvents.map((e) => (
+                <motion.div key={e.seq} layout="position" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}>
+                  <OpCard event={e} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {!view.opEvents.length && <p className="empty">Nothing changed yet. Every write shows here with its verified result.</p>}
+            {view.outcome && (
+              <motion.div className="outcome" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
+                <div className="outcome-head"><span className={`pill pill-${statusTone(view.outcome.status)}`}>{view.outcome.status}</span> Outcome</div>
+                <p>{view.outcome.summary}</p>
+                <p className="muted"><b>Next:</b> {view.outcome.next_action}</p>
               </motion.div>
-            ))}
-          </AnimatePresence>
-          {view.outcome && (
-            <motion.div className="outcome" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
-              <div className="outcome-head"><span className={`pill pill-${statusTone(view.outcome.status)}`}>{view.outcome.status}</span> Outcome</div>
-              <p>{view.outcome.summary}</p>
-              <p className="muted"><b>Next:</b> {view.outcome.next_action}</p>
-            </motion.div>
-          )}
+            )}
+          </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+const ACTION_VERB: Record<string, string> = {
+  find_customer: "Search customers", get_billing_state: "Read billing and ledger", find_invoice: "Look up invoice", ar_worklist: "Scan receivables", get_crm_context: "Read CRM account", get_conversations: "Read conversations",
+  read_policy: "Read policy", search_documents: "Search documents", read_document: "Open document", search_jira: "Search Jira", read_slack: "Read team channel", record_evidence: "Record evidence",
+  propose_action: "Propose change", retry_operation: "Resume operation", schedule_follow_up: "Schedule wake-up", propose_lesson: "Propose lesson", finish_run: "Report outcome",
+};
+const argSummary = (tool: string, input: any): string => {
+  if (!input) return "";
+  if (input.query) return `“${input.query}”`;
+  if (input.invoice_ref) return input.invoice_ref;
+  if (input.title) return input.title;
+  if (input.path) return String(input.path).split("/").pop()!;
+  if (input.text) return `“${input.text}”`;
+  if (input.action) return String(input.action).replace(/[._]/g, " ");
+  if (input.fact) return input.fact;
+  if (input.due_at) return `${String(input.due_at).slice(0, 16).replace("T", " ")} · ${input.reason ?? ""}`;
+  if (input.status && tool === "finish_run") return input.status;
+  if (input.operation_id) return input.operation_id;
+  const ids = Object.entries(input).filter(([k]) => /_id$/.test(k)).map(([k, v]) => `${k.replace(/_id$/, "").replace(/_/g, " ")} ${v}`);
+  return ids.join(" · ");
+};
+
+function ToolStep({ t }: { t: any }) {
+  const direct = /^(stripe|qbo|hubspot|jira|slack|customer|billing)_/.test(t.tool);
+  const verb = ACTION_VERB[t.tool] ?? (direct ? t.tool.replace(/^(\w+?)_/, "").replace(/_/g, " ") : t.tool.replace(/_/g, " "));
+  const secs = t.endedAt ? Math.max(0.1, (Date.parse(t.endedAt) - Date.parse(t.startedAt)) / 1000) : null;
+  return (
+    <div className="step">
+      <span className="step-icon">
+        {t.apps.filter((a: string) => a !== "peeblo").slice(0, 3).map((a: string) => <AppLogo key={a} app={a} size={15} />)}
+        {t.apps.every((a: string) => a === "peeblo") && <AppLogo app="peeblo" size={15} />}
+      </span>
+      <div className="step-main">
+        <div className="step-line"><b>{verb}</b>{t.status === "running" ? <span className="spinner" /> : <span className={`step-status ${t.status}`}>{t.status === "error" ? "error" : `${secs?.toFixed(1)}s`}</span>}</div>
+        {t.arg && <div className="step-arg">{t.arg}</div>}
+        {t.status === "error" && t.error && <div className="step-err">{t.error}</div>}
+      </div>
     </div>
   );
 }
@@ -123,38 +171,46 @@ function AppRail({ used, active }: { used: Record<string, number>; active: Set<s
 function derive(events: RoomEvent[]) {
   const appsUsed: Record<string, number> = {};
   const started = new Map<string, any>();
-  const thoughts: { seq: number; text: string }[] = [];
+  const timeline: any[] = [];
   const cards: RoomEvent[] = [];
   const opEvents: RoomEvent[] = [];
   let buf = "", bufSeq = 0, running = false, interrupted = false, outcome: any;
+  const flush = (seq: number, text?: string) => {
+    const t = (text ?? buf).replace(/\s+/g, " ").trim();
+    if (t) timeline.push({ kind: "thought", key: `th-${seq}`, text: t.length > 600 ? `${t.slice(0, 600)}…` : t });
+    buf = "";
+  };
   for (const e of events) {
-    if (e.type === "run.started") { running = true; interrupted = false; outcome = undefined; }
+    if (e.type === "run.started") { running = true; interrupted = false; outcome = undefined; timeline.push({ kind: "run", key: `run-${e.seq}` }); }
     if (e.type === "thinking") { buf += e.data.text; bufSeq = e.seq; }
-    if (e.type === "message" || e.type === "tool.started") {
-      const text = (e.type === "message" ? e.data.text : buf).replace(/\s+/g, " ").trim();
-      if (text) thoughts.push({ seq: e.type === "message" ? e.seq : bufSeq, text: text.length > 420 ? `${text.slice(0, 420)}…` : text });
-      buf = "";
+    if (e.type === "message") flush(e.seq, e.data.text);
+    if (e.type === "tool.started") {
+      flush(bufSeq || e.seq);
+      const item = { kind: "tool", key: `tool-${e.data.id}`, id: e.data.id, tool: e.data.tool, apps: e.data.apps, arg: argSummary(e.data.tool, e.data.input), status: "running", startedAt: e.at };
+      started.set(e.data.id, item);
+      timeline.push(item);
     }
-    if (e.type === "tool.started") { started.set(e.data.id, e.data); }
     if (e.type === "tool.finished") {
+      const item = started.get(e.data.id);
+      const out = JSON.stringify(e.data.output ?? "");
+      const unknownTool = /NoSuchTool|unavailable tool/i.test(out);
+      if (item) { item.status = e.data.error ? "error" : "done"; item.endedAt = e.at; item.error = e.data.error ? String(e.data.output?.error ?? "").slice(0, 220) : undefined; if (unknownTool) item.status = "skipped"; }
       started.delete(e.data.id);
       for (const a of e.data.apps) appsUsed[a] = (appsUsed[a] ?? 0) + 1;
       const isAction = e.data.tool === "propose_action" || /^(stripe|qbo|hubspot|jira|slack|customer|billing)_/.test(e.data.tool);
-      const unknownTool = /NoSuchTool|unavailable tool/i.test(JSON.stringify(e.data.output ?? ""));
       if (!isAction && !unknownTool && !["retry_operation", "finish_run", "propose_lesson"].includes(e.data.tool)) cards.push(e);
       if (e.data.tool === "finish_run") outcome = e.data.input;
     }
     if (["operation.submitted", "operation.verified"].includes(e.type)) {
-      // One row per operation, showing its latest state.
       const at = opEvents.findIndex((x) => ["operation.submitted", "operation.verified"].includes(x.type) && x.data.operation_id === e.data.operation_id);
       if (at >= 0) opEvents.splice(at, 1);
       opEvents.push(e);
     }
     if (["operation.reconciled", "operation.step", "operation.resuming", "approval.requested", "approval.decided", "interrupt.armed"].includes(e.type)) opEvents.push(e);
-    if (e.type === "run.finished") { running = false; interrupted = e.data.status === "interrupted"; if (interrupted) opEvents.push(e); if (e.data.case && !outcome) outcome = e.data.case; }
+    if (e.type === "run.finished") { flush(e.seq); running = false; interrupted = e.data.status === "interrupted"; if (interrupted) opEvents.push(e); if (e.data.case && !outcome) outcome = e.data.case; for (const it of started.values()) it.status = "skipped"; started.clear(); }
   }
   const current = [...started.values()].pop();
-  return { appsUsed, activeApps: new Set<string>(current?.apps ?? []), currentStep: current, thoughts, cards, opEvents, running, interrupted, outcome };
+  return { appsUsed, activeApps: new Set<string>(current?.apps ?? []), timeline: timeline.filter((t) => t.kind !== "run" || timeline.indexOf(t) > 0), cards, opEvents, running, interrupted, outcome };
 }
 
 function EvidenceCard({ event }: { event: RoomEvent }) {

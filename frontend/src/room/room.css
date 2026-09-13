@@ -232,3 +232,77 @@ mark { background: none; color: var(--r-ink); box-shadow: inset 0 -0.45em 0 oklc
   .file, .case-card, .file-cta span { transition: none; }
   .launch li.now .launch-dot, .pill-info::before, .rail-app.is-active .rail-logo { animation: none; }
 }
+
+/* ---------------- scene brief ---------------- */
+.brief-backdrop { position: fixed; inset: 0; z-index: 40; background: oklch(0.1 0.005 75 / 0.78); backdrop-filter: blur(8px); display: grid; place-items: center; padding: 28px; }
+.brief { width: min(1080px, 100%); max-height: calc(100vh - 56px); overflow-y: auto; background: var(--r-receipt); border: 1px solid var(--r-rule); border-radius: 8px; box-shadow: 0 50px 100px -40px oklch(0 0 0 / 0.9); color: var(--r-ink); scrollbar-width: thin; scrollbar-color: var(--r-rule) transparent; }
+.brief-inner { padding: 30px 36px 28px; display: flex; flex-direction: column; gap: 22px; }
+.brief-head { display: flex; justify-content: space-between; align-items: center; }
+.brief-close { background: none; border: 1px solid var(--r-rule); color: var(--r-muted); border-radius: 5px; padding: 4px 9px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.brief-title { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; border-bottom: 1px dashed var(--r-rule); padding-bottom: 20px; }
+.brief-title h2 { margin: 0; font-family: Geist, sans-serif; font-size: clamp(26px, 3vw, 38px); font-weight: 450; letter-spacing: -0.04em; text-transform: none; color: var(--r-ink); line-height: 1.1; }
+.brief-title .file-amount { font-size: 16px; }
+.brief-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; }
+.brief-left { display: flex; flex-direction: column; gap: 22px; }
+.brief-left section, .brief-apps { display: flex; flex-direction: column; gap: 10px; }
+.brief-story { margin: 0; font-size: 15.5px; line-height: 1.65; }
+.brief-quote { margin: 0; padding-left: 14px; border-left: 1px solid var(--r-green); font-size: 14.5px; line-height: 1.55; }
+.brief-quote cite { display: block; margin-top: 8px; font-style: normal; font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--r-faint); }
+.brief-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.brief-list li { position: relative; padding-left: 18px; font-size: 13.5px; line-height: 1.5; color: var(--r-muted); }
+.brief-list li::before { content: ""; position: absolute; left: 0; top: 7px; width: 7px; height: 7px; border-radius: 50%; }
+.brief-list.trap li::before { background: var(--r-amber); }
+.brief-list.ok li::before { background: var(--r-green); }
+.brief-apps { border-left: 1px solid var(--r-rule-soft); padding-left: 32px; }
+.brief-apps ol { margin: 0; padding: 0; list-style: none; display: grid; }
+.brief-apps li { display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--r-rule-soft); }
+.brief-apps li:first-child { border-top: 0; }
+.brief-logo { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--r-bg); border: 1px solid var(--r-rule-soft); }
+.brief-apps b { font-size: 13.5px; font-weight: 500; }
+.brief-apps p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--r-muted); }
+.brief-authority { padding-top: 12px; border-top: 1px dashed var(--r-rule); }
+.brief-authority .pill { white-space: normal; text-transform: none; letter-spacing: .02em; font-size: 12px; }
+.brief-foot { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--r-rule-soft); padding-top: 20px; }
+@media (max-width: 860px) { .brief-grid { grid-template-columns: 1fr; } .brief-apps { border-left: 0; padding-left: 0; } .file-custom { grid-template-columns: 1fr; } }
+
+/* ---------------- case room: fixed viewport, sticky column heads, reasoning timeline ---------------- */
+.room-case { height: 100vh; overflow: hidden; }
+.room-case .room-grid { flex: 1; min-height: 0; height: auto; }
+.room-case .col { max-height: none; min-height: 0; overflow: hidden; padding: 0; gap: 0; }
+.col-head { flex: none; display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 26px; border-bottom: 1px solid var(--r-rule-soft); background: linear-gradient(180deg, oklch(0.15 0.006 75), oklch(0.135 0.006 75)); position: relative; z-index: 2; }
+.room-case .col:first-child .col-head { padding-left: 0; }
+.room-case .col:last-child .col-head { padding-right: 0; }
+.col-head h2 { margin: 0; font-family: Geist, sans-serif; font-size: 13px; letter-spacing: -0.01em; text-transform: none; color: var(--r-ink); font-weight: 550; }
+.col-count { font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--r-faint); }
+.live-dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--r-blue); box-shadow: 0 0 0 0 oklch(0.76 0.09 240 / .6); animation: ping 1.6s ease-out infinite; }
+@keyframes ping { 70% { box-shadow: 0 0 0 8px oklch(0.76 0.09 240 / 0); } 100% { box-shadow: 0 0 0 0 oklch(0.76 0.09 240 / 0); } }
+.col-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 26px 40px; display: flex; flex-direction: column; gap: 14px; scrollbar-width: thin; scrollbar-color: var(--r-rule) transparent; mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 24px), transparent 100%); }
+.room-case .col:first-child .col-body { padding-left: 0; }
+.room-case .col:last-child .col-body { padding-right: 0; }
+.empty { margin: 8px 0; font-size: 13px; color: var(--r-faint); }
+
+.timeline { list-style: none; margin: 0; padding: 0 0 0 2px; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 15px; top: 6px; bottom: 6px; width: 1px; background: linear-gradient(180deg, var(--r-rule), var(--r-rule-soft)); }
+.tl { position: relative; padding-left: 40px; }
+.tl-thought { padding-top: 6px; padding-bottom: 12px; }
+.tl-thought::before { content: ""; position: absolute; left: 12px; top: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--r-bg); border: 1px solid var(--r-faint); }
+.tl-thought p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--r-muted); }
+.tl-thought:last-of-type p { color: var(--r-ink); }
+.tl-run { padding: 10px 0 12px 40px; }
+.run-divider { font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--r-amber); }
+.tl-tool { padding-bottom: 10px; }
+.step { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; margin-left: -40px; padding: 10px 12px 10px 4px; border-radius: 8px; background: oklch(0.18 0.008 75); border: 1px solid var(--r-rule-soft); transition: border-color .4s, background .4s; }
+.tl-tool.is-running .step { border-color: oklch(0.76 0.09 240 / 0.5); background: oklch(0.19 0.012 240 / 0.5); box-shadow: 0 0 24px -10px oklch(0.76 0.09 240 / 0.6); }
+.tl-tool.is-error .step { border-color: oklch(0.72 0.15 30 / 0.45); }
+.tl-tool.is-skipped .step { opacity: .5; }
+.step-icon { display: flex; align-items: center; justify-content: center; gap: 2px; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 9px; background: var(--r-bg); border: 1px solid var(--r-rule); position: relative; z-index: 1; }
+.step-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 1px; }
+.step-line { display: flex; align-items: center; gap: 10px; }
+.step-line b { font-size: 13px; font-weight: 550; letter-spacing: -0.01em; text-transform: capitalize; }
+.step-status { margin-left: auto; font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; color: var(--r-faint); }
+.step-status.error { color: var(--r-red); text-transform: uppercase; letter-spacing: .08em; }
+.step-line .spinner { margin-left: auto; }
+.step-arg { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; color: var(--r-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-err { font-size: 12px; color: var(--r-red); line-height: 1.45; }
+.brief-foot { position: sticky; bottom: -28px; background: linear-gradient(180deg, transparent, var(--r-receipt) 30%); padding-bottom: 6px; }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
