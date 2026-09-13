@@ -1,56 +1,198 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { motion } from "motion/react";
-import { room, type CaseSummary } from "./api";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import Mark from "../components/marketing/PeebloMark";
+import { room, PEEBLO_API, type CaseSummary } from "./api";
 import { AppLogo, APPS } from "./AppLogo";
+import { SCENES, type Scene } from "./scenes";
 import "./room.css";
 
-// Peeblo's portfolio: every case it owns, what it is waiting on, and a way to hand it new work.
+// Judge-facing launcher: pick a case file, Peeblo works it live. Current cases below.
+const TILT = [-1.1, 0.7, -0.4, 0.9, -0.8, 0.5];
+const spring = { type: "spring", stiffness: 260, damping: 24 } as const;
+
 export default function RoomHome() {
   const [list, setList] = useState<CaseSummary[]>([]);
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState("");
+  const [online, setOnline] = useState<boolean | null>(null);
+  const [launching, setLaunching] = useState<{ scene: Scene | null; objective: string; step: number } | null>(null);
+  const [custom, setCustom] = useState("");
+  const [filter, setFilter] = useState<"all" | "working" | "waiting" | "resolved">("all");
   const nav = useNavigate();
-  const load = () => room.cases().then(setList).catch(() => {});
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
 
-  const assign = async () => {
-    if (!text.trim()) return;
-    setBusy("assign");
-    const c = await room.assign(text.trim()).finally(() => setBusy(""));
-    nav(`/room/${c.id}`);
+  const load = () => room.cases().then(setList).catch(() => {});
+  useEffect(() => {
+    load();
+    fetch(`${PEEBLO_API}/api/health`).then((r) => setOnline(r.ok)).catch(() => setOnline(false));
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, []);
+
+  const launch = async (scene: Scene | null, objective: string) => {
+    if (!objective.trim() || launching) return;
+    setLaunching({ scene, objective, step: 0 });
+    const tick = (step: number) => setLaunching((l) => (l ? { ...l, step } : l));
+    try {
+      await new Promise((r) => setTimeout(r, 650));
+      tick(1);
+      const c = await room.assign(objective.trim());
+      tick(2);
+      await new Promise((r) => setTimeout(r, 900));
+      tick(3);
+      await new Promise((r) => setTimeout(r, 500));
+      nav(`/room/${c.id}`);
+    } catch {
+      setLaunching(null);
+    }
   };
 
+  const shown = useMemo(() => list.filter((c) => filter === "all" || (filter === "working" ? c.active : !c.active && c.status === filter)), [list, filter]);
+  const counts = useMemo(() => ({ working: list.filter((c) => c.active).length, waiting: list.filter((c) => !c.active && c.status === "waiting").length, resolved: list.filter((c) => c.status === "resolved").length }), [list]);
+
   return (
-    <div className="room">
+    <div className="room room-home">
       <header className="room-top">
-        <Link to="/room" className="room-brand"><AppLogo app="peeblo" size={22} /> Peeblo</Link>
-        <div className="room-title"><span className="room-case-id">Accounts receivable teammate</span></div>
-        <div className="room-controls">
-          <button className="btn ghost" disabled={!!busy} onClick={async () => { setBusy("reset"); await room.reset("eastbridge").finally(() => setBusy("")); load(); }}>{busy === "reset" ? "Resetting sandbox…" : "Reset Eastbridge sandbox"}</button>
-        </div>
+        <Link to="/room" className="room-brand"><Mark size={26} /> peeblo</Link>
+        <div className="room-title" />
+        <span className={`pill ${online ? "pill-ok" : online === false ? "pill-danger" : ""}`}>{online ? "agent online" : online === false ? "agent offline" : "connecting"}</span>
+        <a className="btn ghost" href="https://github.com/hitakshiA/peeblo" target="_blank" rel="noreferrer">How it works</a>
       </header>
-      <nav className="rail">{APPS.map((a) => <div key={a.id} className="rail-app is-used" style={{ ["--brand" as any]: a.color }}><div className="rail-logo"><AppLogo app={a.id} size={22} /></div><div className="rail-meta"><span>{a.name}</span><small>{a.role}</small></div></div>)}</nav>
-      <div className="home">
-        <span className="micro">Standing responsibility · Miny Labs, Inc. · US receivables</span>
-        <h1>Owns receivables <em>until every case</em> reaches a verified outcome.</h1>
-        <p className="muted">Detect missing or inaccurate invoices, investigate overdue balances, manage payment promises, reconcile received payments, and escalate anything outside policy.</p>
-        <div className="assign">
-          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Hand Peeblo work, e.g. “Crescent Dental says they already paid INV-2296. Can you check?”" />
-          <button className="btn" onClick={assign} disabled={busy === "assign"}>{busy === "assign" ? "Assigning…" : "Assign"}</button>
+
+      <section className="deck-intro">
+        <motion.h1 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.2, 0.8, 0.2, 1] }}>
+          Pick a case. Watch Peeblo work it live.
+        </motion.h1>
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25, duration: 0.6 }}>
+          Each file is just a message from a colleague. Peeblo investigates across real sandbox apps, checks policy, asks for approval when it needs to, and verifies every change.
+        </motion.p>
+        <motion.div className="deck-apps" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.05, delayChildren: 0.35 } } }}>
+          {APPS.map((a) => (
+            <motion.span key={a.id} variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }} title={`${a.name}: ${a.role}`}><AppLogo app={a.id} size={20} /></motion.span>
+          ))}
+        </motion.div>
+      </section>
+
+      <section className="deck">
+        {SCENES.map((s, i) => <CaseFile key={s.id} scene={s} tilt={TILT[i % TILT.length]} delay={0.1 + i * 0.07} onLaunch={() => launch(s, s.objective)} />)}
+        <motion.div className="file file-custom" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: 0.55 }}>
+          <div><span className="micro">Your own case</span><h3>Write it the way a colleague would.</h3></div>
+          <textarea value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="e.g. Keystone Apparel says they paid by card last week but QuickBooks still shows them overdue." />
+          <button className="btn" disabled={!custom.trim()} onClick={() => launch(null, custom)}>Launch live run</button>
+        </motion.div>
+      </section>
+
+      <section className="current">
+        <div className="current-head">
+          <h2 className="micro">Cases Peeblo owns</h2>
+          <div className="tabs">
+            {(["all", "working", "waiting", "resolved"] as const).map((f) => (
+              <button key={f} className={`tab ${filter === f ? "is-on" : ""}`} onClick={() => setFilter(f)}>
+                {f}{f !== "all" && <span>{counts[f]}</span>}
+                {filter === f && <motion.i layoutId="tab-underline" className="tab-line" transition={spring} />}
+              </button>
+            ))}
+          </div>
         </div>
-        {list.map((c, i) => (
-          <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-            <Link to={`/room/${c.id}`} className="case-row">
-              <span className={`pill pill-${c.active ? "info" : ({ resolved: "ok", waiting: "amber", escalated: "danger" } as any)[c.status] ?? "muted"}`}>{c.active ? "working" : c.status}</span>
-              <div><div style={{ fontWeight: 600, color: "var(--color-ink-strong)" }}>{c.title}</div><div className="small muted">{c.wakeup ? `⏰ ${new Date(c.wakeup.due_at).toLocaleString()} · ${c.wakeup.reason}` : c.next_action ?? c.objective}</div></div>
-              <div className="case-apps">{c.apps.filter((a) => a !== "peeblo").map((a) => <AppLogo key={a} app={a} size={15} />)}</div>
-              <span className="room-case-id">{new Date(c.updated_at).toLocaleTimeString()}</span>
-            </Link>
-          </motion.div>
+        <motion.div className="case-grid" layout>
+          <AnimatePresence initial={false}>
+            {shown.map((c) => (
+              <motion.div key={c.id} layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={spring}>
+                <Link to={`/room/${c.id}`} className={`case-card ${c.active ? "is-working" : ""}`}>
+                  <span className={`pill pill-${c.active ? "info" : ({ resolved: "ok", waiting: "amber", escalated: "danger" } as Record<string, string>)[c.status] ?? "muted"}`}>{c.active ? "working now" : c.status}</span>
+                  <h4>{c.title}</h4>
+                  <p>{c.wakeup ? `Next check ${new Date(c.wakeup.due_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}: ${c.wakeup.reason}` : c.next_action ?? c.objective}</p>
+                  <div className="case-card-foot">
+                    <span className="case-apps">{c.apps.filter((a) => a !== "peeblo").map((a) => <AppLogo key={a} app={a} size={14} />)}</span>
+                    <span className="room-case-id">{timeAgo(c.updated_at)}</span>
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
+        {!shown.length && <p className="muted small">Nothing here yet.</p>}
+      </section>
+
+      <AnimatePresence>{launching && <LaunchSequence launching={launching} />}</AnimatePresence>
+    </div>
+  );
+}
+
+function CaseFile({ scene, tilt, delay, onLaunch }: { scene: Scene; tilt: number; delay: number; onLaunch: () => void }) {
+  const reduce = useReducedMotion();
+  const [hover, setHover] = useState(false);
+  return (
+    <motion.button
+      className="file"
+      onClick={onLaunch}
+      onHoverStart={() => setHover(true)}
+      onHoverEnd={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
+      initial={{ opacity: 0, y: 40, rotate: reduce ? 0 : tilt * 2 }}
+      animate={{ opacity: 1, y: hover && !reduce ? -10 : 0, rotate: reduce ? 0 : hover ? 0 : tilt }}
+      transition={{ ...spring, delay: hover ? 0 : delay }}
+    >
+      <span className="file-tab micro">File {scene.index} · {scene.customer}</span>
+      <div className="file-top">
+        <h3>{scene.title}</h3>
+        <span className="file-amount">{scene.amount}</span>
+      </div>
+      <blockquote>
+        {scene.quote}
+        <cite>{scene.from}</cite>
+      </blockquote>
+      <div className="file-rule" />
+      <span className="micro">Peeblo has to work out</span>
+      <ul>{scene.figureOut.map((f) => <li key={f}>{f}</li>)}</ul>
+      <Constellation apps={scene.apps} active={hover} />
+      <span className="file-cta">Launch live run <span aria-hidden>→</span></span>
+    </motion.button>
+  );
+}
+
+// App logos joined by a hairline that draws itself on hover: the systems this case will cross.
+function Constellation({ apps, active }: { apps: string[]; active: boolean }) {
+  const w = 100 / Math.max(apps.length - 1, 1);
+  return (
+    <div className="constellation">
+      <svg viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden>
+        <motion.path d={`M 2 5 ${apps.map((_, i) => `L ${Math.min(98, Math.max(2, i * w))} ${i % 2 ? 2.5 : 7.5}`).join(" ")}`} fill="none" stroke="currentColor" strokeWidth="0.35" vectorEffect="non-scaling-stroke" initial={false} animate={{ pathLength: active ? 1 : 0, opacity: active ? 1 : 0 }} transition={{ duration: 0.9, ease: [0.2, 0.8, 0.2, 1] }} />
+      </svg>
+      <div className="constellation-logos">
+        {apps.map((a, i) => (
+          <motion.span key={a} animate={{ y: active ? (i % 2 ? -5 : 5) : 0, scale: active ? 1.08 : 1 }} transition={{ ...spring, delay: active ? i * 0.04 : 0 }}>
+            <AppLogo app={a} size={17} />
+          </motion.span>
         ))}
-        {!list.length && <p className="muted">No cases yet. Tag @Peeblo in Slack or assign work above.</p>}
       </div>
     </div>
   );
+}
+
+function LaunchSequence({ launching }: { launching: { scene: Scene | null; objective: string; step: number } }) {
+  const steps = ["Handing the message to Peeblo", "Opening a durable case", "Peeblo is reading the systems of record", "Streaming the live run"];
+  return (
+    <motion.div className="launch" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="launch-card" initial={{ y: 40, scale: 0.94, rotate: -1.5 }} animate={{ y: 0, scale: 1, rotate: 0 }} transition={spring}>
+        <span className="micro">{launching.scene ? `File ${launching.scene.index} · ${launching.scene.customer}` : "Your case"}</span>
+        <p className="launch-quote">“{launching.objective}”</p>
+        <ol>
+          {steps.map((s, i) => (
+            <motion.li key={s} className={i < launching.step ? "done" : i === launching.step ? "now" : ""} initial={{ opacity: 0, x: -8 }} animate={{ opacity: i <= launching.step ? 1 : 0.35, x: 0 }} transition={{ delay: i * 0.08 }}>
+              <span className="launch-dot" /> {s}
+            </motion.li>
+          ))}
+        </ol>
+        {launching.scene && <div className="launch-apps">{launching.scene.apps.map((a, i) => <motion.span key={a} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.06 }}><AppLogo app={a} size={22} /></motion.span>)}</div>}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function timeAgo(iso: string) {
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }

@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { room, usd, type RoomEvent, type CaseDetail } from "./api";
 import { AppLogo, APPS } from "./AppLogo";
+import Mark from "../components/marketing/PeebloMark";
 import "./room.css";
 
 // Live view of one case. Everything rendered here comes from the agent's event stream; nothing is scripted.
@@ -38,7 +39,7 @@ export default function CaseRoom() {
   return (
     <div className="room">
       <header className="room-top">
-        <Link to="/room" className="room-brand"><AppLogo app="peeblo" size={22} /> Peeblo</Link>
+        <Link to="/room" className="room-brand"><Mark size={24} /> peeblo</Link>
         <div className="room-title">
           <span className="room-case-id">{id}</span>
           <h1>{detail?.title ?? "Case"}</h1>
