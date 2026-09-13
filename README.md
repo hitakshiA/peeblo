@@ -94,6 +94,11 @@
 | **Stale approval** (invoice paid while void awaited approval) | Arga Stripe twin | Approved void refused because the invoice is now paid | ✅ Pass · [log](docs/evidence/arga-stripe-twin-duplicate-and-stale-report.json) |
 | **Duplicate event delivery** | Arga Stripe twin | Both deliveries map to one case; one customer created | ✅ Pass · same log |
 
+**Repeat trial from a clean reset (Sep 13, 22:22 UTC):**
+- Reset the wrong-company scenario, then ran the full agent (investigate, then approval, then a forced interruption, then resume), then re-ran the checks against live Stripe and QuickBooks.
+- Trial 1: **8/8 checks passed.** That covers exactly one replacement, the original void, no duplicate customer, and every write approved and verified.
+- The agent took 15.5 minutes end to end. Trials 2 and 3 are in progress.
+
 **How to read these numbers:**
 - **16/16** is checks, not runs. [`npm run eval`](agent/src/eval.ts) reads live Stripe and QuickBooks state after the cases ran, plus invariants over the operation log:
   - no operation succeeded twice
