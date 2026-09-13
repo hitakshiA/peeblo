@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS wakeups (
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, case_id TEXT NOT NULL, trigger TEXT NOT NULL, status TEXT, output TEXT,
   iterations INTEGER, input_tokens INTEGER, output_tokens INTEGER, trace_id TEXT, started_at TEXT NOT NULL, ended_at TEXT);
+CREATE TABLE IF NOT EXISTS plans (
+  case_id TEXT PRIMARY KEY, items TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS lessons (
   id TEXT PRIMARY KEY, lesson TEXT NOT NULL, source_case TEXT, reviewed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);`);
 
@@ -99,4 +101,10 @@ export const runs = {
 export const lessons = {
   reviewed: () => db.prepare("SELECT lesson FROM lessons WHERE reviewed = 1 ORDER BY created_at DESC LIMIT 20").all() as { lesson: string }[],
   propose: (lesson: string, caseId: string) => db.prepare("INSERT INTO lessons VALUES (?,?,?,0,?)").run(id("lsn"), lesson, caseId, now()),
+};
+
+export interface PlanItem { step: string; status: "pending" | "in_progress" | "done" | "blocked"; note?: string }
+export const plans = {
+  get: (caseId: string): PlanItem[] => { const r = db.prepare("SELECT items FROM plans WHERE case_id = ?").get(caseId) as { items: string } | undefined; return r ? JSON.parse(r.items) : []; },
+  set: (caseId: string, items: PlanItem[]) => db.prepare("INSERT INTO plans VALUES (?,?,?) ON CONFLICT(case_id) DO UPDATE SET items = excluded.items, updated_at = excluded.updated_at").run(caseId, JSON.stringify(items), now()),
 };

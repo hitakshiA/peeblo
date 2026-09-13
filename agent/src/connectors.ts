@@ -22,7 +22,14 @@ export const stripe = {
 
 // QuickBooks refresh tokens rotate: only this process refreshes, and it persists the newest token.
 const qboToken = cachedToken(async () => {
-  const t = await request("https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer", { form: { grant_type: "refresh_token", refresh_token: env.QUICKBOOKS_REFRESH_TOKEN }, headers: { Authorization: basic(env.QUICKBOOKS_CLIENT_ID, env.QUICKBOOKS_CLIENT_SECRET) } });
+  const refresh = (token: string) => request("https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer", { form: { grant_type: "refresh_token", refresh_token: token }, headers: { Authorization: basic(env.QUICKBOOKS_CLIENT_ID, env.QUICKBOOKS_CLIENT_SECRET) } });
+  // Another process may have rotated the token; fall back to the newest value persisted in the env file.
+  const t = await refresh(env.QUICKBOOKS_REFRESH_TOKEN).catch(async (e) => {
+    const latest = loadEnv().QUICKBOOKS_REFRESH_TOKEN;
+    if (!latest || latest === env.QUICKBOOKS_REFRESH_TOKEN) throw e;
+    env.QUICKBOOKS_REFRESH_TOKEN = latest;
+    return refresh(latest);
+  });
   if (t.refresh_token !== env.QUICKBOOKS_REFRESH_TOKEN) { env.QUICKBOOKS_REFRESH_TOKEN = t.refresh_token; updateEnv("QUICKBOOKS_REFRESH_TOKEN", t.refresh_token); }
   return { token: t.access_token, ttlMs: t.expires_in * 1000 };
 });

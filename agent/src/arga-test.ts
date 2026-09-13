@@ -27,6 +27,7 @@ if (mode === "provision") {
 }
 
 const run = JSON.parse(readFileSync(RUN_FILE, "utf8"));
+const scenario = process.argv[3] ?? "interrupted-reissue";
 const twin = run.twins?.stripe ?? run.twins?.[0];
 const vars = twin.env_vars ?? {};
 process.env.STRIPE_API_BASE = String(twin.base_url).replace(/\/v1\/?$/, "").replace(/\/$/, "");
@@ -52,6 +53,47 @@ await stripe.call("/invoiceitems", { form: { customer: holdings.id, invoice: dra
 const wrong = await stripe.call(`/invoices/${draft.id}/finalize`, { form: {} });
 say(`seeded: ${wrong.id} ${wrong.status} $${wrong.total / 100} to ${wrong.customer_name}`);
 const before = await state();
+
+if (scenario === "duplicate-and-stale") {
+  const { events } = await import("./store.ts");
+  const report: Record<string, boolean> = {};
+  // 1. Duplicate event delivery: the same event arrives twice and two runs propose the same corrections.
+  const evt = { id: "evt_twin_dup_1", type: "invoice.payment_failed", data: { object: { id: wrong.id } } };
+  const first = events.receive("stripe", `stripe:${evt.id}`, evt);
+  const second = events.receive("stripe", `stripe:${evt.id}`, evt);
+  say(`event delivered twice -> first ${first ? "accepted" : "dropped"}, second ${second ? "accepted" : "dropped as duplicate"}`);
+  report.duplicate_event_dropped = Boolean(first) && !second;
+  const caseA = cases.create("twin dup", "Duplicate delivery test", `stripe:${evt.type}:${wrong.id}`);
+  const caseB = cases.create("twin dup", "Duplicate delivery test", `stripe:${evt.type}:${wrong.id}`);
+  say(`both deliveries map to one case -> ${caseA.id === caseB.id}`);
+  report.one_case_per_problem = caseA.id === caseB.id;
+  const cust = (n: number) => propose(caseA.id, "stripe.create_customer", { name: "Eastbridge Logistics", email: "ap@eastbridgelogistics.com", legal_name: "Eastbridge Logistics LLC", tax_id: "84-2917365" }, `delivery ${n}`);
+  say(`create customer, delivery 1 -> ${JSON.stringify(await cust(1)).slice(0, 160)}`);
+  say(`create customer, delivery 2 -> ${JSON.stringify(await cust(2)).slice(0, 160)}`);
+  const customers = (await stripe.call("/customers?limit=100")).data.filter((x: any) => x.metadata?.legal_name === "Eastbridge Logistics LLC" && x.metadata?.peeblo_op);
+  report.exactly_one_customer_created = customers.length === 1;
+  say(`customers created by the executor for Eastbridge Logistics LLC -> ${customers.length}`);
+
+  // 2. Stale approval: a void is approved after the invoice was paid out of band while the approval was pending.
+  const draft2 = await stripe.call("/invoices", { form: { customer: holdings.id, collection_method: "send_invoice", days_until_due: "30", "metadata[invoice_number]": "INV-2311" } });
+  await stripe.call("/invoiceitems", { form: { customer: holdings.id, invoice: draft2.id, description: "Seats", amount: "500000", currency: "usd" } });
+  const target = await stripe.call(`/invoices/${draft2.id}/finalize`, { form: {} });
+  const req = await propose(caseA.id, "stripe.void_invoice", { invoice_id: target.id }, "wrong entity");
+  say(`void requested -> ${req.status}`);
+  const paid = await stripe.call(`/invoices/${target.id}/pay`, { form: { paid_out_of_band: "true" } });
+  say(`meanwhile the customer paid it -> invoice ${paid.status}`);
+  const decision = await decide(req.approval_id, (env.SLACK_APPROVER_USER_IDS ?? "").split(",")[0], "approved");
+  const opRow = db.prepare("SELECT status, error FROM operations WHERE id = ?").get(req.operation_id) as any;
+  const after = await stripe.call(`/invoices/${target.id}`);
+  say(`approver clicks approve -> ${decision.message}; operation ${opRow.status}: ${opRow.error}`);
+  say(`invoice after the stale approval -> ${after.status}`);
+  report.stale_approval_refused = opRow.status === "failed" && after.status === "paid";
+  const pass = Object.values(report).every(Boolean);
+  say(`checks: ${JSON.stringify(report)}`);
+  say(pass ? "PASS" : "FAIL");
+  writeFileSync("/tmp/arga-report-2.json", JSON.stringify({ run_id: run.run_id, scenario, pass, checks: report, log }, null, 2));
+  process.exit(0);
+}
 
 const c = cases.create("Arga: interrupted reissue", "Twin test: reissue INV-2310 from Eastbridge Holdings to Eastbridge Logistics LLC with a lost response");
 const approve = async (res: any) => {

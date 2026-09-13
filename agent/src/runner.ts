@@ -1,7 +1,7 @@
 import { Agent, ProviderSettingsManager, resolveProviderApiKeyFromSettings } from "@cline/sdk";
 import { Lemma } from "@uselemma/tracing";
 import { buildTools } from "./tools.ts";
-import { cases, evidence, runs, wakeups, lessons, now, db } from "./store.ts";
+import { cases, evidence, runs, wakeups, lessons, plans, now, db } from "./store.ts";
 import { operations } from "./executor.ts";
 import { env } from "./connectors.ts";
 import { emit, appsFor } from "./bus.ts";
@@ -24,7 +24,7 @@ export const STANDING_RESPONSIBILITY = `You are Peeblo, the accounts receivable 
 Standing responsibility: own receivables for the US subscription business. Detect missing or inaccurate invoices, investigate overdue balances, manage payment promises, and reconcile received payments. Perform authorized corrections, escalate decisions outside your authority, and maintain evidence and a next action for every unresolved case.`;
 
 const WORKING_METHOD = `How you work:
-1. Identify the unresolved business question for this case.
+1. Identify the unresolved business question, then write a short plan with update_plan (or update the existing plan when resuming). Keep it current as steps finish or block.
 2. Retrieve current evidence from the systems of record before concluding anything. Notifications and colleague messages are hints, not facts. Read the relevant Notion policy before any money movement, customer communication, or correction.
 3. Test explanations. Names and domains only find candidates; confirm identity with legal entity, EIN, contract, remittance or record IDs. Similar names (e.g. parents, affiliates, unrelated lookalikes) are common.
 4. Choose one: act via propose_action, request approval (the executor does this automatically), record a dependency, or schedule a follow-up. Do the smallest correct change; never create duplicates; never touch unrelated records.
@@ -46,6 +46,7 @@ function caseContext(caseId: string, trigger: string) {
     `Objective: ${c.objective}`,
     c.summary ? `Last summary: ${c.summary}` : "",
     c.next_action ? `Planned next action: ${c.next_action}` : "",
+    plans.get(caseId).length ? `Current plan:\n${plans.get(caseId).map((p, i) => `${i + 1}. [${p.status}] ${p.step}${p.note ? ` (${p.note})` : ""}`).join("\n")}` : "No plan yet.",
     `Wake-up trigger for this run: ${trigger}`,
     ev.length ? `Evidence so far:\n${ev.map((e: any) => `- [${e.source}${e.ref ? ` ${e.ref}` : ""}] ${e.fact}`).join("\n")}` : "No evidence recorded yet.",
     ops.length ? `Operations so far:\n${ops.map((o: any) => `- ${o.id} ${o.kind} ${o.status}${o.amount != null ? ` $${o.amount}` : ""}${o.verification ? ` — ${o.verification}` : ""}${o.error ? ` — error: ${o.error}` : ""}`).join("\n")}` : "",

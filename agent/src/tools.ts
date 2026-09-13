@@ -1,7 +1,8 @@
 import { createTool } from "@cline/sdk";
 import { z } from "zod";
 import { stripe, qbo, salesforce, hubspot, notion, jira, dropbox, slack, env, pdfText } from "./connectors.ts";
-import { cases, evidence, wakeups, lessons, now } from "./store.ts";
+import { cases, evidence, wakeups, lessons, plans, now } from "./store.ts";
+import { emit } from "./bus.ts";
 import { ACTIONS, propose, retry, InterruptedError } from "./executor.ts";
 
 // Reusable capabilities, not case scripts. Reads return compact facts with provider IDs so the model
@@ -167,6 +168,12 @@ export function buildTools(caseId: string, hooks: { interrupt: (reason: string) 
       description: "Recent internal messages in #ar-desk (assignments, context from account executives and finance).",
       inputSchema: z.object({ limit: z.number().max(50).optional() }),
       execute: async ({ limit }) => safe(async () => (await slack.call("conversations.history", { channel: env.SLACK_ASSIGNMENTS_CHANNEL_ID, limit: limit ?? 20 })).messages.map((m: any) => ({ ts: m.ts, user: m.user ?? m.username, text: m.text?.slice(0, 1500) }))),
+    }),
+    createTool({
+      name: "update_plan",
+      description: "Write or update this case's plan: the ordered steps to reach a verified outcome, each pending, in_progress, done or blocked. The plan persists across runs and is shown to people. Create it at the start of a case, then update it as steps finish or become blocked (say why in note).",
+      inputSchema: z.object({ items: z.array(z.object({ step: z.string(), status: z.enum(["pending", "in_progress", "done", "blocked"]), note: z.string().optional() })).min(1).max(12) }),
+      execute: async ({ items }) => { plans.set(caseId, items); emit(caseId, undefined, "plan.updated", { items }); return { saved: items.length, done: items.filter((i) => i.status === "done").length }; },
     }),
     createTool({
       name: "record_evidence",

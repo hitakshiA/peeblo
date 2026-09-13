@@ -9,6 +9,7 @@ export interface CaseDetail extends CaseSummary {
   approvals: { id: string; operation_id: string; status: string; approver: string | null; decided_at: string | null }[];
   runs: { trigger: string; status: string; started_at: string }[];
   interrupt_armed: string | null;
+  plan?: { step: string; status: string; note?: string }[];
 }
 
 const call = async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -27,7 +28,7 @@ export const room = {
   stream: (id: string, onEvent: (e: RoomEvent) => void) => {
     const es = new EventSource(`${PEEBLO_API}/api/cases/${id}/stream`);
     const handler = (m: MessageEvent) => onEvent(JSON.parse(m.data));
-    ["run.started", "thinking", "message", "tool.started", "tool.finished", "operation.submitted", "operation.verified", "operation.reconciled", "operation.step", "operation.resuming", "approval.requested", "approval.decided", "interrupt.armed", "run.finished"].forEach((t) => es.addEventListener(t, handler));
+    ["run.started", "thinking", "message", "tool.started", "tool.finished", "operation.submitted", "operation.verified", "operation.reconciled", "operation.step", "operation.resuming", "approval.requested", "approval.decided", "interrupt.armed", "plan.updated", "run.retry", "run.finished"].forEach((t) => es.addEventListener(t, handler));
     return () => es.close();
   },
 };

@@ -120,7 +120,12 @@ export const ACTIONS: Record<string, ActionSpec> = {
     params: "{ invoice_id }",
     authority: () => "ar_approver",
     amount: () => undefined,
-    execute: (p, key) => stripe.call(`/invoices/${p.invoice_id}/void`, { idempotencyKey: key, form: {} }),
+    execute: async (p, key) => {
+      // Approvals can go stale: re-check the invoice right before the write.
+      const current = await stripe.call(`/invoices/${p.invoice_id}`);
+      if (current.status !== "open") throw new PreconditionError(`invoice ${current.number ?? current.id} is now ${current.status}; the approved void no longer applies`);
+      return stripe.call(`/invoices/${p.invoice_id}/void`, { idempotencyKey: key, form: {} });
+    },
     reconcile: async (p) => { const inv = await stripe.call(`/invoices/${p.invoice_id}`); return inv.status === "void" ? inv : undefined; },
     verify: async (p) => { const inv = await stripe.call(`/invoices/${p.invoice_id}`); return { ok: inv.status === "void", observed: `invoice ${inv.id} is ${inv.status}` }; },
   },

@@ -306,3 +306,20 @@ mark { background: none; color: var(--r-ink); box-shadow: inset 0 -0.45em 0 oklc
 .step-err { font-size: 12px; color: var(--r-red); line-height: 1.45; }
 .brief-foot { position: sticky; bottom: -28px; background: linear-gradient(180deg, transparent, var(--r-receipt) 30%); padding-bottom: 6px; }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+
+/* plan */
+.plan { position: sticky; top: -20px; z-index: 3; margin: -20px 0 16px; padding: 16px 0 14px; background: linear-gradient(180deg, var(--r-bg) 85%, transparent); }
+.plan-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; font-weight: 550; margin-bottom: 8px; }
+.plan-bar { height: 2px; background: var(--r-rule-soft); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+.plan-bar i { display: block; height: 100%; background: var(--r-green); }
+.plan ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 190px; overflow-y: auto; scrollbar-width: none; }
+.plan-item { display: grid; grid-template-columns: 14px 1fr; gap: 10px; align-items: start; font-size: 12.5px; line-height: 1.45; color: var(--r-muted); }
+.plan-box { width: 12px; height: 12px; margin-top: 3px; border-radius: 3px; border: 1px solid var(--r-faint); position: relative; }
+.plan-item.is-done { color: var(--r-faint); text-decoration: line-through; text-decoration-color: var(--r-rule); }
+.plan-item.is-done .plan-box { background: var(--r-green); border-color: var(--r-green); }
+.plan-item.is-done .plan-box::after { content: ""; position: absolute; left: 3.5px; top: 1px; width: 3px; height: 6px; border: solid var(--r-bg); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.plan-item.is-in_progress { color: var(--r-ink); }
+.plan-item.is-in_progress .plan-box { border-color: var(--r-blue); box-shadow: 0 0 0 3px oklch(0.76 0.09 240 / 0.15); }
+.plan-item.is-blocked { color: var(--r-amber); }
+.plan-item.is-blocked .plan-box { border-color: var(--r-amber); background: oklch(0.8 0.12 80 / 0.2); }
+.plan-note { font-style: normal; color: var(--r-faint); }

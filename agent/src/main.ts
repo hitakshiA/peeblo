@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { cases, evidence, events, runs, wakeups, db, now } from "./store.ts";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { cases, evidence, events, runs, wakeups, plans, db, now } from "./store.ts";
 import { runCase, activeRuns } from "./runner.ts";
 import { decide, operations, interrupts } from "./executor.ts";
 import { bus, replay, emit, type RunEvent } from "./bus.ts";
@@ -81,6 +82,42 @@ bus.on("event", async (e: RunEvent) => {
   await slack.call("chat.postMessage", { channel: env.SLACK_ASSIGNMENTS_CHANNEL_ID, thread_ts: thread, text: `*${c.title}* · status: *${c.status}*\n${c.summary ?? ""}\n_Next:_ ${c.next_action ?? "—"}` }).catch(() => {});
 });
 
+
+// ---------------------------------------------------------------- Stripe webhooks: events open cases without a human tag
+const STRIPE_TRIGGERS: Record<string, string> = {
+  "invoice.payment_failed": "A payment attempt failed",
+  "invoice.overdue": "An invoice became overdue",
+  "invoice.marked_uncollectible": "An invoice was marked uncollectible",
+  "charge.dispute.created": "A customer opened a card dispute",
+};
+const rawBody = (req: IncomingMessage) => new Promise<string>((ok) => { let d = ""; req.on("data", (c) => (d += c)); req.on("end", () => ok(d)); });
+function verifyStripeSignature(payload: string, header: string | undefined, secret: string) {
+  if (!header || !secret) return false;
+  const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=") as [string, string]));
+  const expected = createHmac("sha256", secret).update(`${parts.t}.${payload}`).digest("hex");
+  const given = header.split(",").filter((kv) => kv.startsWith("v1=")).map((kv) => kv.slice(3));
+  const fresh = Math.abs(Date.now() / 1000 - Number(parts.t)) < 300;
+  return fresh && given.some((g) => g.length === expected.length && timingSafeEqual(Buffer.from(g), Buffer.from(expected)));
+}
+async function onStripeWebhook(req: IncomingMessage, res: ServerResponse) {
+  const payload = await rawBody(req);
+  if (!verifyStripeSignature(payload, req.headers["stripe-signature"] as string | undefined, env.STRIPE_WEBHOOK_SECRET ?? "")) return json(res, 400, { error: "invalid signature" });
+  const event = JSON.parse(payload);
+  const eventRow = events.receive("stripe", `stripe:${event.id}`, event);
+  if (!eventRow) return json(res, 200, { received: true, duplicate: true }); // Stripe retries and duplicate deliveries
+  const label = STRIPE_TRIGGERS[event.type];
+  if (!label) { events.attach(eventRow, "ignored"); return json(res, 200, { received: true, ignored: event.type }); }
+  const obj = event.data.object;
+  const invoiceId = obj.object === "invoice" ? obj.id : obj.invoice ?? obj.id;
+  const ref = obj.metadata?.invoice_number ?? obj.number ?? invoiceId;
+  const amount = ((obj.amount_remaining ?? obj.amount ?? 0) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  // One case per invoice and event type: repeated events for the same problem resume the same case.
+  const c = cases.create(`${label}: ${ref}`, `Stripe event ${event.type} (${event.id}): ${label} for ${ref}${obj.customer_name ? ` (${obj.customer_name})` : ""}, ${amount}. Investigate and handle it per policy.`, `stripe:${event.type}:${invoiceId}`);
+  events.attach(eventRow, c.id);
+  evidence.add(c.id, "stripe", `Webhook ${event.type} received (${event.id})`, invoiceId);
+  json(res, 200, { received: true, case_id: c.id, started: startRun(c.id, `Stripe webhook ${event.type} for ${ref}`) });
+}
+
 // ---------------------------------------------------------------- HTTP API + SSE
 const json = (res: ServerResponse, code: number, body: unknown) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
 const body = (req: IncomingMessage) => new Promise<any>((ok) => { let d = ""; req.on("data", (c) => (d += c)); req.on("end", () => { try { ok(d ? JSON.parse(d) : {}); } catch { ok({}); } }); });
@@ -92,18 +129,19 @@ function caseDetail(caseId: string) {
     ...c, accounts: JSON.parse(c.accounts),
     evidence: evidence.list(caseId), operations: operations.list(caseId).map((o: any) => ({ ...o, params: JSON.parse(o.params) })),
     approvals: db.prepare("SELECT id, operation_id, status, approver, expires_at, decided_at, created_at FROM approvals WHERE case_id = ? ORDER BY created_at").all(caseId),
-    runs: runs.list(caseId), wakeup: wakeups.pending(caseId) ?? null, active: activeRuns.has(caseId), interrupt_armed: interrupts.armed() || null,
+    plan: plans.get(caseId), runs: runs.list(caseId), wakeup: wakeups.pending(caseId) ?? null, active: activeRuns.has(caseId), interrupt_armed: interrupts.armed() || null,
   };
 }
 
 createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Stripe-Signature");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   if (req.method === "OPTIONS") return res.end();
   const url = new URL(req.url ?? "/", "http://x");
   const parts = url.pathname.split("/").filter(Boolean); // api, cases, :id, action
   try {
+    if (url.pathname === "/api/webhooks/stripe" && req.method === "POST") return onStripeWebhook(req, res);
     if (url.pathname === "/api/health") return json(res, 200, { ok: true, time: now(), active_runs: [...activeRuns.keys()] });
     if (url.pathname === "/api/cases" && req.method === "GET") return json(res, 200, cases.list().map((c) => ({ ...c, accounts: JSON.parse(c.accounts), active: activeRuns.has(c.id), wakeup: wakeups.pending(c.id) ?? null, apps: [...new Set((db.prepare("SELECT data FROM run_events WHERE case_id = ? AND type = 'tool.finished'").all(c.id) as any[]).flatMap((r) => JSON.parse(r.data).apps))] })));
     if (url.pathname === "/api/cases" && req.method === "POST") {

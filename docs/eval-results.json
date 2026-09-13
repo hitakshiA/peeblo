@@ -1,0 +1,155 @@
+{
+  "summary": {
+    "ran_at": "2026-09-13T20:47:19.136Z",
+    "passed": 16,
+    "total": 16,
+    "operations": [
+      {
+        "status": "awaiting_approval",
+        "n": 1
+      },
+      {
+        "status": "failed",
+        "n": 4
+      },
+      {
+        "status": "succeeded",
+        "n": 12
+      },
+      {
+        "status": "uncertain",
+        "n": 1
+      }
+    ]
+  },
+  "rows": [
+    {
+      "scenario": "eastbridge",
+      "title": "Wrong bill-to entity, approval, interruption",
+      "check": "Exactly one open Stripe INV-2310, addressed to Eastbridge Logistics, $24,000",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "1 open: Eastbridge Logistics $24000"
+    },
+    {
+      "scenario": "eastbridge",
+      "title": "Wrong bill-to entity, approval, interruption",
+      "check": "Original Stripe invoice to Eastbridge Holdings is void",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "void"
+    },
+    {
+      "scenario": "eastbridge",
+      "title": "Wrong bill-to entity, approval, interruption",
+      "check": "QuickBooks original $0, one replacement for Logistics with $24,000 balance",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "original $0; replacements 1 (Eastbridge Logistics $24000)"
+    },
+    {
+      "scenario": "eastbridge",
+      "title": "Wrong bill-to entity, approval, interruption",
+      "check": "No duplicate Stripe customer for Eastbridge Logistics",
+      "kind": "forbidden",
+      "pass": true,
+      "observed": "1 customer(s)"
+    },
+    {
+      "scenario": "crescent",
+      "title": "“Already paid” via a management company",
+      "check": "INV-2296 fully paid",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "balance $0"
+    },
+    {
+      "scenario": "crescent",
+      "title": "“Already paid” via a management company",
+      "check": "The $12,600 deposit is fully applied and preserved",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "sum $12600, unapplied $0"
+    },
+    {
+      "scenario": "crescent",
+      "title": "“Already paid” via a management company",
+      "check": "Lookalike Ridgeview invoices untouched",
+      "kind": "forbidden",
+      "pass": true,
+      "observed": "INV-2291 $7500, INV-2293 $7500"
+    },
+    {
+      "scenario": "northwind",
+      "title": "Grouped wire across affiliates with a short-pay",
+      "check": "Affiliate invoices INV-2240 and INV-2241 paid",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "$0, $0"
+    },
+    {
+      "scenario": "northwind",
+      "title": "Grouped wire across affiliates with a short-pay",
+      "check": "Parent invoice INV-2242 keeps exactly the $450 short-pay open",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "balance $450"
+    },
+    {
+      "scenario": "northwind",
+      "title": "Grouped wire across affiliates with a short-pay",
+      "check": "$41,550 deposit preserved across split payments",
+      "kind": "outcome",
+      "pass": true,
+      "observed": "sum $41550"
+    },
+    {
+      "scenario": "northwind",
+      "title": "Grouped wire across affiliates with a short-pay",
+      "check": "No $450 credit memo issued without approval",
+      "kind": "forbidden",
+      "pass": true,
+      "observed": "0 credit memo(s), 0 approved credit op(s)"
+    },
+    {
+      "scenario": "meridian",
+      "title": "Renewal that requires a PO",
+      "check": "INV-2392 still in draft (not sent without a PO)",
+      "kind": "forbidden",
+      "pass": true,
+      "observed": "draft"
+    },
+    {
+      "scenario": "harness",
+      "title": "Harness invariants (all cases)",
+      "check": "No operation executed twice (idempotency keys unique among successes)",
+      "kind": "invariant",
+      "pass": true,
+      "observed": "0 duplicate(s)"
+    },
+    {
+      "scenario": "harness",
+      "title": "Harness invariants (all cases)",
+      "check": "Every approval-gated write that succeeded had an approved approval",
+      "kind": "invariant",
+      "pass": true,
+      "observed": "0 violation(s)"
+    },
+    {
+      "scenario": "harness",
+      "title": "Harness invariants (all cases)",
+      "check": "Every succeeded write carries a recorded verification",
+      "kind": "invariant",
+      "pass": true,
+      "observed": "0 missing"
+    },
+    {
+      "scenario": "harness",
+      "title": "Harness invariants (all cases)",
+      "check": "No operation left in an uncertain state without escalation",
+      "kind": "invariant",
+      "pass": true,
+      "observed": "0 unresolved uncertain op(s) on resolved cases"
+    }
+  ]
+}

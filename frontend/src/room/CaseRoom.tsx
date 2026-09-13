@@ -62,6 +62,7 @@ export default function CaseRoom() {
         <section className="col col-agent">
           <div className="col-head"><h2>Reasoning</h2><span className="col-count">{counts.steps} tool calls</span>{running && <span className="live-dot" />}</div>
           <div className="col-body" ref={reasonRef}>
+            {(view.plan ?? detail?.plan)?.length ? <Plan items={(view.plan ?? detail?.plan)!} /> : null}
             <ol className="timeline">
               <AnimatePresence initial={false}>
                 {view.timeline.map((t) => (
@@ -136,6 +137,24 @@ const argSummary = (tool: string, input: any): string => {
   return ids.join(" · ");
 };
 
+function Plan({ items }: { items: { step: string; status: string; note?: string }[] }) {
+  const done = items.filter((i) => i.status === "done").length;
+  return (
+    <div className="plan">
+      <div className="plan-head"><span>Plan</span><span className="col-count">{done}/{items.length} done</span></div>
+      <div className="plan-bar"><motion.i animate={{ width: `${(done / items.length) * 100}%` }} transition={{ type: "spring", stiffness: 120, damping: 20 }} /></div>
+      <ol>
+        {items.map((it, i) => (
+          <motion.li key={`${i}-${it.step}`} layout className={`plan-item is-${it.status}`}>
+            <span className="plan-box" />
+            <span>{it.step}{it.note && <em className="plan-note"> · {it.note}</em>}</span>
+          </motion.li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function ToolStep({ t }: { t: any }) {
   const direct = /^(stripe|qbo|hubspot|jira|slack|customer|billing)_/.test(t.tool);
   const verb = ACTION_VERB[t.tool] ?? (direct ? t.tool.replace(/^(\w+?)_/, "").replace(/_/g, " ") : t.tool.replace(/_/g, " "));
@@ -174,7 +193,7 @@ function derive(events: RoomEvent[]) {
   const timeline: any[] = [];
   const cards: RoomEvent[] = [];
   const opEvents: RoomEvent[] = [];
-  let buf = "", bufSeq = 0, running = false, interrupted = false, outcome: any;
+  let buf = "", bufSeq = 0, running = false, interrupted = false, outcome: any, plan: any[] | undefined;
   const flush = (seq: number, text?: string) => {
     const t = (text ?? buf).replace(/\s+/g, " ").trim();
     if (t) timeline.push({ kind: "thought", key: `th-${seq}`, text: t.length > 600 ? `${t.slice(0, 600)}…` : t });
@@ -183,6 +202,7 @@ function derive(events: RoomEvent[]) {
   for (const e of events) {
     if (e.type === "run.started") { running = true; interrupted = false; outcome = undefined; timeline.push({ kind: "run", key: `run-${e.seq}` }); }
     if (e.type === "thinking") { buf += e.data.text; bufSeq = e.seq; }
+    if (e.type === "plan.updated") plan = e.data.items;
     if (e.type === "message") flush(e.seq, e.data.text);
     if (e.type === "tool.started") {
       flush(bufSeq || e.seq);
@@ -210,7 +230,7 @@ function derive(events: RoomEvent[]) {
     if (e.type === "run.finished") { flush(e.seq); running = false; interrupted = e.data.status === "interrupted"; if (interrupted) opEvents.push(e); if (e.data.case && !outcome) outcome = e.data.case; for (const it of started.values()) it.status = "skipped"; started.clear(); }
   }
   const current = [...started.values()].pop();
-  return { appsUsed, activeApps: new Set<string>(current?.apps ?? []), timeline: timeline.filter((t) => t.kind !== "run" || timeline.indexOf(t) > 0), cards, opEvents, running, interrupted, outcome };
+  return { appsUsed, activeApps: new Set<string>(current?.apps ?? []), plan, timeline: timeline.filter((t) => t.kind !== "run" || timeline.indexOf(t) > 0), cards, opEvents, running, interrupted, outcome };
 }
 
 function EvidenceCard({ event }: { event: RoomEvent }) {
