@@ -148,8 +148,9 @@ createServer(async (req, res) => {
       if (!["approved", "rejected"].includes(decision)) return json(res, 400, { error: "decision must be approved or rejected" });
       const apr = db.prepare("SELECT case_id FROM approvals WHERE id = ?").get(parts[2]) as { case_id: string } | undefined;
       if (!apr) return json(res, 404, { error: "approval not found" });
-      emit(apr.case_id, undefined, "approval.decided", { approval_id: parts[2], decision, user: "console" });
-      return json(res, 200, await decide(parts[2], "console", decision));
+      const result = await decide(parts[2], "console", decision); // only listed approver IDs are accepted
+      if (result.ok) emit(apr.case_id, undefined, "approval.decided", { approval_id: parts[2], decision, user: "console" });
+      return json(res, result.ok ? 200 : 403, result);
     }
     if (url.pathname === "/api/cases" && req.method === "GET") return json(res, 200, cases.list().map((c) => ({ ...c, accounts: JSON.parse(c.accounts), active: activeRuns.has(c.id), wakeup: wakeups.pending(c.id) ?? null, apps: [...new Set((db.prepare("SELECT data FROM run_events WHERE case_id = ? AND type = 'tool.finished'").all(c.id) as any[]).flatMap((r) => JSON.parse(r.data).apps))] })));
     if (url.pathname === "/api/cases" && req.method === "POST") {

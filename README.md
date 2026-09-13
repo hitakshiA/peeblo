@@ -1,179 +1,160 @@
-# Peeblo
+<p align="center"><img src="docs/assets/banner.svg" alt="Peeblo: a specialized agent harness for accounts receivable" width="100%"></p>
 
-**An accounts receivable teammate that owns billing exceptions across your finance and business stack, and keeps working until each case reaches a verified outcome.**
+<p align="center">
+  <a href="docs/demo.mp4"><b>▶ Demo video (2 min)</b></a> ·
+  <a href="https://peeblo.xyz/room"><b>Live demo</b></a> ·
+  <a href="https://api.peeblo.xyz/api/health">Agent API</a> ·
+  <a href="seed/">Seed data</a> ·
+  <a href="#reliability">Reliability results</a> ·
+  <a href="docs/eval-results.md">Eval report</a>
+</p>
 
-Tag `@Peeblo` in Slack with a problem like *"Eastbridge still hasn't paid their Q3 invoice"*. Peeblo investigates across Stripe, QuickBooks, Salesforce, HubSpot, Dropbox, Notion and Jira. It checks policy, asks for approval when a change needs it, makes the correction, verifies the result in every system it touched, and reports back. If it is interrupted mid-correction, it resumes without duplicating anything.
+> **The live demo runs a real agent.** Every case at [peeblo.xyz/room](https://peeblo.xyz/room) is worked by GLM-5.3 Flash (ClinePass, via the Cline SDK) against real sandbox accounts in Stripe, QuickBooks, Salesforce, HubSpot, Dropbox, Notion, Slack and Jira. Nothing on screen is scripted. The accounts are filled with a seeded business world from [`seed/`](seed/).
 
-- **Demo (2 min):** _link to video_
-- **Live console:** https://peeblo.xyz/room
-- **Agent API:** https://api.peeblo.xyz/api/health
+<p align="center"><img src="docs/assets/apps-marquee.svg" alt="Connected apps" width="100%"></p>
+
+[![Peeblo approving, interrupting and resuming a correction. Click for the full demo video.](docs/assets/demo-preview.gif)](docs/demo.mp4)
 
 ---
 
-## Why
+## The problem
 
-A signed deal turns into an overdue invoice. The reason is scattered: the invoice is in Stripe, AP's rejection is in an email, the correct legal entity is in a contract in Dropbox, the ledger is in QuickBooks, and the rule for fixing it is in a policy doc. An AR analyst spends hours stitching that together. Peeblo does the stitching, and it follows through.
+- A signed B2B deal turns into an **overdue invoice**.
+- Why it's blocked is scattered across apps:
+  - the invoice is in **Stripe**
+  - AP's rejection is in an email in **HubSpot**
+  - the correct legal entity is in a contract in **Dropbox**
+  - the ledger is in **QuickBooks**
+  - the rule for fixing it is in a **Notion** policy
+- An AR analyst spends hours stitching that together, then has to make risky money changes by hand.
 
-## How it works
+## What Peeblo is
 
-![Architecture](docs/architecture.svg)
+- **A specialized agent harness for accounts receivable.** It owns billing exceptions until each one reaches a verified outcome.
+- **The model investigates.** It plans, reads every app through tools, cross-checks evidence and proposes a fix.
+- **Code controls money.** A deterministic executor enforces approval limits, prevents duplicate writes, recovers from crashes and re-reads each app to verify.
+- **No per-case scripts.** The same agent and tools handled a wrong bill-to entity, an "already paid" claim, a grouped short-paid wire and a missing PO.
+- **Honest outcomes.** "Billing issue resolved" and "invoice paid" are tracked separately.
 
-| Layer | What it does |
-|---|---|
-| **Triggers** | A signed Stripe webhook (deduplicated by event ID), a Slack `@Peeblo` mention (Socket Mode), a durable wake-up (for example "day after the promised payment date"), an approval decision, or an assignment from the console. Duplicate events resume the same case. |
-| **Case store** | SQLite holds cases, evidence, the operation intent log, approvals, wake-ups and every run event. Model sessions are disposable, and each run rebuilds its context from these records. |
-| **Reasoning loop** | [Cline SDK](https://docs.cline.bot/sdk/overview) agent runtime on ClinePass **GLM-5.3 Flash**. It gets the standing responsibility, the case state and 17 reusable tools. There are no per-case scripts: the same agent handles a wrong entity, an "already paid" claim or a missing PO. |
-| **Executor** | Deterministic code between the model and the apps. It enforces authority from policy, requests Slack approval bound to the exact change, logs intent with an idempotency key before writing, reconciles uncertain outcomes before retrying, and verifies by re-reading provider state. |
-| **Observability** | Every run is one [Lemma](https://uselemma.ai) trace with a span for each model turn and tool call, plus an outcome span (status, verified operations, pending approvals). |
-| **Testing** | [Arga](https://argalabs.com) service twins for repeatable scenario tests (see Reliability). |
+## The Peeblo agent harness
 
-**Tools the agent chooses from**
+![Peeblo agent harness architecture](docs/assets/architecture.svg)
 
-- **Read:** `find_customer`, `get_billing_state`, `find_invoice`, `ar_worklist`, `get_crm_context`, `get_conversations`, `read_policy`, `search_documents`, `read_document`, `search_jira`, `read_slack`
-- **Case:** `update_plan` (persistent plan shown in the console), `record_evidence`, `schedule_follow_up`, `propose_lesson`, `finish_run`
-- **Change** (through the executor only): `propose_action`, `retry_operation`
-
-**Actions the executor can perform** (authority comes from the Notion policy)
-
-| Action | Authority |
-|---|---|
-| `billing.reissue_to_correct_entity`: void the wrong invoice and reissue to the correct entity in Stripe and QuickBooks, resumable per step | AR approver |
-| `stripe.void_invoice`, `qbo.void_invoice`, `stripe.create_invoice` (as replacement) | AR approver |
-| `stripe.create_credit_note`, `qbo.create_credit_memo` | ≤ $250 autonomous · ≤ $5,000 AR approver · above that, CFO |
-| `qbo.apply_payment` (same customer, balance-checked) | autonomous |
-| `stripe.update_draft_invoice` (e.g. add PO), `stripe.finalize_invoice`, `stripe.create_customer`, `qbo.create_customer`, `qbo.create_invoice` | autonomous |
-| `customer.send_email` | approved templates autonomous; anything that commits money needs approval |
-| `hubspot.log_note`, `jira.comment`, `jira.create_issue`, `slack.post` | autonomous |
-
-## Connected apps
-
-![Apps](docs/apps.svg)
-
-| App | Role for Peeblo | Access |
+| Question | Answer | Code |
 |---|---|---|
-| **Stripe** | Issued invoices, customers, subscriptions, credit notes | Secret key (test mode) |
-| **QuickBooks Online** | Ledger: AR aging, payments, credit memos | OAuth 2.0 (rotating refresh token, persisted) |
-| **Salesforce** | Enterprise accounts, parent/child hierarchy, contacts, opportunities with contract terms | External Client App, client credentials |
-| **HubSpot** | Customer billing conversations (AP emails, notes), SMB accounts | Service key |
-| **Dropbox** | Executed contracts, billing instructions, W-9s, POs, remittances, with version history | Scoped app, offline refresh token |
-| **Notion** | Approved policies: authority limits, collections, identity and cash application, disputes | Internal integration |
-| **Slack** | Assignments, approvals (buttons), status reports | Bot + app token (Socket Mode) |
-| **Jira** | Billing exceptions and cross-team dependencies | API token |
+| What wakes it? | Signed Stripe webhooks (deduplicated by event ID), scheduled wake-ups, approval decisions, the live console | [`main.ts`](agent/src/main.ts) |
+| What does the model decide? | What to read, which entity is correct, what change to propose, when to escalate or wait | [`tools.ts`](agent/src/tools.ts), [`runner.ts`](agent/src/runner.ts) |
+| What does code decide? | Whether a change is allowed, who must approve it, and whether it already happened | [`executor.ts`](agent/src/executor.ts) |
+| How is approval bound? | A fingerprint of the exact action and parameters. It expires in 48h, and only listed approvers count. | `requestApproval`, `decide` |
+| What survives a crash? | Case evidence, the plan, and an intent log written **before** every external write | [`store.ts`](agent/src/store.ts) |
+| Response lost after a write? | The operation is marked `uncertain` and reconciled against the provider before any retry | `retry` in executor.ts |
+| When is a write "done"? | Only after the executor re-reads Stripe, QuickBooks, HubSpot or Jira and records what it saw | `finish` in executor.ts |
 
-## The demo case, as Peeblo actually runs it
+## How Peeblo connects to each app
 
-1. **Stripe/QuickBooks:** INV-2310, $24,000, is open and overdue, addressed to **Eastbridge Holdings**.
-2. **HubSpot:** Eastbridge Logistics AP rejected it because it names the parent company.
-3. **Salesforce:** there are two similarly named accounts (Holdings, and Logistics as its child). A lookalike, *East Bridge Coffee Roasters*, is rejected.
-4. **Dropbox:** the billing instructions have two versions. v1 (2025) says bill Holdings; the executed v2 (2026) says bill **Eastbridge Logistics LLC, EIN 84-2917365**, and supersedes v1.
-5. **QuickBooks:** no payment or credit has been applied.
-6. **Notion:** voiding and reissuing requires AR approver approval, so Peeblo posts the exact correction with evidence to `#ar-approvals`.
-7. **Approved:** Stripe void, then the replacement invoice for Logistics. **Interrupted.**
-8. **Resume:** the executor finds the replacement it already created (idempotency key). No duplicate. It continues in QuickBooks, then verifies balances and references.
-9. **Jira and Slack:** the exception is updated and a report goes back to Slack. **Billing exception resolved; receivable stays open** until payment arrives.
+![How Peeblo connects to each app](docs/assets/apps.svg)
 
-The same agent and tools also run the other seeded cases (see Reliability).
+- **Stripe:** finds the issued invoice; voids it and creates the replacement.
+- **QuickBooks:** reads the ledger and balances; voids, reissues, applies payments.
+- **Salesforce:** tells the parent account apart from its subsidiaries by legal name and EIN.
+- **HubSpot:** reads the customer's AP emails; records outbound notices.
+- **Dropbox:** reads signed order forms and billing instructions, including version history.
+- **Notion:** reads the AR policies that set approval limits.
+- **Slack:** sends approval requests with the evidence; posts status updates.
+- **Jira:** tracks the billing exception and cross-team follow-ups.
 
-## What Peeblo can do
+## See it work: the Eastbridge case
 
-One standing responsibility, many situations. Status reflects this build, tested against the seeded sandbox apps.
-
-| Responsibility (from the product spec) | Status |
+| Before | After (verified by re-reading each app) |
 |---|---|
-| Repair incorrect billing identities (void and reissue to the right legal entity) | ✅ demonstrated, including interruption recovery |
-| Investigate "already paid" claims and apply incoming cash, including payments made on behalf of others | ✅ demonstrated |
-| Handle partial and grouped payments; short-pays routed to approval, never written off silently | ✅ demonstrated |
-| Resolve missing purchase orders (hold the invoice, follow up) | ✅ demonstrated |
-| Coordinate disputes and billing defects with Jira; report in Slack | ✅ demonstrated |
-| Track promises to pay and follow-ups with durable wake-ups | ✅ supported (scheduler + wake-ups in every case) |
-| Validate draft invoices against contracts; add PO numbers; finalize | ✅ supported by tools and actions |
-| Prepare credits and credit notes within authority | ✅ supported, approval-gated by amount |
-| Find deals that never became invoices; prepare new customers | ✅ supported (CRM + Stripe tools, create customer/invoice actions) |
-| Detect Stripe ↔ QuickBooks sync failures and duplicates | 🟡 tools read both sides; seeded cases exist, not yet run |
-| Answer billing questions, prepare statements, prioritize collections, daily AR briefing | 🟡 read tools exist (`ar_worklist`, conversations, ledger); templates are logged, not emailed |
-| Customer portals (Coupa, Ariba), bank feeds, usage metering | ⏳ planned connectors (browser agent for portals) |
+| Stripe INV-2310, $24,000, **open**, billed to Eastbridge **Holdings** | Original **void**; exactly **one** replacement, open, billed to Eastbridge **Logistics** LLC |
+| QuickBooks invoice for Holdings, $24,000 | Original $0; INV-2310-R for Logistics, balance $24,000 |
+| AP rejected the invoice in email | Jira exception updated; Slack report posted |
 
-The seeded world has 50 accounts across the apps, including deliberate lookalikes (Eastbridge vs East Bridge Coffee, Ridgeview school district vs Ridgeview Capital, Northwind Group vs Northwind Traders), superseded documents, expired POs, a duplicate QuickBooks invoice, a Stripe payment missing from the ledger, and a disputed usage charge.
+- **Evidence:** Peeblo found the AP rejection, told apart two similarly named accounts plus a lookalike, and chose the **executed** 2026 billing instructions over a superseded 2025 version.
+- **Approval:** the Notion policy requires approval to void and reissue, so Peeblo requested it with the evidence attached.
+- **Interruption:** the run was stopped right after the Stripe replacement was created. On resume, the executor found the invoice it had already created, wrote **no duplicate**, and finished QuickBooks.
+- **Outcome:** the case ends `waiting`. The billing error is fixed, but the receivable stays open until the customer pays.
 
 ## Reliability
 
-![Life of a financial write](docs/reliability.svg)
+### Results
 
-**Guarantees built into the executor**
+| Scenario or fault | Environment | Required / forbidden outcome | Result |
+|---|---|---|---|
+| Wrong bill-to entity, approval, **interrupted mid-correction** | Real Stripe + QuickBooks sandboxes | One replacement for Logistics; original void; no duplicate customer | ✅ Pass ([eval](docs/eval-results.md)) |
+| "Already paid" via a management company | QuickBooks sandbox | $12,600 applied to INV-2296; lookalike Ridgeview invoices **untouched** | ✅ Pass |
+| Grouped wire across affiliates, $450 short-pay | QuickBooks sandbox | Affiliates paid; exactly $450 left open; **no credit without approval** | ✅ Pass, after an executor fix (below) |
+| Renewal with no valid PO | Stripe sandbox | Invoice **not** sent; follow-up scheduled | ✅ Pass |
+| **Write accepted, response lost** | Arga Stripe twin | Marked uncertain, reconciled, exactly one replacement | ✅ Pass · [log](docs/evidence/arga-stripe-twin-report.json) · [recording](docs/evidence/arga-stripe-twin-interrupted-reissue.mp4) |
+| **Stale approval** (invoice paid while void awaited approval) | Arga Stripe twin | Approved void refused because the invoice is now paid | ✅ Pass · [log](docs/evidence/arga-stripe-twin-duplicate-and-stale-report.json) |
+| **Duplicate event delivery** | Arga Stripe twin | Both deliveries map to one case; one customer created | ✅ Pass · same log |
 
-- **Authority is not the model's decision.** Thresholds and approval requirements are code, mirroring the Notion policy. An approval covers a fingerprint of the exact action and parameters, expires after 48h, and only listed approvers count.
-- **No duplicate writes.** Every write has a business-identity idempotency key (for example customer + invoice reference + replaced invoice), so a resumed run that phrases things differently still maps to the same operation.
-- **Interruption is a normal state.** An operation left `submitted` or `uncertain` is reconciled against provider state before anything is retried. Multi-step corrections skip steps already done.
-- **Verified, not assumed.** After each write the executor re-reads Stripe/QuickBooks/HubSpot/Jira and records what it observed; the case timeline shows it.
-- **Honest outcomes.** "Billing exception resolved" and "receivable settled" are separate. Runs must end with an explicit status, summary and next action.
+**How to read these numbers:**
+- **16/16** is checks, not runs. [`npm run eval`](agent/src/eval.ts) reads live Stripe and QuickBooks state after the cases ran, plus invariants over the operation log:
+  - no operation succeeded twice
+  - every gated write had an approval
+  - every write carries a verification
+- **The first eval run scored 15/16.** It caught a stale `uncertain` operation on a resolved case. Retrying it re-read QuickBooks, saw the payment was already applied, and refused to apply it again.
+- **Northwind:** the first run hit an executor gap (allocating from a partly applied payment). The agent didn't force a write. It **filed Jira SCRUM-16** describing the gap and waited. After the fix, the resumed run completed the recorded operation.
 
-**Test results**
+### Recovery, step by step
 
-_Filled from actual runs; see `agent/src/e2e.ts` and the Lemma traces._
+![When a write succeeds but the response never arrives](docs/assets/recovery.svg)
 
-| Scenario (same agent, no case-specific code) | Expected end state | Result |
-|---|---|---|
-| Eastbridge: wrong bill-to entity, approval, interrupted mid-correction, resume | Stripe original void and one replacement to Logistics; QuickBooks original $0 and one replacement for Logistics; no duplicates; Jira and Slack updated | ✅ **Pass.** The agent chose the correction and requested approval itself. The run was interrupted after the Stripe replacement; on resume the executor skipped completed steps and finished QuickBooks. Verified: Stripe original `void`, one replacement INV-2310 `open` to Eastbridge Logistics LLC $24,000; QuickBooks original $0, INV-2310-R to Eastbridge Logistics, balance $24,000. Case left `waiting` (receivable open) with a follow-up scheduled. |
-| Crescent Dental: "we already paid", payment from a different payer | $12,600 applied to INV-2296 only after matching the remittance | ✅ **Pass.** Found the $12,600 ACH parked under CDG Partners LLC, proved the payer relationship from the remittance advice and the order form clause, allocated it (verified: INV-2296 balance $0, deposit preserved across 2 payments, $0 unapplied), confirmed to the customer and the team. Status `resolved`. |
-| Northwind: grouped wire from the parent for three affiliates, $450 short-pay | Affiliate invoices paid, $8,550 applied to INV-2242, $450 credit sent for approval (not written off) | ✅ **Pass, after an honest escalation.** First run: applied the parent's own $8,550, sent the $450 credit for approval (training priced $1,350 in the Enterprise Agreement), and hit an executor limitation (allocation refused a partly-applied payment). Instead of forcing a write it **filed Jira SCRUM-16 describing the gap** and waited. After the fix, the resumed run retried the recorded operation: INV-2240 $18,000 → $0, INV-2241 $15,000 → $0, $0 unapplied, SCRUM-16 updated. Status `waiting` on the $450 approval. |
-| Meridian: renewal draft without PO, asked "can it go out today?" | Invoice not finalized; follow-up scheduled for PO date | ✅ **Pass.** Declined to send: contract and policy require a PO, the only PO on file is last year's and expired. Informed the team and scheduled a wake-up for the date procurement promised. Status `waiting`. |
+## How I used Arga
 
-**Outcome evaluation (`npm run eval`).** ArgaBench-style executable checks read live Stripe and QuickBooks state after Peeblo worked the cases, plus invariants over the operation log. Results: [`docs/eval-results.md`](docs/eval-results.md).
+<img src="docs/assets/arga-twin.gif" alt="Arga Stripe twin updating live while the test runs" width="100%">
 
-| Run | Result |
-|---|---|
-| First run | 15/16. Found a real defect: an operation from before the precondition fix was still marked `uncertain` on a resolved case. |
-| After reconciling | **16/16.** The executor's retry re-read QuickBooks, saw the $12,600 was already applied and refused to apply it again. |
+- **Seeded twin:** [`arga-test.ts`](agent/src/arga-test.ts) provisions an Arga **Stripe twin** and seeds the failure state: parent and subsidiary customers, plus an issued invoice billed to the wrong one.
+- **Real executor:** the unmodified executor runs against the twin by pointing the Stripe base URL at it.
+- **Injected faults:** a lost response after `create_invoice`, the same event delivered twice, and the customer paying while a void awaited approval.
+- **Grading:** pass/fail comes from the twin's own state (the admin state API and invoice lists), not from Peeblo's logs.
+- **Something we learned:** the twin ignored invoice-item amounts (totals stayed $0), so dollar-amount assertions run in the real Stripe sandbox instead.
 
-Checks cover outcomes (correct entity, balances, preserved deposits), forbidden changes (lookalike invoices untouched, no credit without approval, no invoice sent without a PO) and harness invariants (no operation executed twice, every gated write had an approved approval, every write has a recorded verification).
+## How I used Lemma
 
-**Arga (service twins).** `agent/src/arga-test.ts` runs the executor against a Stripe twin with injected faults. Pass criteria are read back from the twin.
+<img src="docs/assets/lemma-issues.gif" alt="Lemma issue analysis over Peeblo traces" width="100%">
 
-| Twin run | What is tested | Result |
-|---|---|---|
-| `0c323cd4` | Approved void + reissue where **the provider accepts the create but the response is lost** | ✅ Operation marked `uncertain`, reconciled on retry, no duplicate; a rephrased retry maps to the same operation. [Recording](docs/evidence/arga-stripe-twin-interrupted-reissue.mp4) · [report](docs/evidence/arga-stripe-twin-report.json) |
-| `67a12b23` | **Duplicate event delivery** and a **stale approval** (invoice paid while the void was awaiting approval) | ✅ Second delivery dropped; both map to one case; one customer created; approved void refused because the invoice is now paid. [Recording](docs/evidence/arga-stripe-twin-duplicate-and-stale-approval.mp4) · [report](docs/evidence/arga-stripe-twin-duplicate-and-stale-report.json) |
+```ts
+import { Lemma } from "@uselemma/tracing";
+const lemma = new Lemma({ apiKey, projectId, release: "peeblo-agent@0.1.0" });
 
-**Event triggers.** Stripe webhooks (`invoice.payment_failed`, `invoice.overdue`, `invoice.marked_uncollectible`, `charge.dispute.created`) are signature-verified, deduplicated by event ID and open one case per invoice and event type with no human tag. Verified on the live endpoint: first delivery opened a case and started a run, the duplicate was ignored, a forged signature was rejected with 400.
+const trace = lemma.trace({ name: "peeblo-case-run", input: { case_id, trigger } });
+const turn  = trace.startGeneration({ name: `turn-${i}`, model: "cline-pass/glm-5.3-flash" });   // every model turn
+const tool  = trace.startTool({ name: toolName, input });                                        // every tool call
+tool.end({ output, status: isError ? "ERROR" : "OK" });
+trace.recordSpan({ name: "verify-outcome", metadata: { "case.status": status, "operations.uncertain": n } });
+```
 
-Twin limitation found: the Stripe twin did not apply invoice-item amounts (totals remained $0), so amount assertions run against the real Stripe sandbox instead, where the eval verifies $24,000.
+- **Trace shape:** one trace per run, with a span for every model turn (tokens, timing) and every tool call (input, output, error status). A final `verify-outcome` span records what the case actually ended as.
+- **Failure found → fixed:**
+  - **Found:** Lemma's issue detection flagged **"read_document used nonexistent path"**. The agent was guessing Dropbox paths.
+  - **Cause:** Dropbox search indexing lags, so search returned nothing for freshly seeded files.
+  - **Fix:** `search_documents` now falls back to a folder listing, so the agent gets real paths. See [`tools.ts`](agent/src/tools.ts).
+- **Other patterns Lemma surfaced:** "retry_operation repeated without progress" and "cross-customer payment application attempted". The executor refused those writes, and the traces showed the agent exactly where it looped. That led to precondition failures being returned as final (`PreconditionError`), so the agent stops retrying them.
 
-**Lemma (execution traces).** Every run is one trace in the `MultiAgent` project: a generation span per model turn (model, timing, token usage), a tool span per tool call (input, output, error status) and a `verify-outcome` span. The first Eastbridge run produced 48 spans (13 model turns, 33 tool calls). Lemma's issue detection flagged a real failure on its own, **"read_document used nonexistent path"** (the agent guessed a Dropbox path before searching), which led to the search fallback now in `search_documents`.
-
-**Known limitations**
-
-- The sandbox date for Stripe due dates cannot be backdated (Stripe requires future due dates without test clocks), so Stripe shows the Aug 1 invoice with its Net 30 terms written on it, and QuickBooks carries the overdue aging.
-- Customer email is recorded as an outbound email on HubSpot rather than sent (no mail connector).
-- Scheduling uses a SQLite wake-up table polled every 15s instead of Temporal; state is durable but a single worker processes runs.
-- Webhooks are wired for Stripe; QuickBooks, HubSpot and Jira events still arrive through scheduled reviews.
-
-## Setup
-
-**Requirements:** Node 24+ (runs TypeScript directly), accounts or sandboxes for the eight apps, a ClinePass API key, and a Lemma project.
+## Run it locally
 
 ```bash
 git clone https://github.com/hitakshiA/peeblo && cd peeblo
-cp .env.example ../.env          # credentials live outside the repo; see the list in .env.example
+cp .env.example ../.env                 # fill in sandbox credentials (kept outside the repo)
 cd agent && npm ci
 
-node ../seed/apps/stripe.ts       # seed the Miny Labs world (idempotent)
-node ../seed/apps/lite.ts         # QuickBooks, Salesforce, HubSpot, Slack, Jira, Notion, Dropbox
-node ../seed/scenarios/eastbridge.ts   # set up or reset the demo case
+node ../seed/apps/stripe.ts             # seed the business world (idempotent)
+node ../seed/apps/lite.ts               # QuickBooks, Salesforce, HubSpot, Slack, Jira, Notion, Dropbox
+node ../seed/scenarios/eastbridge.ts    # set up / reset the demo case
 
-node src/main.ts                  # API :8787, Slack Socket Mode, scheduler
-node src/cli.ts assign "Crescent Dental says they already paid INV-2296"   # or run a case from the terminal
-node src/e2e.ts                   # end-to-end test: approval, interruption, resume
+node src/main.ts                        # terminal 1: API + scheduler
+node src/e2e.ts                         # terminal 2: approval → interruption → resume
+npm run eval                            # outcome checks against live app state
 ```
 
 Frontend: `cd frontend && npm ci && VITE_PEEBLO_API=http://localhost:8787 npm run dev`, then open `/room`.
 
-**Deploy:** the agent runs on an Azure VM as a systemd service behind Caddy (`api.peeblo.xyz`); the frontend is on Vercel (`peeblo.xyz`).
-
-## Repository
-
 ```
-agent/src/   main.ts (Slack, scheduler, API)  runner.ts (Cline agent + Lemma)  tools.ts  executor.ts  store.ts  connectors.ts  bus.ts
-seed/        world/ (shared business world)  apps/ (per-app seeders)  scenarios/ (resettable demo cases)
+agent/src/   main.ts · runner.ts (Cline agent + Lemma) · tools.ts · executor.ts · store.ts · connectors.ts
+seed/        world/ (shared business world) · apps/ (per-app seeders) · scenarios/ (resettable cases)
 frontend/    src/room/ (live case console)
-docs/        diagrams
+docs/        demo.mp4 · assets/ · eval-results.md · evidence/ (Arga logs and recordings)
 ```
