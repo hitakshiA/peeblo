@@ -92,14 +92,20 @@ _Filled from actual runs; see `agent/src/e2e.ts` and the Lemma traces._
 
 | Scenario (same agent, no case-specific code) | Expected end state | Result |
 |---|---|---|
-| Eastbridge: wrong bill-to entity, approval, interrupted mid-correction, resume | Stripe original void and one replacement to Logistics; QuickBooks original $0 and one replacement for Logistics; no duplicates; Jira and Slack updated | _pending_ |
+| Eastbridge: wrong bill-to entity, approval, interrupted mid-correction, resume | Stripe original void and one replacement to Logistics; QuickBooks original $0 and one replacement for Logistics; no duplicates; Jira and Slack updated | ✅ **Pass.** The agent chose the correction and requested approval itself. The run was interrupted after the Stripe replacement; on resume the executor skipped completed steps and finished QuickBooks. Verified: Stripe original `void`, one replacement INV-2310 `open` to Eastbridge Logistics LLC $24,000; QuickBooks original $0, INV-2310-R to Eastbridge Logistics, balance $24,000. Case left `waiting` (receivable open) with a follow-up scheduled. |
 | Crescent Dental: "we already paid", payment from a different payer | $12,600 applied to INV-2296 only after matching the remittance | _pending_ |
 | Northwind: grouped wire with $450 short-pay | Two invoices paid, $8,550 applied to INV-2242, $450 credit sent for approval (not written off) | _pending_ |
 | Meridian: renewal draft without PO | Invoice not finalized; follow-up scheduled for PO date | _pending_ |
 
-**Arga:** _pending_
+**Arga (service twins).** `agent/src/arga-test.ts` provisions a Stripe twin, seeds a parent/subsidiary pair with an issued invoice addressed to the wrong one, then runs the executor's approved void + reissue with a **fault injected: the provider accepts the create but the response is lost**. Pass criteria are read back from the twin: original void, exactly one replacement, addressed to the subsidiary.
 
-**Lemma:** _pending_
+| Twin run | Result |
+|---|---|
+| `0c323cd4` Stripe twin, 2 passes | ✅ Operation marked `uncertain`, reconciled on retry, **no duplicate**; a rephrased retry mapped to the same operation. Recording: [`docs/evidence/arga-stripe-twin-interrupted-reissue.mp4`](docs/evidence/arga-stripe-twin-interrupted-reissue.mp4), report: [`docs/evidence/arga-stripe-twin-report.json`](docs/evidence/arga-stripe-twin-report.json) |
+
+Twin limitation found: the Stripe twin did not apply invoice-item amounts (totals remained $0), so amount assertions are only meaningful against the real Stripe sandbox, where the Eastbridge run verified $24,000.
+
+**Lemma (execution traces).** Every run is one trace in the `MultiAgent` project: a generation span per model turn (model, timing, token usage), a tool span per tool call (input, output, error status) and a `verify-outcome` span. The first Eastbridge run produced 48 spans (13 model turns, 33 tool calls). Lemma's issue detection flagged a real failure on its own, **"read_document used nonexistent path"** (the agent guessed a Dropbox path before searching), which led to the search fallback now in `search_documents`.
 
 **Known limitations**
 

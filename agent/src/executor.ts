@@ -96,7 +96,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
     authority: () => "autonomous",
     execute: async (p, key) => {
       const inv = await stripe.call(`/invoices/${p.invoice_id}`);
-      if (inv.status !== "draft") throw new Error(`invoice ${p.invoice_id} is ${inv.status}, not draft`);
+      if (inv.status !== "draft") throw new PreconditionError(`invoice ${p.invoice_id} is ${inv.status}, not draft`);
       if (p.lines) {
         for (const li of inv.lines.data) if (li.invoice_item) await stripe.call(`/invoiceitems/${li.invoice_item}`, { method: "DELETE" });
         for (const [i, l] of p.lines.entries()) await stripe.call("/invoiceitems", { idempotencyKey: `${key}-line-${i}`, form: { customer: inv.customer, invoice: inv.id, description: l.quantity === 1 ? l.description : `${l.description} (${l.quantity} x $${l.unit_amount_usd})`, amount: cents(l.quantity * l.unit_amount_usd), currency: "usd" } });
@@ -161,16 +161,64 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const pay = await qbo.get("Payment", p.payment_id);
       const applied = (pay.Line ?? []).reduce((s: number, l: any) => s + l.Amount, 0);
       const adding = money(p.applications.reduce((s: number, a: any) => s + a.amount_usd, 0));
-      if (money(applied + adding) > pay.TotalAmt) throw new Error(`applications $${adding} exceed unapplied $${money(pay.TotalAmt - applied)}`);
+      if (money(applied + adding) > pay.TotalAmt) throw new PreconditionError(`applications $${adding} exceed unapplied $${money(pay.TotalAmt - applied)}`);
       for (const a of p.applications) {
         const inv = await qbo.get("Invoice", a.invoice_id);
-        if (inv.CustomerRef.value !== pay.CustomerRef.value) throw new Error(`invoice ${inv.DocNumber} belongs to ${inv.CustomerRef.name}, payment to ${pay.CustomerRef.name}; move the payment to the right customer first`);
-        if (a.amount_usd > inv.Balance) throw new Error(`amount $${a.amount_usd} exceeds ${inv.DocNumber} balance $${inv.Balance}`);
+        if (inv.CustomerRef.value !== pay.CustomerRef.value) throw new PreconditionError(`invoice ${inv.DocNumber} belongs to ${inv.CustomerRef.name}, payment to ${pay.CustomerRef.name}; use qbo.allocate_payment_across_customers when a documented payer relationship exists`);
+        if (a.amount_usd > inv.Balance) throw new PreconditionError(`amount $${a.amount_usd} exceeds ${inv.DocNumber} balance $${inv.Balance}`);
       }
       return qbo.post("Payment", { Id: pay.Id, SyncToken: pay.SyncToken, sparse: true, CustomerRef: pay.CustomerRef, TotalAmt: pay.TotalAmt, Line: [...(pay.Line ?? []), ...p.applications.map((a: any) => ({ Amount: a.amount_usd, LinkedTxn: [{ TxnId: a.invoice_id, TxnType: "Invoice" }] }))] });
     },
     reconcile: async (p) => { const pay = await qbo.get("Payment", p.payment_id); const linked = new Set((pay.Line ?? []).flatMap((l: any) => l.LinkedTxn.map((t: any) => t.TxnId))); return p.applications.every((a: any) => linked.has(a.invoice_id)) ? pay : undefined; },
     verify: async (p) => { const pay = await qbo.get("Payment", p.payment_id); const invs = await Promise.all(p.applications.map((a: any) => qbo.get("Invoice", a.invoice_id))); return { ok: invs.every((i) => (pay.Line ?? []).some((l: any) => l.LinkedTxn.some((t: any) => t.TxnId === i.Id))), observed: invs.map((i) => `${i.DocNumber} balance $${i.Balance}`).join("; ") + `; payment unapplied $${pay.UnappliedAmt}` }; },
+  },
+  "qbo.allocate_payment_across_customers": {
+    description: "Apply one received payment to open invoices of MORE THAN ONE QuickBooks customer, when the payer paid on behalf of others (parent paying affiliates, management company paying for a client) and remittance evidence names each invoice. Splits the deposit: the original payment keeps its own customer's share and any unexplained remainder stays unapplied; a linked payment is created for each other customer. Totals must reconcile exactly.",
+    params: "{ payment_id, allocations: [{ customer_id, invoice_id, amount_usd }], evidence_ref }",
+    authority: () => "autonomous",
+    identity: (p) => ({ payment_id: p.payment_id, allocations: [...(p.allocations ?? [])].map((a: any) => `${a.invoice_id}:${a.amount_usd}`).sort() }),
+    amount: (p) => money((p.allocations ?? []).reduce((s: number, a: any) => s + a.amount_usd, 0)),
+    resumable: true,
+    execute: async (p, key, ctx) => {
+      const pay = await qbo.get("Payment", p.payment_id);
+      const total = money(p.allocations.reduce((s: number, a: any) => s + a.amount_usd, 0));
+      if (!p.evidence_ref) throw new PreconditionError("evidence_ref (remittance advice or contract clause) is required");
+      if ((pay.Line ?? []).length) throw new PreconditionError(`payment ${pay.Id} is already partly applied; use qbo.apply_payment`);
+      if (total > pay.TotalAmt + 0.001) throw new PreconditionError(`allocations $${total} exceed payment $${pay.TotalAmt}`);
+      for (const a of p.allocations) {
+        const inv = await qbo.get("Invoice", a.invoice_id);
+        if (inv.CustomerRef.value !== a.customer_id) throw new PreconditionError(`invoice ${inv.DocNumber} belongs to customer ${inv.CustomerRef.value}, not ${a.customer_id}`);
+        if (a.amount_usd > inv.Balance + 0.001) throw new PreconditionError(`amount $${a.amount_usd} exceeds ${inv.DocNumber} balance $${inv.Balance}`);
+      }
+      const others = p.allocations.filter((a: any) => a.customer_id !== pay.CustomerRef.value);
+      const own = p.allocations.filter((a: any) => a.customer_id === pay.CustomerRef.value);
+      const created: string[] = [];
+      const existing = ((await qbo.query("select * from Payment MAXRESULTS 300")).Payment ?? []).filter((x: any) => String(x.PrivateNote ?? "").includes(key));
+      for (const [i, a] of others.entries()) {
+        const found = existing.find((x: any) => String(x.PrivateNote).includes(`${key}#${i}`));
+        if (found) { ctx?.step("qbo.payment_allocation", `${found.CustomerRef.name} $${found.TotalAmt} (payment ${found.Id})`, true); created.push(found.Id); continue; }
+        const np = await qbo.post("Payment", { CustomerRef: { value: a.customer_id }, TotalAmt: a.amount_usd, TxnDate: pay.TxnDate, PaymentRefNum: String(pay.PaymentRefNum ?? "").slice(0, 21), PrivateNote: `Allocated from payment ${pay.Id} (${pay.CustomerRef.name}) per ${p.evidence_ref} [${key}#${i}]`, Line: [{ Amount: a.amount_usd, LinkedTxn: [{ TxnId: a.invoice_id, TxnType: "Invoice" }] }] });
+        ctx?.step("qbo.payment_allocation", `${np.CustomerRef.name} $${np.TotalAmt} applied (payment ${np.Id})`, false);
+        created.push(np.Id);
+      }
+      ctx?.checkpoint("affiliate payments created");
+      const fresh = await qbo.get("Payment", p.payment_id);
+      const othersTotal = money(others.reduce((s: number, a: any) => s + a.amount_usd, 0));
+      const expectedTotal = money(pay.TotalAmt - othersTotal);
+      if (Math.abs(fresh.TotalAmt - expectedTotal) > 0.001 || (own.length && !(fresh.Line ?? []).length)) {
+        await qbo.post("Payment", { Id: fresh.Id, SyncToken: fresh.SyncToken, sparse: true, CustomerRef: fresh.CustomerRef, TotalAmt: expectedTotal, PrivateNote: `${fresh.PrivateNote ?? ""} | split: $${othersTotal} allocated to affiliates per ${p.evidence_ref} [${key}]`.slice(0, 4000), Line: own.map((a: any) => ({ Amount: a.amount_usd, LinkedTxn: [{ TxnId: a.invoice_id, TxnType: "Invoice" }] })) });
+        ctx?.step("qbo.payment_split", `original payment ${fresh.Id} now $${expectedTotal}${own.length ? ` with $${money(own.reduce((s: number, a: any) => s + a.amount_usd, 0))} applied` : ""}`, false);
+      } else ctx?.step("qbo.payment_split", `original payment ${fresh.Id} already split`, true);
+      return { id: p.payment_id, created_payment_ids: created, original_total: pay.TotalAmt };
+    },
+    verify: async (p, r) => {
+      const invs = await Promise.all(p.allocations.map((a: any) => qbo.get("Invoice", a.invoice_id)));
+      const pays = await Promise.all([p.payment_id, ...r.created_payment_ids].map((id: string) => qbo.get("Payment", id)));
+      const sum = money(pays.reduce((s, x) => s + x.TotalAmt, 0));
+      const linked = new Set(pays.flatMap((x) => (x.Line ?? []).flatMap((l: any) => l.LinkedTxn.map((t: any) => t.TxnId))));
+      const ok = Math.abs(sum - r.original_total) < 0.01 && invs.every((i) => linked.has(i.Id));
+      return { ok, observed: `${invs.map((i) => `${i.DocNumber} balance $${i.Balance}`).join("; ")}; deposit $${r.original_total} preserved across ${pays.length} payments ($${sum}); unapplied $${money(pays.reduce((s, x) => s + (x.UnappliedAmt ?? 0), 0))}` };
+    },
   },
   "qbo.create_customer": {
     identity: (p) => ({ display_name: p.display_name }),
@@ -259,6 +307,8 @@ const setOp = (opId: string, patch: Partial<OpRow>) => {
 // but lose its response, exercising the uncertain-outcome recovery path.
 let faultArmed = process.env.PEEBLO_FAULT ?? "";
 export class InterruptedError extends Error {}
+// Refusals raised before any provider write (validation, authority, business rules). Never "uncertain".
+export class PreconditionError extends Error {}
 // Demo/test control: interrupt the whole run right after the provider accepts the next write of this kind
 // (or any write with "*"), before the result is recorded. The operation stays "submitted".
 let interruptArmed = "";
@@ -286,7 +336,7 @@ async function run(op: OpRow): Promise<any> {
     if (faultArmed === `lose_response:${op.kind}`) { faultArmed = ""; throw Object.assign(new Error("simulated timeout: provider accepted the write but the response was lost"), { uncertain: true }); }
   } catch (e) {
     if (e instanceof InterruptedError) throw e;
-    const uncertain = (e as any).uncertain || !(e instanceof HttpError) || (e as HttpError).status >= 500;
+    const uncertain = !(e instanceof PreconditionError) && ((e as any).uncertain || (e instanceof HttpError ? e.status >= 500 : !/^(invoice|amount|applications|payment)/i.test((e as Error).message)));
     setOp(op.id, { status: uncertain ? "uncertain" : "failed", error: (e as Error).message.slice(0, 1000) });
     evidence.add(op.case_id, "executor", `${op.kind} ${uncertain ? "outcome UNCERTAIN" : "failed"}: ${(e as Error).message.slice(0, 300)}`, op.id);
     return { status: uncertain ? "uncertain" : "failed", operation_id: op.id, error: (e as Error).message.slice(0, 500), guidance: uncertain ? "Call execute_action again with the same operation_id; the executor will reconcile before any retry." : "Fix the parameters or choose a different action." };
@@ -312,6 +362,7 @@ export async function propose(caseId: string, kind: string, params: Params, just
     if (["succeeded"].includes(existing.status)) return { status: "already_done", operation_id: existing.id, verified_state: existing.verification };
     if (existing.status === "awaiting_approval") return { status: "awaiting_approval", operation_id: existing.id, note: "Approval already requested; schedule a follow-up instead of re-requesting." };
     if (["uncertain", "submitted", "approved"].includes(existing.status)) return run(existing);
+    if (existing.status === "failed") return { status: "failed_previously", operation_id: existing.id, error: existing.error, guidance: "This exact change already failed. Change the approach or parameters instead of repeating it." };
     if (existing.status === "rejected") return { status: "rejected_by_approver", operation_id: existing.id };
   }
   const amount = spec.amount?.(params);
