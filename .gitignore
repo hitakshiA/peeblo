@@ -9,3 +9,7 @@ ARCHITECTURE.md
 FRONTEND_IMPORT.md
 LICENSE.manthan
 seed/state/
+.vercel/
+*.db
+*.db-*
+frontend/output/
