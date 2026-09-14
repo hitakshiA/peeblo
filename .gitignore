@@ -14,3 +14,4 @@ seed/state/
 *.db-*
 frontend/output/
 frontend/public/demo.mp4
+agent/eval-results.*

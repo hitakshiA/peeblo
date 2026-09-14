@@ -2,14 +2,8 @@
 
 <p align="center">
   <a href="https://peeblo.xyz/demo.mp4"><b>▶ Demo video (2 min)</b></a> ·
-  <a href="https://peeblo.xyz"><b>Live demo</b></a> ·
-  <a href="https://api.peeblo.xyz/api/health">Agent API</a> ·
-  <a href="seed/">Seed data</a> ·
-  <a href="docs/system-and-reliability.md"><b>System &amp; reliability brief</b></a> ·
-  <a href="docs/eval-results.md">Eval report</a>
+  <a href="https://peeblo.xyz"><b>Live demo</b></a>
 </p>
-
-> **The live demo runs a real agent.** Every case at [peeblo.xyz/room](https://peeblo.xyz/room) is worked by GLM-5.3 Flash (ClinePass, via the Cline SDK) against real sandbox accounts in Stripe, QuickBooks, Salesforce, HubSpot, Dropbox, Notion, Slack and Jira. Nothing on screen is scripted. The accounts are filled with a seeded business world from [`seed/`](seed/).
 
 <p align="center"><img src="docs/assets/apps-marquee.svg" alt="Connected apps" width="100%"></p>
 
@@ -82,71 +76,6 @@
 - **Interruption test:** the harness injected an interruption right after the new Stripe invoice was created. On resume, Peeblo found the invoice it had already made, created **no duplicate**, and finished QuickBooks.
 - **Honest ending:** the case ends `waiting`. The billing error is fixed; the $24,000 is still owed until the customer pays.
 
-## Reliability
-
-> **Full technical brief:** [docs/system-and-reliability.md](docs/system-and-reliability.md) covers design decisions, guarantees, failure modes, evidence and limits.
-
-### Results
-
-| Scenario or fault | Environment | Required / forbidden outcome | Result |
-|---|---|---|---|
-| Invoice sent to the wrong company, approval, **interrupted mid-correction** | Real Stripe + QuickBooks sandboxes | One replacement for Logistics; original void; no duplicate customer | ✅ Pass ([eval](docs/eval-results.md)) |
-| "Already paid" via a management company | QuickBooks sandbox | $12,600 applied to INV-2296; lookalike Ridgeview invoices **untouched** | ✅ Pass |
-| Grouped wire across affiliates, $450 short-pay | QuickBooks sandbox | Affiliates paid; exactly $450 left open; **no credit without approval** | ✅ Pass, after an executor fix (below) |
-| Renewal with no valid PO | Stripe sandbox | Invoice **not** sent; follow-up scheduled | ✅ Pass |
-| **Write accepted, response lost** | Arga Stripe twin | Marked uncertain, reconciled, exactly one replacement | ✅ Pass · [log](docs/evidence/arga-stripe-twin-report.json) · [recording](docs/evidence/arga-stripe-twin-interrupted-reissue.mp4) |
-| **Stale approval** (invoice paid while void awaited approval) | Arga Stripe twin | Approved void refused because the invoice is now paid | ✅ Pass · [log](docs/evidence/arga-stripe-twin-duplicate-and-stale-report.json) |
-| **Duplicate event delivery** | Arga Stripe twin | Both deliveries map to one case; one customer created | ✅ Pass · same log |
-
-**Repeat trial from a clean reset (Sep 13, 22:22 UTC):**
-- Reset the wrong-company scenario, then ran the full agent (investigate, then approval, then a forced interruption, then resume), then re-ran the checks against live Stripe and QuickBooks.
-- Trial 1: **8/8 checks passed.** That covers exactly one replacement, the original void, no duplicate customer, and every write approved and verified.
-- Trials 2 and 3 **failed (5/8)**: the agent's approved proposal had missing record IDs. The write failed safely and nothing wrong changed, but the correction never completed. Root cause: parameter validation happened after approval, and direct action tools dropped arguments. Both are now fixed. See the brief, section 7.
-
-**How to read these numbers:**
-- **16/16** is checks, not runs. [`npm run eval`](agent/src/eval.ts) reads live Stripe and QuickBooks state after the cases ran, plus invariants over the operation log:
-  - no operation succeeded twice
-  - every gated write had an approval
-  - every write carries a verification
-- **The first eval run scored 15/16.** It caught a stale `uncertain` operation on a resolved case. Retrying it re-read QuickBooks, saw the payment was already applied, and refused to apply it again.
-- **Northwind:** the first run hit an executor gap (allocating from a partly applied payment). The agent didn't force a write. It **filed Jira SCRUM-16** describing the gap and waited. After the fix, the resumed run completed the recorded operation.
-
-### Recovery, step by step
-
-![When a write succeeds but the response never arrives](docs/assets/recovery.svg)
-
-## How I used Arga
-
-<img src="docs/assets/arga-twin.gif" alt="Arga Stripe twin updating live while the test runs" width="100%">
-
-- **Seeded twin:** [`arga-test.ts`](agent/src/arga-test.ts) provisions an Arga **Stripe twin** and seeds the failure state: parent and subsidiary customers, plus an issued invoice billed to the wrong one.
-- **Real executor:** the unmodified executor runs against the twin by pointing the Stripe base URL at it.
-- **Injected faults:** a lost response after `create_invoice`, the same event delivered twice, and the customer paying while a void awaited approval.
-- **Grading:** pass/fail comes from the twin's own state (the admin state API and invoice lists), not from Peeblo's logs.
-- **Something we learned:** the twin ignored invoice-item amounts (totals stayed $0), so dollar-amount assertions run in the real Stripe sandbox instead.
-
-## How I used Lemma
-
-<img src="docs/assets/lemma-issues.gif" alt="Lemma issue analysis over Peeblo traces" width="100%">
-
-```ts
-import { Lemma } from "@uselemma/tracing";
-const lemma = new Lemma({ apiKey, projectId, release: "peeblo-agent@0.1.0" });
-
-const trace = lemma.trace({ name: "peeblo-case-run", input: { case_id, trigger } });
-const turn  = trace.startGeneration({ name: `turn-${i}`, model: "cline-pass/glm-5.3-flash" });   // every model turn
-const tool  = trace.startTool({ name: toolName, input });                                        // every tool call
-tool.end({ output, status: isError ? "ERROR" : "OK" });
-trace.recordSpan({ name: "verify-outcome", metadata: { "case.status": status, "operations.uncertain": n } });
-```
-
-- **Trace shape:** one trace per run, with a span for every model turn (tokens, timing) and every tool call (input, output, error status). A final `verify-outcome` span records what the case actually ended as.
-- **Failure found → fixed:**
-  - **Found:** Lemma's issue detection flagged **"read_document used nonexistent path"**. The agent was guessing Dropbox paths.
-  - **Cause:** Dropbox search indexing lags, so search returned nothing for freshly seeded files.
-  - **Fix:** `search_documents` now falls back to a folder listing, so the agent gets real paths. See [`tools.ts`](agent/src/tools.ts).
-- **Other patterns Lemma surfaced:** "retry_operation repeated without progress" and "cross-customer payment application attempted". The executor refused those writes, and the traces showed the agent exactly where it looped. That led to precondition failures being returned as final (`PreconditionError`), so the agent stops retrying them.
-
 ## Run it locally
 
 ```bash
@@ -160,14 +89,13 @@ node ../seed/scenarios/eastbridge.ts    # set up / reset the demo case
 
 node src/main.ts                        # terminal 1: API + scheduler
 node src/e2e.ts                         # terminal 2: approval → interruption → resume
-npm run eval                            # outcome checks against live app state
 ```
 
 Frontend: `cd frontend && npm ci && VITE_PEEBLO_API=http://localhost:8787 npm run dev`, then open `/room`.
 
 ```
-agent/src/   main.ts · runner.ts (Cline agent + Lemma) · tools.ts · executor.ts · store.ts · connectors.ts
+agent/src/   main.ts · runner.ts (Cline agent) · tools.ts · executor.ts · store.ts · connectors.ts
 seed/        world/ (shared business world) · apps/ (per-app seeders) · scenarios/ (resettable cases)
 frontend/    src/room/ (live case console)
-docs/        demo.mp4 · assets/ · eval-results.md · evidence/ (Arga logs and recordings)
+docs/        demo.mp4 · assets/
 ```
