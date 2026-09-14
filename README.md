@@ -32,7 +32,7 @@
 
 ## The Peeblo agent harness
 
-![Peeblo agent harness architecture](docs/assets/architecture.svg)
+![Peeblo agent harness architecture](docs/assets/harness.svg)
 
 | Question | Answer | Code |
 |---|---|---|
