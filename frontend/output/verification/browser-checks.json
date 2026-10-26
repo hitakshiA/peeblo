@@ -1,0 +1,15 @@
+{
+  "errors": [],
+  "failed": [],
+  "checks": [
+    "stage selection",
+    "replay",
+    "pause",
+    "responsibility selector",
+    "video playback",
+    "Sylva rendering and pointer interaction",
+    "motion toggle",
+    "390px no overflow",
+    "reduced-motion manual story"
+  ]
+}

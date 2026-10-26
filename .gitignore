@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.local
+ARCHITECTURE.md
+FRONTEND_IMPORT.md
+LICENSE.manthan
+seed/state/
+.vercel/
+*.db
+*.db-*
+frontend/output/
+frontend/public/demo.mp4
+agent/eval-results.*

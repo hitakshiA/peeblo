@@ -1,0 +1,13 @@
+{
+  "object": "video",
+  "id": "01a09b19-8611-7467-9e14-161c572d3f7e",
+  "model": "ByteDance/Seedance-2.0",
+  "status": "completed",
+  "created_at": 1789308536,
+  "completed_at": 1789308724,
+  "seconds": "5",
+  "size": "1280x720",
+  "outputs": {
+    "video_url": "https://api.together.ai/shrt/Z9aKMqkKeppMpqNm"
+  }
+}
