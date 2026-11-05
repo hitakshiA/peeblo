@@ -1,0 +1,21 @@
+{
+  "name": "peeblo",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Open-source AI teammate for Slack, on Pi and Otari",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "typescript": "5.9.3"
+  }
+}

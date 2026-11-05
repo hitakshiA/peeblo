@@ -1,0 +1,48 @@
+name: peeblo
+
+services:
+  db:
+    image: postgres:18-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    environment:
+      POSTGRES_USER: peeblo
+      POSTGRES_DB: peeblo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U peeblo -d peeblo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [internal]
+    restart: unless-stopped
+
+  peeblo:
+    build: .
+    image: peeblo:dev
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://peeblo:${POSTGRES_PASSWORD}@db:5432/peeblo
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks: [internal, egress]
+    restart: unless-stopped
+
+networks:
+  # The database has no route out.
+  internal:
+    internal: true
+  egress: {}
+
+volumes:
+  db: {}
+  data: {}

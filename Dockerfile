@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# Base image pinned by digest (supply-chain habit; see docs/ARCHITECTURE.md).
+FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c
+
+RUN npm install -g --ignore-scripts pnpm@12.15.0 && npm cache clean --force
+
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile --prod && pnpm store prune
+
+COPY db ./db
+COPY src ./src
+
+RUN mkdir -p /data && chown node:node /data
+USER node
+ENV NODE_ENV=production HOME=/data/home PEEBLO_DATA_DIR=/data
+VOLUME ["/data"]
+
+ENTRYPOINT ["node", "src/bin.ts"]
+CMD ["daemon"]
