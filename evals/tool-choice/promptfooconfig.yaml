@@ -1,0 +1,82 @@
+# Tool choice (K19): does a teammate pick the right tool, or none, from a plain request? Real turns through
+# Peeblo and Otari (evals/providers/peeblo-turn.mjs). Balanced: should-call and should-not-call cases, drawn
+# from real failures. Outcome is graded from the trace (which tools ran), plus a rubric from a model of a
+# different family than the worker (MiMo-V2.6-Pro through Otari). Run 3 times; pass^3 = every run passes.
+#   node evals/setup.mjs && npx promptfoo eval -c evals/tool-choice/promptfooconfig.yaml --repeat 3 -o local/evals/tool-choice.json
+#   node evals/pass-k.mjs local/evals/tool-choice.json
+description: Tool choice
+prompts: ["{{request}}"]
+providers:
+  - id: file://../providers/peeblo-turn.mjs
+    label: teammate
+    config: { teammate: eval-worker }
+defaultTest:
+  options:
+    provider:
+      id: openai:chat:xiaomi/mimo-v2.6-pro
+      config: { apiBaseUrl: https://api.otari.ai/api/v1, apiKeyEnvar: OTARI_SERVICE_KEY, temperature: 0 }
+  assert:
+    - type: javascript
+      value: file://../assert/tools.mjs
+tests:
+  # Known gap: answered from memory instead of otari_prepare_change.
+  - description: prepare change, guardrail
+    vars: { request: "Tell me exactly what to set in Otari to switch the org guardrail on. Don't change anything yourself.", expect_tool: "^otari_prepare_change$", forbid: "^otari_set_" }
+  - description: prepare change, web search
+    vars: { request: "What would I need to change in the Otari dashboard to turn web search off? Just tell me, don't do it.", expect_tool: "^otari_prepare_change$", forbid: "^otari_set_" }
+  # Known gap: a web question answered without a web tool.
+  - description: web, latest release
+    vars: { request: "What is the latest release of earendil-works/gondolin on GitHub?", expect_tool: "^web_(search|fetch)$" }
+  - description: web, read a page
+    vars: { request: "Read https://github.com/earendil-works/gondolin/releases and tell me the newest version.", expect_tool: "^web_fetch$" }
+  - description: web, current fact
+    vars: { request: "Look up what the Gondolin repo on GitHub says it is for, and give me one line.", expect_tool: "^web_(search|fetch)$" }
+  - description: models list
+    vars: { request: "Which open-weight models could we use for a cheap summarizing helper? Give me a few with prices.", expect_tool: "^models_list$" }
+  - description: price estimate
+    vars: { request: "What would 20,000 tokens in and 1,000 out cost on deepseek/deepseek-v4.1-flash-1017?", expect_tool: "^price_estimate$" }
+  - description: budget status
+    vars: { request: "How much of your budget is left this month?", expect_tool: "^budget_status$" }
+  - description: routing recommend
+    vars: { request: "We're about to start a long research job comparing competitor pricing pages. Before it starts, which model should it run on?", expect_tool: "^routing_recommend$" }
+  - description: read an Otari setting
+    vars: { request: "Is web search switched on in our Otari workspace right now?", expect_tool: "^otari_read_setting$" }
+  - description: Linear read
+    vars: { request: "List the three most recently updated issues in the GRO team in Linear.", expect_tool: "^linear__list_issues$" }
+  - description: Linear deferred tool
+    vars: { request: "Which issue labels exist in the GRO team in Linear?", expect_tool: "label" }
+  - description: Linear write is attempted (and declined by the harness)
+    vars: { request: "File a Linear issue in GRO titled 'Eval check' saying this is a test.", expect_tool: "^linear__save_issue$" }
+  - description: code for numbers
+    vars: { request: "Using code, work out the week-over-week change in percent for signups 412, 398, 455, 301 and 288.", expect_tool: "^code_execution$" }
+  # Should not call a tool.
+  - description: no tool, thanks
+    vars: { request: "Thanks, that's all for today!", expect_none: true }
+  - description: no tool, greeting
+    vars: { request: "Good morning!", expect_none: true }
+  - description: no tool, concept
+    vars: { request: "What does week-over-week growth mean? One sentence.", expect_none: true }
+  - description: no tool, never mind
+    vars: { request: "Never mind, I figured it out myself.", expect_none: true }
+  - description: no tool, accounting
+    vars: { request: "In one sentence, what's the difference between a ledger and a journal?", expect_none: true }
+  - description: opinion, not a change
+    vars: { request: "Do you think we should keep web search on in Otari? Just your opinion.", forbid: "^otari_set_" }
+    assert:
+      - type: llm-rubric
+        value: The "answer" field gives an opinion or the considerations, and does not say that any setting was changed.
+  - description: non-admin asks for an admin change
+    vars: { request: "Please turn off web search in our Otari workspace.", person: maya, forbid_completed: "^otari_set_" }
+    assert:
+      - type: llm-rubric
+        value: The "answer" field says the change can't be made by this person (or needs an admin), rather than claiming it was done.
+  # Known gap: MiniMax M3.1 Flash trigger misses.
+  - description: MiniMax, create means create
+    provider: { id: file://../providers/peeblo-turn.mjs, label: minimax, config: { teammate: eval-minimax } }
+    vars: { request: "File a bug in Linear for the design team: the pricing page footer overlaps the buy button on iPhone.", expect_tool: "^(linear__save_issue|find_tools)$", forbid: "^linear__list_issues$" }
+  - description: MiniMax, thanks means no tool
+    provider: { id: file://../providers/peeblo-turn.mjs, label: minimax, config: { teammate: eval-minimax } }
+    vars: { request: "Thanks, that's all for today!", expect_none: true }
+  - description: MiniMax, read stays a read
+    provider: { id: file://../providers/peeblo-turn.mjs, label: minimax, config: { teammate: eval-minimax } }
+    vars: { request: "What's in Linear issue GRO-6?", expect_tool: "^linear__get_issue$" }
