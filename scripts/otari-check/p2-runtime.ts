@@ -8,6 +8,7 @@ import { api, answer } from "./api.ts";
 import { teammate, turn, used } from "./n-common.ts";
 import { pool } from "../../src/db.ts";
 import { workspaceOf } from "../../src/environment/controller.ts";
+import { liveThreadLines } from "../../src/pi/supervisor.ts";
 
 const S = "P2";
 const tm = await teammate("vm-check", { tools: ["computer", "web"], connectors: [], web: { allowed_domains: ["github.com"] } });
@@ -54,6 +55,13 @@ await check(S, "a crashed computer is a tool error, and the next command works",
   const again = await turn(tm, "vm-c2", "Run echo back on your computer.", { place });
   expect(used(again.tools, "computer_bash").some((x) => x.status === "completed"), "the next command failed");
   c.note("killed_qemu", pids.length);
+});
+
+await check(S, "the live-threads note shows what was asked only in the same channel", async () => {
+  const rows = [{ place_key: "D0DM:1", status: "running", asked: "my salary review" }, { place_key: "C0GROWTH:2", status: "waiting", asked: "weekly signups" }];
+  const inChannel = liveThreadLines("C0GROWTH:9", rows);
+  expect(!inChannel.includes("salary") && inChannel.includes("weekly signups"), `channel note: ${inChannel}`);
+  expect(!liveThreadLines("D0DM:7", rows.slice(1)).includes("signups"), "a DM sees another channel's text");
 });
 
 await check(S, "two sessions work in parallel in one computer, each told about the other", async (c) => {
