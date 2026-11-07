@@ -21,7 +21,7 @@ export function Hero() {
             <span className={s.mascot} aria-hidden="true">
               <Critter id="peeblo" size={72} mood="happy" reach={320} />
             </span>{" "}
-            AI teammates.
+            AI teammates
           </h1>
           <p className={s.lead}>
             Hire a crew of AI employees for any task, right in Slack. Self-hosted on your servers, so your data, keys and AI budget stay under your control.
