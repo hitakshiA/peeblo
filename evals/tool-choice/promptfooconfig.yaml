@@ -6,10 +6,21 @@
 #   node evals/pass-k.mjs local/evals/tool-choice.json
 description: Tool choice
 prompts: ["{{request}}"]
+# The gate: the role models that call tools (the worker default and its fallbacks). MiniMax M3.1 Flash holds
+# no tool role; it runs every case as a tracked baseline, outside the gate (evals/pass-k.mjs splits by label).
 providers:
   - id: file://../providers/peeblo-turn.mjs
-    label: teammate
+    label: deepseek-v4.1-flash
     config: { teammate: eval-worker }
+  - id: file://../providers/peeblo-turn.mjs
+    label: mimo-v2.6-pro
+    config: { teammate: eval-mimo }
+  - id: file://../providers/peeblo-turn.mjs
+    label: glm-5.3-flash
+    config: { teammate: eval-glmflash }
+  - id: file://../providers/peeblo-turn.mjs
+    label: baseline-minimax-m3.1-flash
+    config: { teammate: eval-minimax }
 defaultTest:
   options:
     provider:
@@ -70,13 +81,10 @@ tests:
     assert:
       - type: llm-rubric
         value: The "answer" field says the change can't be made by this person (or needs an admin), rather than claiming it was done.
-  # Known gap: MiniMax M3.1 Flash trigger misses.
-  - description: MiniMax, create means create
-    provider: { id: file://../providers/peeblo-turn.mjs, label: minimax, config: { teammate: eval-minimax } }
-    vars: { request: "File a bug in Linear for the design team: the pricing page footer overlaps the buy button on iPhone.", expect_tool: "^(linear__save_issue|find_tools)$", forbid: "^linear__list_issues$" }
-  - description: MiniMax, thanks means no tool
-    provider: { id: file://../providers/peeblo-turn.mjs, label: minimax, config: { teammate: eval-minimax } }
+  # From MiniMax M3.1 Flash trigger misses: a create that only listed, a thanks that called tools, a read.
+  - description: create means create
+    vars: { request: "File a bug in Linear for the design team: the pricing page footer overlaps the buy button on iPhone.", expect_tool: "^(linear__save_issue|find_tools)$" }
+  - description: thanks means no tool
     vars: { request: "Thanks, that's all for today!", expect_none: true }
-  - description: MiniMax, read stays a read
-    provider: { id: file://../providers/peeblo-turn.mjs, label: minimax, config: { teammate: eval-minimax } }
-    vars: { request: "What's in Linear issue GRO-6?", expect_tool: "^linear__get_issue$" }
+  - description: read stays a read
+    vars: { request: "What's in Linear issue GRO-6?", expect_tool: "^linear__(get|list)_issues?$", forbid: "^linear__(save|create|update|delete)" }

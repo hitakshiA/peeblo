@@ -7,6 +7,8 @@ const base = {
 };
 const teammates = {
   "eval-worker": { name: "Wren", model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" } },
+  "eval-mimo": { name: "Wren", model: { default: "xiaomi/mimo-v2.6-pro", fallback: "deepseek/deepseek-v4.1-flash-1017" } },
+  "eval-glmflash": { name: "Wren", model: { default: "z-ai/glm-5.3-flash", fallback: "deepseek/deepseek-v4.1-flash-1017" } },
   "eval-minimax": { name: "Moss", model: { default: "minimax/minimax-m3.1-flash", fallback: "xiaomi/mimo-v2.6-flash" } },
 };
 for (const [slug, t] of Object.entries(teammates)) {

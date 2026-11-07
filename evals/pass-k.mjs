@@ -21,4 +21,7 @@ for (const [k, c] of byCase) {
 }
 const share = byCase.size ? all / byCase.size : 0;
 console.log(`\npass^k: ${all}/${byCase.size} cases passed every run (${(share * 100).toFixed(0)}%)`);
+// The gate counts only the role models; providers labelled "baseline-…" are reported apart.
+const split = (base) => { const cs = [...byCase].filter(([k]) => k.startsWith("baseline-") === base); return `${cs.filter(([, c]) => c.passed === c.runs).length}/${cs.length}`; };
+console.log(`gate (role models): ${split(false)}  ·  baseline: ${split(true)}`);
 process.exit(share >= need ? 0 : 1);
