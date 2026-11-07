@@ -8,16 +8,19 @@ import { launchDurable, shutdownDurable } from "./durable/dbos.ts";
 import "./durable/runs.ts";
 import { syncSchedules } from "./durable/schedules.ts";
 import { startApi } from "./api/server.ts";
+import { startIngress } from "./ingress/slack.ts";
 
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
 const applied = await migrate();
 await launchDurable();
 const schedules = await syncSchedules();
 const api = await startApi();
-console.log(`peeblo: up (migrations applied: ${applied.length ? applied.join(", ") : "none new"}; ${schedules} schedules; api on ${config.apiHost}:${config.apiPort})`);
+const ingress = await startIngress();
+console.log(`peeblo: up (migrations applied: ${applied.length ? applied.join(", ") : "none new"}; ${schedules} schedules; api on ${config.apiHost}:${config.apiPort}; ingress on ${config.ingressHost}:${config.ingressPort})`);
 
 const shutdown = async () => {
   api.close();
+  ingress.close();
   await shutdownDurable();
   await pool.end();
   process.exit(0);

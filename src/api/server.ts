@@ -11,6 +11,7 @@ import { newId } from "../ids.ts";
 import { runEvents } from "../store/events.ts";
 import { getRun, getSession, openSession, submit, type SessionKind } from "../store/sessions.ts";
 import { createTeammate, getTeammate, listTeammates, teammateVersions, updateTeammate } from "../store/teammates.ts";
+import { listApps, saveApp } from "../ingress/apps.ts";
 import { readJson, Router, send } from "./http.ts";
 
 const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
@@ -53,6 +54,15 @@ export const router = new Router()
   .add("POST", "/v1/approvals/:id", async ({ params, body }) => {
     if (!["approved", "denied"].includes(body?.decision)) throw bad("decision must be approved or denied");
     return answerApproval(params.id, { decision: body.decision, scope: body.scope ?? "once", personId: body.person_id ?? null });
+  })
+  .add("GET", "/v1/slack/apps", async () => ({ apps: await listApps() }))
+  .add("POST", "/v1/slack/apps", async ({ body }) => {
+    const s = body?.secrets ?? {};
+    if (!body?.app_id || !s.signing_secret || !s.client_id || !s.client_secret) throw bad("app_id and secrets.signing_secret, client_id, client_secret are required");
+    let teammateId: string | null = null;
+    if (body.teammate) { const tm = await getTeammate(String(body.teammate)); if (!tm) throw notFound("teammate"); teammateId = tm.id; }
+    await saveApp({ app_id: body.app_id, teammate_id: teammateId, team_id: body.team_id ?? null, bot_user_id: body.bot_user_id ?? null, secrets: s });
+    return { app_id: body.app_id, teammate_id: teammateId };
   })
   .add("POST", "/v1/schedules", async ({ body }) => {
     const tm = await getTeammate(String(body?.teammate ?? ""));
