@@ -25,7 +25,9 @@ export default class PeebloTurn {
     const teammate = vars.teammate ?? this.config.teammate;
     const person = PEOPLE[vars.person ?? "owner"];
     const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    const session = await api("POST", `/v1/teammates/${teammate}/sessions`, { kind: "thread", place_key: `C0EVAL:${stamp}` });
+    // A session per test; config.kind and config.place make it e.g. a channel session in Slack (speaking cases).
+    const place = this.config.place ? JSON.parse(JSON.stringify(this.config.place).replaceAll("{stamp}", stamp)) : {};
+    const session = await api("POST", `/v1/teammates/${teammate}/sessions`, { kind: this.config.kind ?? "thread", place_key: `C0EVAL:${stamp}`, place });
     const sub = await api("POST", `/v1/sessions/${session.id}/submissions`, { text: prompt, request_id: `eval-${stamp}`, person });
     const until = Date.now() + 300_000;
     const answered = new Set();

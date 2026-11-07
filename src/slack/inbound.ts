@@ -31,15 +31,23 @@ export function installSlackInbound(): void {
     const threadTs = ev.thread_ts ?? ev.ts;
     const placeKey = dm ? `${ev.channel}:${threadTs}` : `${ev.channel}:${threadTs}`;
     const kind: SessionKind = dm ? "dm" : "thread";
-    // In a channel, a message counts only with a mention, or in a thread this teammate is already in.
+    // In a channel, a message counts only with a mention, or in a thread this teammate is already in. Peeblo's
+    // own app also reads along in channels set to listen: its channel session decides whether to do anything (K2).
+    let kindNow: SessionKind = kind;
+    let keyNow = placeKey;
     if (!dm && !mentioned) {
       const known = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND kind = 'thread' AND place_key = $2", [teammateId, placeKey])).rows[0];
-      if (!known) return;
+      if (!known) {
+        const isManager = (await pool.query("SELECT slug FROM teammates WHERE id = $1", [teammateId])).rows[0]?.slug === "peeblo";
+        const attention = (await pool.query("SELECT attention FROM channel_settings WHERE team_id = $1 AND channel = $2", [teamId, ev.channel])).rows[0]?.attention ?? "listen";
+        if (!isManager || attention !== "listen" || ev.thread_ts) return;
+        kindNow = "channel"; keyNow = ev.channel;
+      }
     }
     const text = clean(String(ev.text ?? ""), app?.bot_user_id ?? null);
     if (!text) return;
     const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned) };
-    const session = await openSession(teammateId, kind, placeKey, { slack: place });
+    const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
     if (/^(stop|cancel|stop please)[.!]?$/i.test(text)) {
       const stopped = stopHandler ? await stopHandler(session.id) : false;
       await appendEvent({ sessionId: session.id, type: "slack.stop", data: { user: ev.user, stopped } });

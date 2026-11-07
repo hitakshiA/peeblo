@@ -98,8 +98,10 @@ async function dropRefusedTurn(l: Live, sessionId: string, runId: string): Promi
   if (st.sessionId) await appendEvent({ sessionId, runId, type: "pi.session", data: { pi_session_id: st.sessionId, reason: "guard_blocked", dropped_entry: lastUser.id } });
 }
 
-const skillsFor = (tm: Teammate): string[] => tm.config.tools.includes("computer")
-  ? ["writing-recipes", ...(((tm.config.computer as any)?.repos ?? []).length ? ["working-in-repos"] : [])] : [];
+const skillsFor = (tm: Teammate): string[] => [
+  ...(tm.slug === "peeblo" ? ["hiring-a-teammate", "writing-job-specs", "channel-etiquette"] : []),
+  ...(tm.config.tools.includes("computer") ? ["writing-recipes", ...(((tm.config.computer as any)?.repos ?? []).length ? ["working-in-repos"] : [])] : []),
+];
 
 async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const dir = join(config.dataDir, "teammates", tm.slug);
@@ -225,7 +227,10 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
     let snapshotAfter: (() => Promise<number>) | null = null;
     const { repoFacts, snapshotWip } = await import("../environment/repos.ts");
     const repoNote = tm.config.tools.includes("computer") ? await repoFacts(tm, ctx.session.id).catch(() => "") : "";
-    const note = (tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "") + (await liveThreadsNote(ctx.session.id, tm.id)) + repoNote;
+    // A fact for channel sessions (K2, K10): this message wasn't addressed to the teammate.
+    const slackPlace = (ctx.session.place as any)?.slack;
+    const channelNote = slackPlace && !slackPlace.direct ? `<peeblo_event kind="reading_along">This is a message in a channel you're reading along in. No one tagged or DMed you; it is addressed to the channel${/<@U[A-Z0-9]+>/.test(ctx.text) ? " (and to the people it tags, who aren't you)" : ""}.</peeblo_event>\n` : "";
+    const note = (tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "") + (await liveThreadsNote(ctx.session.id, tm.id)) + repoNote + channelNote;
     snapshotAfter = () => snapshotWip(tm.id, ctx.session.id).catch(() => 0);
     await l.rpc.send("prompt", { message: `${changeNote}${note}<message from="${from.replace(/"/g, "'")}">${ctx.text}</message>` });
     await settled;

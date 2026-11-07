@@ -23,6 +23,8 @@ installPiExecutor();
   const { installSlackInteractions } = await import("./slack/interactions.ts");
   const { stopSession } = await import("./pi/supervisor.ts");
   installSlackInbound(); installSlackView(); installSlackInteractions(); setStopHandler(stopSession);
+  const { ensureManager, installHireWelcome } = await import("./manager.ts");
+  await ensureManager().catch((e) => console.error("peeblo manager:", (e as Error).message)); installHireWelcome();
 }
 // Receipts need to know whether Otari's org guardrail is on (Otari doesn't report it on streams).
 const readGuard = () => import("./guard.ts").then(async (g) => {

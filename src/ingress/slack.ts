@@ -97,6 +97,12 @@ async function handleOAuth(url: URL): Promise<[number, string]> {
   return [200, page("Added to Slack. You can close this tab.")];
 }
 
+async function facePngFor(slug: string): Promise<Buffer | null> {
+  const { rows } = await pool.query("SELECT h.avatar FROM hires h JOIN teammates t ON t.id = h.teammate_id WHERE t.slug = $1", [slug]);
+  const { facePng, pickFace } = await import("../slack/idcard.ts");
+  return facePng(rows[0]?.avatar?.shape ? rows[0].avatar : pickFace(slug), 256).catch(() => null);
+}
+
 const page = (text: string) => `<!doctype html><meta charset="utf-8"><title>Peeblo</title><body style="font:16px system-ui;padding:3rem"><p>${text.replace(/</g, "&lt;")}</p>`;
 
 export function startIngress(): Promise<Server> {
@@ -108,6 +114,16 @@ export function startIngress(): Promise<Server> {
       if (req.method === "POST" && url.pathname === "/slack/events") out = await handleEvents(await rawBody(req), req);
       else if (req.method === "POST" && url.pathname === "/slack/interactions") out = await handleInteraction(await rawBody(req), req);
       else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") { out = await handleOAuth(url); type = "text/html"; }
+      else if (req.method === "GET" && /^\/cards\/[0-9a-f]{32}\.png$/.test(url.pathname)) {
+        const { readFile } = await import("node:fs/promises");
+        const png = await readFile(`${config.dataDir}/cards/${url.pathname.slice(7)}`).catch(() => null);
+        if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
+      }
+      else if (req.method === "GET" && /^\/faces\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
+        // A teammate's face (public, like any Slack avatar): Slack fetches it for posts made before its own app exists.
+        const png = await facePngFor(url.pathname.slice(7, -4));
+        if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
+      }
       res.writeHead(out[0], { "content-type": type }).end(out[1]);
     } catch (error) {
       console.error("ingress error:", error);

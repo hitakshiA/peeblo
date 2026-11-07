@@ -5,6 +5,7 @@
 // - approval cards come from the harness, never from the model's prose (K15): approve once / for this job / always,
 //   or no. The server checks who clicked.
 // A stream lasts at most ~10 minutes in Slack, so a long run hands over to a fresh message.
+import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt, receiptLine } from "../receipts.ts";
 import { onEvent, type EventRow } from "../store/events.ts";
@@ -13,7 +14,7 @@ import { getTeammate } from "../store/teammates.ts";
 import { react, slack, unreact } from "./api.ts";
 import type { SlackPlace } from "./inbound.ts";
 
-type View = { place: SlackPlace; teammate: string; streamTs: string | null; startedAt: number; posted: number; tasks: Map<string, { title: string; status: string }>; queue: Promise<unknown>; failedStream: boolean };
+type View = { place: SlackPlace; teammate: string; slug: string; borrowed: boolean; streamTs: string | null; startedAt: number; posted: number; tasks: Map<string, { title: string; status: string }>; queue: Promise<unknown>; failedStream: boolean };
 const views = new Map<string, View>();
 const HANDOVER_MS = 9 * 60_000;
 
@@ -40,15 +41,23 @@ async function placeOf(sessionId: string | null): Promise<SlackPlace | null> {
 
 const enqueue = (v: View, f: () => Promise<unknown>) => { v.queue = v.queue.then(f).catch((e) => console.error("slack view:", (e as Error).message)); return v.queue; };
 
-async function start(runId: string, place: SlackPlace, teammateId: string): Promise<View> {
+async function start(runId: string, place: SlackPlace, teammateId: string, borrowed: boolean): Promise<View> {
   const tm = await getTeammate(teammateId);
-  const v: View = { place, teammate: tm?.config.name ?? "teammate", streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: false };
+  // A teammate without its own app yet speaks through Peeblo's with its own name and face; Slack ignores those on
+  // streams, so it posts plain messages. A run nobody asked for (Peeblo reading along) shows nothing unless it posts.
+  const quiet = !place.direct;
+  const v: View = { place, teammate: tm?.config.name ?? "teammate", slug: tm?.slug ?? "", borrowed, streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: borrowed || quiet };
   views.set(runId, v);
-  await enqueue(v, async () => {
+  if (!quiet) await enqueue(v, async () => {
     await react(place.app_id, place.channel, place.trigger_ts, "eyes");
-    await openStream(v);
+    if (!borrowed) await openStream(v);
   });
   return v;
+}
+// A plain message in the thread, as the teammate (its own app, or Peeblo's with its name and face).
+async function post(v: View, text: string, blocks?: any[]): Promise<void> {
+  const as = v.borrowed && config.publicUrl ? { username: v.teammate, icon_url: `${config.publicUrl}/faces/${v.slug}.png` } : v.borrowed ? { username: v.teammate } : {};
+  await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text, ...(blocks ? { blocks } : {}), mrkdwn: true, ...as });
 }
 
 async function openStream(v: View): Promise<void> {
@@ -66,7 +75,7 @@ async function openStream(v: View): Promise<void> {
 async function chunks(v: View, c: any[]): Promise<void> {
   if (v.failedStream || !v.streamTs) {
     const text = c.filter((x) => x.type === "markdown_text").map((x) => x.text).join("");
-    if (text) await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text, mrkdwn: true });
+    if (text.trim()) await post(v, text);
     return;
   }
   if (Date.now() - v.startedAt > HANDOVER_MS) {
@@ -100,11 +109,13 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [...open, ...tail], blocks }).catch(async () => {
         await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text: fallbackText ?? line, blocks: [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks] });
       });
-    } else {
-      await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text: fallbackText ?? line, blocks: [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks] });
+    } else if (v.place.direct || v.posted || fallbackText) {
+      await post(v, fallbackText ?? line, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
     }
-    await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes");
-    await react(v.place.app_id, v.place.channel, v.place.trigger_ts, ok ? "white_check_mark" : "warning");
+    if (v.place.direct) {
+      await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes");
+      await react(v.place.app_id, v.place.channel, v.place.trigger_ts, ok ? "white_check_mark" : "warning");
+    }
   });
   views.delete(runId);
 }
@@ -113,16 +124,17 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
 async function approvalCard(v: View, e: EventRow): Promise<void> {
   const a = (e.data as any).action ?? {};
   const id = (e.data as any).approval_id as string;
-  const what = a.kind === "recipe_change" ? `change my computer's setup (${[a.diff?.packages?.apk, a.diff?.packages?.npm, a.diff?.packages?.pip].filter((x) => x && x !== "none").join("; ") || "new steps"})`
+  const what = a.kind === "hire" ? `hire a new teammate: ${a.summary ?? ""}` : a.kind === "recipe_change" ? `change my computer's setup (${[a.diff?.packages?.apk, a.diff?.packages?.npm, a.diff?.packages?.pip].filter((x) => x && x !== "none").join("; ") || "new steps"})`
     : a.tool ? `${pretty(a.tool, a.arguments ?? {}).replace(/^./, (c: string) => c.toLowerCase())}${a.server ? ` (${a.server})` : ""}`
     : "go ahead";
   const detail = a.rule ?? (a.arguments ? "```" + JSON.stringify(a.arguments).slice(0, 600) + "```" : "");
   const price = a.price_usd ? ` · about $${Number(a.price_usd).toFixed(4)}` : "";
-  const only = a.approvers?.length ? ` · only ${a.approvers.map((p: string) => p).length === 1 ? "my owner" : "the approvers"} can answer` : "";
+  const only = a.kind === "hire" ? " · only the person who asked can answer" : a.approvers?.length ? " · only the owner can answer" : "";
   await slack(v.place.app_id, "chat.postMessage", {
     channel: v.place.channel, thread_ts: v.place.thread_ts, text: `${v.teammate} wants to ${what}. Approve?`,
     blocks: [
-      { type: "section", text: { type: "mrkdwn", text: `*${v.teammate} wants to ${what}.*${detail ? `\n${detail}` : ""}` } },
+      ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${a.summary ?? "teammate"} ID card`.slice(0, 2000) }] : []),
+      { type: "section", text: { type: "mrkdwn", text: `*${v.teammate} wants to ${what}.*${detail && a.kind !== "hire" ? `\n${detail}` : ""}` } },
       { type: "context", elements: [{ type: "mrkdwn", text: `Asks once, then waits${price}${only}` }] },
       { type: "actions", block_id: `approval:${id}`, elements: [
         { type: "button", style: "primary", text: { type: "plain_text", text: "Approve once" }, action_id: "approve_once", value: id },
@@ -145,7 +157,7 @@ export function installSlackView(): void {
       const place = await placeOf(e.session_id);
       if (!place) return;
       const s = await getSession(e.session_id!);
-      await start(e.run_id, place, s!.teammate_id);
+      await start(e.run_id, place, s!.teammate_id, Boolean((s!.place as any)?.borrowed));
       return;
     }
     if (!v && (e.type === "run.finished" || e.type === "run.failed")) {
@@ -154,7 +166,7 @@ export function installSlackView(): void {
       if (!place) return;
       const s = await getSession(e.session_id!);
       const tm = await getTeammate(s!.teammate_id);
-      v = { place, teammate: tm?.config.name ?? "teammate", streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: true };
+      v = { place, teammate: tm?.config.name ?? "teammate", slug: tm?.slug ?? "", borrowed: Boolean((s!.place as any)?.borrowed), streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: true };
       views.set(e.run_id, v);
       v.posted = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [e.run_id])).rows[0].n);
     }

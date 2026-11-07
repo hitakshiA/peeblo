@@ -44,6 +44,7 @@ export const config = {
   // A spend guard for building and testing: model calls to anything priced above these (USD per 1M tokens
   // in,out) are refused before they leave Peeblo. Unset in production.
   buildPriceCap: (process.env.PEEBLO_BUILD_PRICE_CAP ?? "").split(",").map(Number).filter((n) => n > 0),
+  managerAppId: process.env.PEEBLO_SLACK_APP_ID?.trim() || "",   // Peeblo's own Slack app
   admins: (process.env.PEEBLO_ADMINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),   // Slack user ids of Otari admins
   priceCardUsd: Number(process.env.PEEBLO_PRICE_CARD_USD ?? 0.5),                           // above this a run needs a price card
   teammateSpend: process.env.PEEBLO_TEAMMATE_SPEND ?? "auto",       // auto | key | tag (see src/otari/spend.ts)

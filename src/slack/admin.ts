@@ -1,0 +1,84 @@
+// Making a teammate's Slack app (D1): from a manifest with the app configuration token (rotated before it expires),
+// with its face (an Open Bot Avatar), and a one-click install link. The config token lives sealed in core; on first
+// use it is read from PEEBLO_SLACK_CONFIG_FILE ({access_token, refresh_token, exp}).
+import { existsSync, readFileSync } from "node:fs";
+import { config } from "../config.ts";
+import { seal, unseal } from "../crypto.ts";
+import { pool } from "../db.ts";
+import { saveApp } from "../ingress/apps.ts";
+import { appendEvent } from "../store/events.ts";
+import type { Teammate } from "../store/teammates.ts";
+
+type ConfigToken = { access_token: string; refresh_token: string; exp: number };
+const form = (p: Record<string, string>) => new URLSearchParams(p);
+
+async function call(method: string, body: URLSearchParams | FormData, token?: string): Promise<any> {
+  const r = await fetch(`https://slack.com/api/${method}`, { method: "POST", headers: token ? { authorization: `Bearer ${token}` } : {}, body });
+  return r.json();
+}
+
+async function loadToken(): Promise<ConfigToken | null> {
+  const { rows } = await pool.query("SELECT token FROM slack_config WHERE id = 1");
+  if (rows[0]) return unseal<ConfigToken>(rows[0].token);
+  const f = process.env.PEEBLO_SLACK_CONFIG_FILE;
+  if (f && existsSync(f)) { const t = JSON.parse(readFileSync(f, "utf8")) as ConfigToken; await storeToken(t); return t; }
+  return null;
+}
+const storeToken = (t: ConfigToken) => pool.query("INSERT INTO slack_config (id, token) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET token = $1, updated_at = now()", [seal(t)]);
+
+// The token rotates every 12 h; the new refresh token is saved before the access token is used.
+export async function configToken(): Promise<string> {
+  const t = await loadToken();
+  if (!t) throw new Error("no Slack app configuration token; an admin creates one at api.slack.com/apps (Your App Configuration Tokens)");
+  if (t.exp - Date.now() / 1000 > 600) return t.access_token;
+  const r = await call("tooling.tokens.rotate", form({ refresh_token: t.refresh_token }));
+  if (!r.ok) throw new Error(`Slack config token rotation failed: ${r.error}`);
+  await storeToken({ access_token: r.token, refresh_token: r.refresh_token, exp: r.exp });
+  return r.token;
+}
+
+const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "chat:write.customize", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write"];
+export function manifest(name: string, display: string, description: string, color: string) {
+  const base = config.publicUrl;
+  return {
+    display_information: { name: display, description: description.slice(0, 139), background_color: color, long_description: `${display} is an AI teammate on Peeblo (${description.slice(0, 120)}). It works on its own computer, asks a person before it acts on anything that matters, and signs every reply with a receipt: the open model it used, what it cost, and a link to the full trace in Otari.` },
+    features: {
+      app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+      bot_user: { display_name: name, always_online: true },
+      assistant_view: { assistant_description: `${display}, your AI teammate`, suggested_prompts: [] },
+    },
+    oauth_config: { redirect_urls: [`${base}/slack/oauth/callback`], scopes: { bot: BOT_SCOPES } },
+    settings: {
+      event_subscriptions: { request_url: `${base}/slack/events`, bot_events: ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim", "app_home_opened", "assistant_thread_started", "member_joined_channel"] },
+      interactivity: { is_enabled: true, request_url: `${base}/slack/interactions` },
+      org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false,
+    },
+  };
+}
+
+// Creates the teammate's app and sets its face. Returns the app id and its one-click install link.
+export async function createTeammateApp(tm: Teammate, color: string, png: Buffer): Promise<{ appId: string; installUrl: string }> {
+  const token = await configToken();
+  const display = tm.config.name;
+  const r = await call("apps.manifest.create", form({ manifest: JSON.stringify(manifest(tm.slug, display, `${display}: ${tm.config.role}`, color)) }), token);
+  if (!r.ok) throw new Error(`Slack wouldn't create the app: ${r.error}${r.errors ? ` ${JSON.stringify(r.errors).slice(0, 300)}` : ""}`);
+  await saveApp({ app_id: r.app_id, teammate_id: tm.id, secrets: { signing_secret: r.credentials.signing_secret, client_id: r.credentials.client_id, client_secret: r.credentials.client_secret } });
+  const fd = new FormData();
+  fd.append("app_id", r.app_id);
+  fd.append("file", new Blob([new Uint8Array(png)], { type: "image/png" }), "face.png");
+  const icon = await call("apps.icon.set", fd, token);
+  await appendEvent({ type: "slack.app_created", data: { teammate_id: tm.id, app_id: r.app_id, icon: icon.ok ? "set" : icon.error } });
+  return { appId: r.app_id, installUrl: installUrl(r.app_id, r.credentials.client_id) };
+}
+
+export function installUrl(appId: string, clientId: string): string {
+  const p = new URLSearchParams({ client_id: clientId, scope: BOT_SCOPES.join(","), redirect_uri: `${config.publicUrl}/slack/oauth/callback`, state: `install:${appId}` });
+  return `https://slack.com/oauth/v2/authorize?${p}`;
+}
+
+// Removes an app this Peeblo made (used to clean up after checks).
+export async function deleteTeammateApp(appId: string): Promise<void> {
+  const r = await call("apps.manifest.delete", form({ app_id: appId }), await configToken());
+  if (!r.ok) throw new Error(`apps.manifest.delete: ${r.error}`);
+  await pool.query("DELETE FROM slack_apps WHERE app_id = $1", [appId]);
+}

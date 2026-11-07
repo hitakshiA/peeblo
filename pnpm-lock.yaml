@@ -178,9 +178,15 @@ importers:
       '@mozilla-ai/pi-otari':
         specifier: 0.6.0
         version: 0.6.0(@earendil-works/pi-ai@1.5.0(@aws-sdk/credential-provider-node@3.972.93)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.5)(undici@8.12.3)(ws@8.22.1)(zod@4.6.7))(@earendil-works/pi-coding-agent@1.5.0(@aws-sdk/credential-provider-node@3.972.93)(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(@smithy/hash-node@4.5.2)(@smithy/signature-v4@5.7.5)(ws@8.22.1)(zod@4.6.7))
+      open-bot-avatar:
+        specifier: 0.1.2
+        version: 0.1.2
       pg:
         specifier: 8.23.1
         version: 8.23.1
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@24.19.2)
     devDependencies:
       '@types/node':
         specifier: 24.19.2
@@ -2555,6 +2561,9 @@ packages:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
 
+  open-bot-avatar@0.1.2:
+    resolution: {integrity: sha512-WszCSxHQ77kzNWwY6ySRw6tenrF1zgXXH7bnWeoPvdNow+Rv9pD2wdLUI2eiUSsRy/5nrJgGShb10EkKtw7iKQ==}
+
   open@11.0.4:
     resolution: {integrity: sha512-++Zlftm0kVLPmzC06t6epuWmcRMDbI4z5P3NNX979WA/k23+NtSOynEGzsVfZwguKw2mi5umVgnBlJQMwRz4Pg==}
     engines: {node: '>=20'}
@@ -4079,8 +4088,7 @@ snapshots:
     dependencies:
       hono: 4.13.16
 
-  '@img/colour@1.1.0':
-    optional: true
+  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.35.5':
     optionalDependencies:
@@ -5009,8 +5017,7 @@ snapshots:
 
   detect-libc@2.0.2: {}
 
-  detect-libc@2.1.2:
-    optional: true
+  detect-libc@2.1.2: {}
 
   diff@8.0.4: {}
 
@@ -5835,6 +5842,8 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
+  open-bot-avatar@0.1.2: {}
+
   open@11.0.4:
     dependencies:
       default-browser: 5.5.1
@@ -6358,7 +6367,6 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 24.19.2
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:

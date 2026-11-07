@@ -6,7 +6,7 @@ export class SlackError extends Error {
   constructor(method: string, code: string, detail?: unknown) { super(`${method}: ${code}`); this.method = method; this.code = code; this.detail = detail; }
 }
 
-const READS = /^(conversations\.(replies|history|info|members|list)|users\.(info|list|lookupByEmail)|reactions\.get|team\.info|auth\.test)$/;
+const READS = /^(conversations\.(replies|history|info|members|list)|users\.(info|list|lookupByEmail)|reactions\.get|team\.info|auth\.test|files\.(getUploadURLExternal|completeUploadExternal))$/;
 
 export async function slack<T = any>(appId: string, method: string, payload: Record<string, unknown>): Promise<T> {
   const app = await getApp(appId);
