@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# ./peeblo up | down | status | logs | check | image
+# Linux: everything runs in Docker Compose (core needs /dev/kvm for teammate computers).
+# macOS: Compose runs Postgres; core runs natively, because Gondolin needs the host's hypervisor.
+set -euo pipefail
+cd "$(dirname "$0")"
+RUN=local/run; mkdir -p "$RUN"
+
+ensure_env() {
+  [ -f .env ] || cp .env.example .env
+  chmod 600 .env
+  local changed=0
+  set_if_empty() { if ! grep -q "^$1=." .env; then sed -i.bak "/^$1=/d" .env && rm -f .env.bak && echo "$1=$2" >> .env && changed=1; fi; }
+  set_if_empty POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+  set_if_empty PEEBLO_ADMIN_TOKEN "$(openssl rand -hex 24)"
+  set_if_empty PEEBLO_SECRET_KEY "$(openssl rand -base64 32)"
+  [ $changed = 1 ] && echo "peeblo: generated missing secrets in .env"
+  return 0
+}
+load_env() { set -a; . ./.env; set +a; PROJECT="${PEEBLO_PROJECT:-peeblo}"; }
+compose() { docker compose -p "$PROJECT" -f compose.yaml "$@"; }
+mac_compose() { docker compose -p "$PROJECT" -f compose.yaml -f compose.mac.yaml "$@"; }
+native_env() { export DATABASE_URL="postgres://peeblo:${POSTGRES_PASSWORD}@127.0.0.1:${PEEBLO_DB_PORT:-55432}/peeblo" PEEBLO_DATA_DIR="${PEEBLO_DATA_DIR:-$PWD/local/data}"; }
+core_pid() { [ -f "$RUN/core.pid" ] && kill -0 "$(cat "$RUN/core.pid")" 2>/dev/null && cat "$RUN/core.pid"; }
+
+case "${1:-up}" in
+  up)
+    ensure_env; load_env
+    if [ "$(uname)" = Darwin ]; then
+      command -v node >/dev/null || { echo "Node 24 is required on macOS (brew install node@24)"; exit 1; }
+      command -v qemu-system-aarch64 >/dev/null || { echo "QEMU is required for teammate computers (brew install qemu)"; exit 1; }
+      mac_compose up -d --wait db
+      [ -d node_modules ] || pnpm install --frozen-lockfile
+      native_env
+      [ -f "$PEEBLO_DATA_DIR/images/teammate-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)/manifest.json" ] || node src/bin.ts image
+      if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else
+        nohup node src/bin.ts daemon >> "$RUN/core.log" 2>&1 & echo $! > "$RUN/core.pid"
+        sleep 4; core_pid >/dev/null || { echo "peeblo: core failed to start; see $RUN/core.log"; tail -20 "$RUN/core.log"; exit 1; }
+        echo "peeblo: core running (pid $(cat "$RUN/core.pid")); logs in $RUN/core.log"
+      fi
+    else
+      compose --profile linux up -d --build --wait
+    fi
+    echo "peeblo: up. Run ./peeblo check to verify the setup." ;;
+  down)
+    load_env
+    if pid=$(core_pid); then kill "$pid"; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
+    if [ "$(uname)" = Darwin ]; then mac_compose stop db; else compose --profile linux stop; fi ;;
+  status)
+    load_env
+    if [ "$(uname)" = Darwin ]; then mac_compose ps; pid=$(core_pid) && echo "core: running (pid $pid)" || echo "core: stopped"; else compose --profile linux ps; fi ;;
+  logs) if [ "$(uname)" = Darwin ]; then tail -f "$RUN/core.log"; else load_env; compose logs -f peeblo; fi ;;
+  check|image)
+    load_env
+    if [ "$(uname)" = Darwin ]; then native_env; node src/bin.ts "$1"; else compose --profile linux run --rm peeblo "$1"; fi ;;
+  *) echo "usage: ./peeblo up|down|status|logs|check|image"; exit 2 ;;
+esac

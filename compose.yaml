@@ -1,4 +1,4 @@
-name: ${PEEBLO_PROJECT:-peeblo}
+name: peeblo
 
 services:
   db:
@@ -18,11 +18,21 @@ services:
     restart: unless-stopped
 
   peeblo:
+    profiles: [linux]
     build: .
     image: peeblo:dev
     env_file: .env
     environment:
       DATABASE_URL: postgres://peeblo:${POSTGRES_PASSWORD}@db:5432/peeblo
+      PEEBLO_API_HOST: 0.0.0.0
+      PEEBLO_INGRESS_HOST: 0.0.0.0
+    # Teammate computers are Gondolin micro-VMs and need KVM.
+    devices:
+      - /dev/kvm:/dev/kvm
+    # The core API stays on loopback; the ingress is what a reverse proxy or tunnel points at.
+    ports:
+      - "127.0.0.1:${PEEBLO_API_PORT:-7340}:7340"
+      - "127.0.0.1:${PEEBLO_INGRESS_PORT:-8787}:8787"
     depends_on:
       db:
         condition: service_healthy
