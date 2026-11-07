@@ -1,7 +1,7 @@
 // Reads settings from the environment once at startup.
 // Secrets are removed from process.env right away, so child processes never inherit them.
 
-const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY", "OTARI_API_KEY", "OTARI_SERVICE_KEY"];
+const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY", "OTARI_API_KEY", "OTARI_SERVICE_KEY", "PEEBLO_CONSOLE_PASSWORD"];
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -45,6 +45,7 @@ export const config = {
   // in,out) are refused before they leave Peeblo. Unset in production.
   buildPriceCap: (process.env.PEEBLO_BUILD_PRICE_CAP ?? "").split(",").map(Number).filter((n) => n > 0),
   managerAppId: process.env.PEEBLO_SLACK_APP_ID?.trim() || "",   // Peeblo's own Slack app
+  consolePassword: process.env.PEEBLO_CONSOLE_PASSWORD ?? "",   // the console's one password
   admins: (process.env.PEEBLO_ADMINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),   // Slack user ids of Otari admins
   priceCardUsd: Number(process.env.PEEBLO_PRICE_CARD_USD ?? 0.5),                           // above this a run needs a price card
   teammateSpend: process.env.PEEBLO_TEAMMATE_SPEND ?? "auto",       // auto | key | tag (see src/otari/spend.ts)

@@ -19,6 +19,7 @@ import { personForSlack } from "../store/people.ts";
 import { changeModel, ModelChangeRefused } from "../model-change.ts";
 import { secretNames, setSecret } from "../store/secrets.ts";
 import { readJson, Router, send } from "./http.ts";
+import { addConsoleRoutes, consoleCookie, consolePerson, login, logout, serveConsole } from "./console.ts";
 
 const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
 const bad = (msg: string) => Object.assign(new Error(msg), { status: 400 });
@@ -155,15 +156,25 @@ function authorized(header: string | undefined): boolean {
   return given.length === want.length && timingSafeEqual(given, want);
 }
 
+addConsoleRoutes(router);
+
 export function startApi(): Promise<Server> {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://core");
+    // The console's built files, and its login (the only routes that work without a token or cookie).
+    try { if (req.method === "GET" && serveConsole(url.pathname, res)) return; } catch { return send(res, 500, { error: "console error" }); }
+    if (req.method === "POST" && url.pathname === "/v1/console/login") return void (await login(req, res, await readJson(req).catch(() => ({}))));
+    if (req.method === "POST" && url.pathname === "/v1/console/logout") return logout(req, res);
     const route = router.match(req.method ?? "GET", url.pathname);
     if (!route) return send(res, 404, { error: "not found" });
-    if (url.pathname !== "/healthz" && !authorized(req.headers.authorization)) return send(res, 401, { error: "admin token required" });
+    const viaConsole = consoleCookie(req);
+    if (url.pathname !== "/healthz" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 401, { error: "sign in, or send the admin token" });
     try {
-      const body = req.method === "GET" ? {} : await readJson(req);
-      const out = await route.handler({ method: req.method!, path: url.pathname, params: route.params, query: url.searchParams, body, headers: req.headers });
+      let body = req.method === "GET" ? {} : await readJson(req);
+      // Console actions are made as the console's admin person (K6): the server fills it in.
+      if (viaConsole && body && typeof body === "object") { const p = await consolePerson(); if (p) body = { ...body, person_id: p.id }; }
+      const out: any = await route.handler({ method: req.method!, path: url.pathname, params: route.params, query: url.searchParams, body, headers: req.headers });
+      if (out && out.__raw) return void res.writeHead(200, { "content-type": out.__type ?? "application/octet-stream", "cache-control": "max-age=3600" }).end(out.__raw);
       send(res, 200, out);
     } catch (error) {
       const status = (error as { status?: number }).status ?? 500;

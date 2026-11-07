@@ -31,6 +31,8 @@ case "${1:-up}" in
       command -v qemu-system-aarch64 >/dev/null || { echo "QEMU is required for teammate computers (brew install qemu)"; exit 1; }
       mac_compose up -d --wait db
       [ -d node_modules ] || pnpm install --frozen-lockfile
+      # The console (served by core at http://127.0.0.1:7340/console/), built once.
+      [ -f console/dist/index.html ] || (cd console && pnpm install --frozen-lockfile && pnpm build)
       native_env
       [ -f "$PEEBLO_DATA_DIR/images/teammate-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)/manifest.json" ] || node src/bin.ts image small
       if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else

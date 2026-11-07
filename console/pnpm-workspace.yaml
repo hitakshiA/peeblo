@@ -1,0 +1,4 @@
+minimumReleaseAge: 1440
+# No dependency may run install scripts; esbuild ships its binary in a platform package.
+allowBuilds:
+  esbuild: false
