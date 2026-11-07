@@ -1,5 +1,6 @@
 // A teammate's computer secrets, sealed at rest. Only names and hosts ever leave this module, except to the
 // VM's egress hooks, which swap a placeholder for the value on requests to the secret's hosts.
+import { createHash } from "node:crypto";
 import { seal, unseal } from "../crypto.ts";
 import { pool } from "../db.ts";
 
@@ -25,8 +26,12 @@ export async function secretNames(teammateId: string): Promise<{ name: string; h
   return rows;
 }
 
+// A secret's placeholder is stable (the same on every boot and in build VMs), so a file a recipe writes with it,
+// such as ~/.npmrc, keeps working; the real value only goes out to the secret's hosts.
+export const placeholderOf = (teammateId: string, name: string) => `peeblo-secret-${createHash("sha256").update(`${teammateId}:${name}`).digest("hex").slice(0, 32)}`;
+
 // For the VM's egress hooks only.
-export async function secretsForVm(teammateId: string): Promise<Record<string, { hosts: string[]; value: string }>> {
+export async function secretsForVm(teammateId: string, only?: string[]): Promise<Record<string, { hosts: string[]; value: string; placeholder: string }>> {
   const { rows } = await pool.query("SELECT name, value, hosts FROM teammate_secrets WHERE teammate_id = $1", [teammateId]);
-  return Object.fromEntries(rows.map((r) => [r.name, { hosts: r.hosts, value: unseal<string>(r.value) }]));
+  return Object.fromEntries(rows.filter((r) => !only || only.includes(r.name)).map((r) => [r.name, { hosts: r.hosts, value: unseal<string>(r.value), placeholder: placeholderOf(teammateId, r.name) }]));
 }

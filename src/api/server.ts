@@ -33,7 +33,9 @@ export const router = new Router()
   .add("GET", "/v1/teammates/:slug", async ({ params }) => (await getTeammate(params.slug)) ?? Promise.reject(notFound("teammate")))
   .add("PATCH", "/v1/teammates/:slug", async ({ params, body }) => {
     const { note, ...patch } = body ?? {};
-    return updateTeammate(params.slug, patch, { label: "api" }, note);
+    const t = await updateTeammate(params.slug, patch, { label: "api" }, note);
+    if ((patch as any)?.computer) await import("../environment/recipes.ts").then((r) => r.queueIfNeeded(t.id)).catch(() => {});
+    return t;
   })
   // A person changes a teammate's model: checked (allowlist, authority, budget), then new sessions use it;
   // with now.session_id, that session moves over at its next turn with a note.

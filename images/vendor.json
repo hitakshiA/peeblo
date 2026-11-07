@@ -1,0 +1,15 @@
+{
+  "_": "Pinned files copied into the images (not in Alpine). Fetched at build time and checked by sha256.",
+  "duckdb": { "version": "2.0.0", "license": "MIT", "tiers": ["small", "large"], "dest": "/usr/local/bin/duckdb", "kind": "tgz-binary",
+    "url": { "aarch64": "https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-cli-linux-arm64-musl.tar.gz", "x86_64": "https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-cli-linux-amd64-musl.tar.gz" },
+    "sha256": { "aarch64": "59aee3049c335917307f5df1b3722af1335fef99199dc89e8064d1b2838620c7", "x86_64": "3285e4083a79955b0606ab799ebc1493087307cdc76b4827308b1a4dcdb371c9" } },
+  "python-docx": { "version": "1.2.0", "license": "MIT", "tiers": ["small", "large"], "dest": "/usr/lib/python3.12/site-packages", "kind": "wheel",
+    "url": { "any": "https://files.pythonhosted.org/packages/d0/00/1e03a4989fa5795da308cd774f05b704ace555a70f9bf9d3be057b680bcf/python_docx-1.2.0-py3-none-any.whl" },
+    "sha256": { "any": "3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7" } },
+  "python-pptx": { "version": "1.0.2", "license": "MIT", "tiers": ["small", "large"], "dest": "/usr/lib/python3.12/site-packages", "kind": "wheel",
+    "url": { "any": "https://files.pythonhosted.org/packages/d9/4f/00be2196329ebbff56ce564aa94efb0fbc828d00de250b1980de1a34ab49/python_pptx-1.0.2-py3-none-any.whl" },
+    "sha256": { "any": "160838e0b8565a8b1f67947675886e9fea18aa5e795db7ae531606d68e785cba" } },
+  "agent-browser": { "version": "0.41.2", "license": "Apache-2.0", "tiers": ["large"], "dest": "/usr/local/bin/agent-browser", "kind": "binary",
+    "url": { "aarch64": "https://github.com/vercel-labs/agent-browser/releases/download/v0.41.2/agent-browser-linux-musl-arm64", "x86_64": "https://github.com/vercel-labs/agent-browser/releases/download/v0.41.2/agent-browser-linux-musl-x64" },
+    "sha256": { "aarch64": "730a5168153e27ad1243ebe960157e69de0f24531fbbac9a040856a491bf491f", "x86_64": "5d452d57772330fe4cef9b7aeb5e7137890dde20bbb65e82b990e0bc0b35d9cd" } }
+}

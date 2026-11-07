@@ -59,13 +59,16 @@ export async function askApproval(runId: string, sessionId: string, action: Reco
 // Delivers an answer to the waiting approval. Refuses answers to approvals that are no longer pending,
 // so a late click on an expired card changes nothing and can be shown as "expired".
 export async function answerApproval(approvalId: string, d: Decision): Promise<{ ok: boolean; status: string }> {
-  const { rows } = await pool.query<{ status: string; expired: boolean }>(
-    "SELECT status, expires_at < now() AS expired FROM approvals WHERE id = $1",
+  const { rows } = await pool.query<{ status: string; expired: boolean; action: any }>(
+    "SELECT status, expires_at < now() AS expired, action FROM approvals WHERE id = $1",
     [approvalId],
   );
   if (!rows[0]) return { ok: false, status: "not_found" };
   if (rows[0].status !== "pending") return { ok: false, status: rows[0].status };
   if (rows[0].expired) return { ok: false, status: "expired" };
+  // An approval may name who can answer it (e.g. only the teammate's owner); anyone else is refused.
+  const only = rows[0].action?.approvers as string[] | undefined;
+  if (only?.length && (!d.personId || !only.includes(d.personId))) return { ok: false, status: "not_allowed" };
   await DBOS.send(approvalId, d, "approval", `answer:${approvalId}`);
   return { ok: true, status: "sent" };
 }

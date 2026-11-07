@@ -15,9 +15,9 @@ export async function teammate(slug: string, extra: Record<string, unknown> = {}
 }
 
 // One turn from a person; approvals the run asks for are answered with `answer` (or left to expire).
-export async function turn(slug: string, key: string, text: string, opts: { person?: typeof OWNER; answer?: "approved" | "denied"; place?: string } = {}) {
+export async function turn(slug: string, key: string, text: string, opts: { person?: typeof OWNER; answer?: "approved" | "denied"; answerAs?: string | null; place?: string } = {}) {
   const r = await submit(slug, opts.place ?? `C0CHECK:${key}-${stamp}`, text, `${key}-${stamp}-${Math.random().toString(36).slice(2, 6)}`, opts.person ?? OWNER);
-  const s = await settle(r.runId, { answer: opts.answer, timeoutMs: 400_000 });
+  const s = await settle(r.runId, { answer: opts.answer, answerAs: opts.answerAs, timeoutMs: 400_000 });
   return { ...r, ...s, tools: tools(s.events) };
 }
 

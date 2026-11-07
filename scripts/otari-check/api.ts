@@ -27,7 +27,7 @@ export async function submit(slug: string, place: string, text: string, requestI
 }
 
 // Waits for the run to settle; answers any approval it asks for with `answer` (or leaves it).
-export async function settle(runId: string, opts: { timeoutMs?: number; answer?: "approved" | "denied" } = {}): Promise<{ run: any; events: any[] }> {
+export async function settle(runId: string, opts: { timeoutMs?: number; answer?: "approved" | "denied"; answerAs?: string | null } = {}): Promise<{ run: any; events: any[] }> {
   const until = Date.now() + (opts.timeoutMs ?? 300_000);
   const answered = new Set<string>();
   while (Date.now() < until) {
@@ -36,7 +36,7 @@ export async function settle(runId: string, opts: { timeoutMs?: number; answer?:
       const id = e.data.approval_id;
       if (answered.has(id) || j.events.some((x) => x.type === "approval.resolved" && x.data.approval_id === id)) continue;
       answered.add(id);
-      await api("POST", `/v1/approvals/${id}`, { decision: opts.answer, scope: "once" });
+      await api("POST", `/v1/approvals/${id}`, { decision: opts.answer, scope: "once", ...(opts.answerAs ? { person_id: opts.answerAs } : {}) });
     }
     if (["done", "failed", "cancelled"].includes(j.run.status)) return j;
     await new Promise((r) => setTimeout(r, 2000));

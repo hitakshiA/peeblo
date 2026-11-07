@@ -1,89 +1,89 @@
-// The teammate's computer: tiers and the build recipe, through the environment controller with real VMs.
-// - small and large get different memory and CPU; large boots the browser image and loads one page headless;
-// - the recipe installs into the root disk, the package is still there after sleep and wake, and an unchanged
-//   recipe doesn't rerun; a changed one does; a command the rule engine refuses stops it.
+// Teammate computers, tiers and images (COMPUTER_SPEC §1–§2), through the environment controller with real VMs.
+// - each tier reports its CPUs and memory;
+// - the awake cap holds, and the longest-idle computer is the one put to sleep;
+// - a new image build doesn't touch a running teammate, which moves to it only at a boot with no other live
+//   session; an image no one is pinned to is removed.
+process.env.PEEBLO_AWAKE_CAP_SMALL = "2"; // this process only: a small cap to see eviction
 import { check, expect, save } from "./harness.ts";
-import { api, ensureTeammate } from "./api.ts";
-import { pool } from "../../src/db.ts";
-import { exec, sleep, TIERS } from "../../src/environment/controller.ts";
-import { getTeammate } from "../../src/store/teammates.ts";
+import { ensureTeammate } from "./api.ts";
+const { pool } = await import("../../src/db.ts");
+const { awake, exec, sleep, sleepAll, TIERS } = await import("../../src/environment/controller.ts");
+const { buildImage, buildPath, currentBuild } = await import("../../src/environment/image.ts");
+const { getTeammate } = await import("../../src/store/teammates.ts");
+const { existsSync } = await import("node:fs");
+const { newId } = await import("../../src/ids.ts");
 
 const S = "P2C";
 const BASE = { name: "Lark", role: "Checks the teammate computer", tools: ["computer"], connectors: [], budget: { monthly_usd: 2 }, model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" } };
 const idOf = async (slug: string) => (await getTeammate(slug))!.id;
-const recipeEvents = async (id: string, since: number) =>
-  (await pool.query("SELECT data FROM events WHERE type = 'env.recipe' AND data->>'teammate_id' = $1 AND id > $2 ORDER BY id", [id, since])).rows.map((r) => r.data);
-const lastEventId = async () => Number((await pool.query("SELECT coalesce(max(id), 0) AS n FROM events")).rows[0].n);
+const booted = async (id: string) => (await pool.query("SELECT data FROM events WHERE type = 'env.booted' AND data->>'teammate_id' = $1 ORDER BY id DESC LIMIT 1", [id])).rows[0]?.data;
 const resources = async (id: string) => {
   const r = await exec(id, ["sh", "-c", "nproc; awk '/MemTotal/ {print $2}' /proc/meminfo"]);
   const [cpus, kb] = r.stdout.trim().split("\n").map(Number);
   return { cpus, memMb: Math.round(kb / 1024) };
 };
+for (const s of ["vm-small", "vm-small-2", "vm-small-3"]) await ensureTeammate(s, { ...BASE, computer: { size: "small", allowed_hosts: [] } });
+await ensureTeammate("vm-large", { ...BASE, computer: { size: "large", allowed_hosts: [] } });
 
-await check(S, "small and large tiers get their own memory and CPU", async (c) => {
-  await ensureTeammate("vm-small", { ...BASE, computer: { size: "small", allowed_hosts: [] } });
-  await ensureTeammate("vm-large", { ...BASE, computer: { size: "large", allowed_hosts: [] } });
+await check(S, "each tier gets its CPUs and memory", async (c) => {
   const small = await resources(await idOf("vm-small"));
   const large = await resources(await idOf("vm-large"));
   c.note("small", small); c.note("large", large);
   expect(small.cpus === TIERS.small.cpus && large.cpus === TIERS.large.cpus, `cpus ${small.cpus} / ${large.cpus}`);
-  expect(small.memMb < 1100 && large.memMb > 3500, `memory ${small.memMb} / ${large.memMb} MB`);
-  await sleep(await idOf("vm-small"), "check");
+  expect(small.memMb > 900 && small.memMb < 1100 && large.memMb > 3800, `memory ${small.memMb} / ${large.memMb} MB`);
+  await sleep(await idOf("vm-large"), "check");
 });
 
-await check(S, "a large teammate runs a headless browser on one page", async (c) => {
-  const id = await idOf("vm-large");
-  const r = await exec(id, ["sh", "-c", "chromium --headless=new --no-sandbox --disable-gpu --dump-dom https://github.com/earendil-works/gondolin 2>/dev/null | grep -o '<title>[^<]*' | head -1"], { timeoutMs: 120_000 });
-  c.note("title", r.stdout.trim().slice(7, 90));
-  expect(/gondolin/i.test(r.stdout) && !/privacy error/i.test(r.stdout), `page title: ${r.stdout.trim().slice(0, 120)}`);
-  const small = await exec(await idOf("vm-small"), ["sh", "-c", "command -v chromium || echo none"]);
-  expect(small.stdout.trim() === "none", "the small tier has a browser");
-  await sleep(id, "check");
+await check(S, "the awake cap holds and the longest-idle computer sleeps first", async (c) => {
+  const [a, b, d] = [await idOf("vm-small"), await idOf("vm-small-2"), await idOf("vm-small-3")];
+  await exec(b, ["true"]);      // a (from the last check) is now the longest idle, b the most recent
+  await exec(d, ["true"]);      // a third small computer: over the cap of 2
+  const up = awake().map((x) => x.teammateId);
+  const ev = (await pool.query("SELECT data FROM events WHERE type = 'env.slept' AND data->>'teammate_id' = $1 ORDER BY id DESC LIMIT 1", [a])).rows[0]?.data;
+  c.note("awake", up.length); c.note("evicted_reason", ev?.reason);
+  expect(up.filter((x) => [a, b, d].includes(x)).length === 2 && !up.includes(a) && up.includes(b) && up.includes(d), `awake: ${up.join(", ")}`);
+  expect(ev?.reason === "evicted: awake cap", `vm-small slept for: ${ev?.reason}`);
+  await sleepAll();
 });
 
-await check(S, "the recipe installs once into the disk, stays after sleep and wake, and reruns only when changed", async (c) => {
-  const slug = "vm-recipe";
-  await ensureTeammate(slug, { ...BASE, computer: { size: "small", allowed_hosts: [], recipe: [] } });
-  const id = await idOf(slug);
-  await sleep(id, "check");
-  await pool.query("DELETE FROM environments WHERE teammate_id = $1", [id]);
-  const { rmSync } = await import("node:fs");
-  const { diskOf } = await import("../../src/environment/controller.ts");
-  rmSync(diskOf(slug, "small"), { force: true }); // start from a fresh disk
-  await api("PATCH", `/v1/teammates/${slug}`, { computer: { size: "small", allowed_hosts: [], recipe: ["apk add --no-cache jq"] }, note: "check: recipe" });
-  const t0 = await lastEventId();
-  const first = await exec(id, ["sh", "-c", "jq --version"]);
-  expect(first.exitCode === 0, `jq missing after the recipe: ${first.stderr}`);
-  await sleep(id, "check");
-  const again = await exec(id, ["sh", "-c", "jq --version"]);
-  expect(again.exitCode === 0, "jq gone after sleep and wake");
-  await sleep(id, "check");
-  const ran = await recipeEvents(id, t0);
-  expect(ran.length === 1 && ran[0].ok, `recipe ran ${ran.length} times: ${JSON.stringify(ran.map((x) => x.ok))}`);
-  c.note("first_run_ms", ran[0].ms);
-  const boots = (await pool.query("SELECT data FROM events WHERE type = 'env.booted' AND data->>'teammate_id' = $1 AND id > $2 ORDER BY id", [id, t0])).rows.map((r) => r.data.resumed);
-  expect(boots.length === 2 && boots[1] === true, `boots (resumed?): ${JSON.stringify(boots)}`);
-  // A changed recipe runs again on the next boot.
-  await api("PATCH", `/v1/teammates/${slug}`, { computer: { size: "small", allowed_hosts: [], recipe: ["apk add --no-cache jq", "apk add --no-cache tree"] }, note: "check: recipe change" });
-  const t1 = await lastEventId();
-  const tree = await exec(id, ["sh", "-c", "tree --version && jq --version"]);
-  expect(tree.exitCode === 0, `tree missing after the recipe change: ${tree.stderr}`);
-  expect((await recipeEvents(id, t1)).length === 1, "the changed recipe didn't run once");
-  await sleep(id, "check");
+await check(S, "a new image build leaves a running teammate alone; it moves over at a boot with no other live session", async (c) => {
+  const id = await idOf("vm-small");
+  const old = currentBuild("small")!;
+  await exec(id, ["true"]);
+  expect((await booted(id)).l0_build_id === old, "not on the current build to start with");
+  // Another conversation of this teammate is live while the new image is built.
+  const tm = (await getTeammate("vm-small"))!;
+  const sess = newId("se"), sub = newId("su"), run = newId("ru");
+  await pool.query("INSERT INTO sessions (id, teammate_id, kind, place_key) VALUES ($1, $2, 'api', $3)", [sess, tm.id, `check:image-${Date.now()}`]);
+  await pool.query("INSERT INTO submissions (id, session_id, text, request_id, source) VALUES ($1, $2, 'check', $3, 'api')", [sub, sess, `check-${sub}`]);
+  await pool.query("INSERT INTO runs (id, session_id, submission_id, status) VALUES ($1, $2, $3, 'waiting')", [run, sess, sub]);
+  try {
+    const [fresh] = await buildImage("small", { extraPackages: ["tree"] });
+    c.note("builds", { old, fresh });
+    expect(fresh !== old && currentBuild("small") === fresh, "no new build");
+    expect((await exec(id, ["sh", "-c", "echo still-here"])).stdout.trim() === "still-here", "the running computer was disturbed");
+    await sleep(id, "check");
+    await exec(id, ["true"]);
+    expect((await booted(id)).l0_build_id === old, "moved while another session was live");
+    await pool.query("UPDATE runs SET status = 'done' WHERE id = $1", [run]);
+    await sleep(id, "check");
+    await exec(id, ["true"]);
+    const b = await booted(id);
+    expect(b.l0_build_id === fresh && b.l2_reset_at, `after the boundary: ${JSON.stringify(b)}`);
+    await sleepAll();
+    // Nothing pinned to the old build now except other check teammates; rebuild the standard image to finish.
+    const [back] = await buildImage("small");
+    c.note("standard", back);
+    for (const s of ["vm-small", "vm-small-2", "vm-small-3"]) { await exec(await idOf(s), ["true"]); }
+    await sleepAll();
+    const { pruneImages } = await import("../../src/environment/image.ts");
+    const removed = await pruneImages("small");
+    c.note("pruned", removed);
+    expect(existsSync(buildPath("small", back)), "the current build was removed");
+  } finally {
+    await pool.query("UPDATE runs SET status = 'done' WHERE id = $1", [run]);
+  }
 });
-
-await check(S, "a recipe command the rule engine refuses stops the recipe", async (c) => {
-  const slug = "vm-recipe";
-  const id = await idOf(slug);
-  await api("PATCH", `/v1/teammates/${slug}`, { computer: { size: "small", allowed_hosts: [], recipe: ["git push --force origin main", "apk add --no-cache htop"] }, note: "check: refused recipe" });
-  const t0 = await lastEventId();
-  const r = await exec(id, ["sh", "-c", "command -v htop || echo none"]);
-  const ev = await recipeEvents(id, t0);
-  expect(ev.length === 1 && ev[0].ok === false && ev[0].refused, `recipe events: ${JSON.stringify(ev)}`);
-  expect(r.stdout.trim() === "none", "the step after the refused one ran");
-  c.note("refused", ev[0].refused.reason);
-  await api("PATCH", `/v1/teammates/${slug}`, { computer: { size: "small", allowed_hosts: [], recipe: [] }, note: "check: reset" });
-  await sleep(id, "check");
-});
+await sleepAll();
 await pool.end();
 process.exit((await save(S)) ? 0 : 1);

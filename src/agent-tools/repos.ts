@@ -1,0 +1,49 @@
+// Repos (K7e): plain git does the local work in the session's checkout; these two tools exist only where the
+// harness must act or check. repo_open makes (or restores) the session's checkout on its own branch; repo_publish
+// pushes that branch from the host-owned mirror and can open a draft PR. Branch names, refusals and the push
+// itself are code (environment/repos.ts).
+import { openRepo, publish, reposOf } from "../environment/repos.ts";
+import { object } from "./schema.ts";
+import type { AgentTool } from "./types.ts";
+
+export const repoTools: AgentTool[] = [
+  {
+    name: "repo_open",
+    description: "Open one of your repos for this conversation: a checkout of its own on a new branch from the latest base (or reopen the one you have). Your shell then starts in it; use plain git there (status, diff, add, commit, rebase).",
+    input_schema: object({
+      repo: { type: "string" },
+      slug: { type: ["string", "null"], description: "A few words for the branch name, e.g. fix-login-redirect." },
+      base: { type: ["string", "null"], description: "Start from this branch instead of the repo's default base." },
+    }),
+    kind: "local",
+    async run(ctx, a) {
+      const r = await openRepo(ctx.teammate, ctx.sessionId, a.repo, a.slug, a.base);
+      return {
+        text: `${r.created ? "Opened" : r.restored ? "Restored (from your last saved state)" : "Already open:"} ${a.repo} at ${r.wt.path}, branch ${r.wt.branch}, based on origin/${r.wt.base} @ ${(r.wt.base_commit ?? "").slice(0, 10)}. Setup: ${r.setup}. Commit on this branch; publish with repo_publish.`,
+        data: { path: r.wt.path, branch: r.wt.branch, base: r.wt.base },
+      };
+    },
+  },
+  {
+    name: "repo_publish",
+    description: "Publish your branch for a repo: push your commits to GitHub and, with pr, open a draft pull request. Only your own branch can be published, and only as new commits on top (no force pushes, no tags).",
+    input_schema: object({
+      repo: { type: "string" },
+      pr: { type: ["object", "null"], properties: { title: { type: "string" }, body: { type: ["string", "null"] } }, required: ["title", "body"], additionalProperties: false },
+    }),
+    kind: "local",
+    authorize(ctx, a) { return reposOf(ctx.teammate).some((r) => r.name === a.repo) ? null : `There's no repo called ${a.repo}.`; },
+    async gate(ctx) {
+      const { effectiveMode } = await import("../proxy/tools.ts");
+      return (await effectiveMode(ctx.teammate)) === "ask" ? { ask: `${ctx.teammate.config.name} wants to push its branch and open a draft PR.` } : null;
+    },
+    async run(ctx, a) {
+      try {
+        const r = await publish(ctx.teammate, ctx.sessionId, a.repo, a.pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null);
+        return { text: r.text, data: { commit: r.pushed, pr_url: r.pr_url } };
+      } catch (e) {
+        return { text: (e as Error).message, isError: true };
+      }
+    },
+  },
+];

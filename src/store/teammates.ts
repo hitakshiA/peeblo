@@ -1,3 +1,4 @@
+import { normalizeRecipe, type Recipe } from "../environment/recipe-schema.ts";
 // Teammate identity and instructions are versioned config: an edit is a new version, never an overwrite,
 // and only people (or Peeblo acting for a person) can make one. The agent itself has no write path here.
 import { pool } from "../db.ts";
@@ -13,7 +14,8 @@ export type TeammateConfig = {
   web: { allowed_domains: string[]; blocked_domains: string[] }; // Otari enforces these on search and fetch
   connectors: string[];         // names of MCP servers stored in Otari, e.g. "linear", "posthog"
   connector_scopes: Record<string, string[]>; // e.g. { github: ["acme/checkout-api", "acme/*"] }
-  computer: { size: "small" | "large"; allowed_hosts: string[]; recipe: string[] }; // hosts beyond the defaults; setup commands run once into the disk
+  computer: { size: "small" | "large"; allowed_hosts: string[]; recipe: Recipe; repos?: unknown[] };
+  git?: { branch_prefix: string; publish: "off" | "own-branches" }; // hosts beyond the defaults; setup commands run once into the disk
   mode: "ask" | "auto" | "trusted" | "yolo";
 };
 
@@ -36,14 +38,29 @@ export function validateConfig(c: Partial<TeammateConfig>): TeammateConfig {
   if (!Array.isArray(connectors) || !connectors.every((x) => typeof x === "string" && /^[a-zA-Z0-9_.-]{1,64}$/.test(x))) problems.push("connectors must be a list of Otari MCP server names");
   const web = { allowed_domains: hosts(c.web?.allowed_domains, "web.allowed_domains", problems), blocked_domains: hosts(c.web?.blocked_domains, "web.blocked_domains", problems) };
   const connectorScopes = scopesOf(c.connector_scopes, problems);
-  const recipe = (c.computer as { recipe?: unknown } | undefined)?.recipe ?? [];
-  if (!Array.isArray(recipe) || recipe.length > 20 || recipe.some((x) => typeof x !== "string" || !x.trim() || x.length > 2000)) problems.push("computer.recipe must be up to 20 non-empty commands");
+  const { recipe, problems: recipeProblems } = normalizeRecipe((c.computer as { recipe?: unknown } | undefined)?.recipe);
+  problems.push(...recipeProblems.map((x) => `computer.recipe: ${x}`));
   const computerHosts = hosts((c.computer as { allowed_hosts?: unknown } | undefined)?.allowed_hosts, "computer.allowed_hosts", problems);
+  // Repos the teammate works in (each session gets its own checkout and branch), and the branch rules.
+  const rawRepos = (c.computer as { repos?: unknown } | undefined)?.repos ?? [];
+  const repos: any[] = [];
+  if (!Array.isArray(rawRepos)) problems.push("computer.repos must be a list");
+  else for (const r of rawRepos as any[]) {
+    if (!r || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/.test(String(r.name)) || !/^(https:\/\/|git@|\/)/.test(String(r.remote ?? ""))) { problems.push("each computer.repos entry needs a name and an https/ssh/local remote"); continue; }
+    const list = (v: unknown) => (Array.isArray(v) ? v.map(String).slice(0, 20) : []);
+    repos.push({ name: String(r.name), remote: String(r.remote), base: String(r.base ?? "main"), ...(r.credential ? { credential: String(r.credential) } : {}), protected: list(r.protected),
+      worktree: { include: list(r.worktree?.include), setup: list(r.worktree?.setup), setup_inputs: list(r.worktree?.setup_inputs) } });
+  }
+  const g = (c as { git?: any }).git ?? {};
+  const prefix = String(g.branch_prefix ?? "peeblo/{teammate}/");
+  if (!/^[A-Za-z0-9._\/{}-]{1,60}\/$/.test(prefix) || /\.\.|\/\//.test(prefix)) problems.push("git.branch_prefix must be a branch path ending in /");
+  const publish = String(g.publish ?? "own-branches");
+  if (!["off", "own-branches"].includes(publish)) problems.push("git.publish must be off or own-branches");
   if (problems.length) throw Object.assign(new Error(problems.join("; ")), { status: 400 });
   return {
     name: c.name!.trim(), role: c.role!.trim(), instructions: c.instructions?.trim() ?? "",
     model: { default: c.model!.default.trim(), ...(c.model!.fallback ? { fallback: c.model!.fallback.trim() } : {}) },
-    budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, computer: { size, allowed_hosts: computerHosts, recipe: Array.isArray(recipe) ? recipe.map(String) : [] }, mode: mode as TeammateConfig["mode"],
+    budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, computer: { size, allowed_hosts: computerHosts, recipe, repos }, git: { branch_prefix: prefix, publish: publish as "off" | "own-branches" }, mode: mode as TeammateConfig["mode"],
   };
 }
 
@@ -136,7 +153,7 @@ export async function updateTeammate(idOrSlug: string, patch: Partial<TeammateCo
     );
     if (!rows[0]) throw Object.assign(new Error(`no teammate ${idOrSlug}`), { status: 404 });
     const cur = rows[0];
-    const next = validateConfig({ ...cur.config, ...patch, model: { ...cur.config.model, ...(patch.model ?? {}) }, budget: { ...cur.config.budget, ...(patch.budget ?? {}) }, computer: { ...cur.config.computer, ...(patch.computer ?? {}) }, web: { ...cur.config.web, ...(patch.web ?? {}) }, connector_scopes: { ...(cur.config.connector_scopes ?? {}), ...(patch.connector_scopes ?? {}) } });
+    const next = validateConfig({ ...cur.config, ...patch, model: { ...cur.config.model, ...(patch.model ?? {}) }, budget: { ...cur.config.budget, ...(patch.budget ?? {}) }, computer: { ...cur.config.computer, ...(patch.computer ?? {}) }, git: { ...(cur.config.git ?? {}), ...((patch as any).git ?? {}) } as any, web: { ...cur.config.web, ...(patch.web ?? {}) }, connector_scopes: { ...(cur.config.connector_scopes ?? {}), ...(patch.connector_scopes ?? {}) } });
     const version = cur.version + 1;
     await client.query("INSERT INTO teammate_versions (teammate_id, version, config, changed_by, note) VALUES ($1, $2, $3, $4, $5)", [cur.id, version, next, by.label, note ?? null]);
     await client.query("UPDATE teammates SET version = $2 WHERE id = $1", [cur.id, version]);

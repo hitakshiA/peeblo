@@ -23,7 +23,7 @@ import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
 // A session keeps its config, but a lower mode applies at once (K5): the gate uses the stricter of the
 // session's mode and the teammate's current one. The tool list never changes within a session (K7a).
 const STRICTNESS = ["ask", "auto", "trusted", "yolo"] as const;
-async function effectiveMode(pinned: Teammate): Promise<Teammate["config"]["mode"]> {
+export async function effectiveMode(pinned: Teammate): Promise<Teammate["config"]["mode"]> {
   const now = await getTeammate(pinned.id);
   const a = STRICTNESS.indexOf(pinned.config.mode);
   const b = now ? STRICTNESS.indexOf(now.config.mode) : a;

@@ -5,10 +5,13 @@ import { otariTools } from "./otari.ts";
 import type { AgentTool } from "./types.ts";
 import { webFetch } from "./web.ts";
 import { computerTools } from "./computer.ts";
+import { recipeTools } from "./recipe.ts";
+import { browserTools } from "./browser.ts";
+import { repoTools } from "./repos.ts";
 import { planTool, subagentTool } from "./work.ts";
 
 export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): AgentTool[] {
-  const all = [planTool, ...otariTools, ...(tm.config.tools.includes("web") ? [webFetch] : []), ...(tm.config.tools.includes("computer") ? computerTools : []), subagentTool];
+  const all = [planTool, ...otariTools, ...(tm.config.tools.includes("web") ? [webFetch] : []), ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
   // A subagent looks things up but changes nothing, and opens no subagents.
   return opts.subagent ? all.filter((t) => t.kind === "read") : all;
 }

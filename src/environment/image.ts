@@ -1,21 +1,104 @@
-// `peeblo image`: builds the teammate VM images for this host's architecture (or PEEBLO_VM_ARCH): the small
-// tier's image, and the large tier's, which adds a headless browser (Chromium). `peeblo image small` builds one.
+// `peeblo image [small|large]`: builds the teammate VM images for this host's architecture (or PEEBLO_VM_ARCH).
+// Each build lands in its own folder named by Gondolin's manifest buildId and is never overwritten; `current`
+// names the newest. Teammates stay pinned to the build their disk was made on (controller.ts), and old folders
+// are removed once nothing is pinned to them. Files Alpine doesn't package (images/vendor.json) are fetched,
+// checked by sha256 and copied in.
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { config } from "../config.ts";
-import { imagePath } from "./controller.ts";
+import { pool } from "../db.ts";
 
-export async function buildImage(only?: string): Promise<void> {
-  for (const size of (only ? [only] : ["small", "large"]) as ("small" | "large")[]) {
-    const out = imagePath(size);
-    await mkdir(dirname(out), { recursive: true });
-    const cfg = join(import.meta.dirname, "..", "..", "images", `teammate-${size === "large" ? "browser-" : ""}${config.vmArch}.json`);
-    const bin = join(import.meta.dirname, "..", "..", "node_modules", ".bin", "gondolin");
-    console.log(`building the ${size} ${config.vmArch} image into ${out}`);
-    await new Promise<void>((resolve, reject) => {
-      const p = spawn(bin, ["build", "--config", cfg, "--output", out], { stdio: "inherit" });
-      p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`gondolin build exited ${code}`))));
-    });
+export type Tier = "small" | "large";
+const REPO = join(import.meta.dirname, "..", "..");
+export const tierDir = (size: Tier) => join(config.dataDir, "images", `${size}-${config.vmArch}`);
+
+// The build a tier uses now: `current`, or a build folder from before images were versioned.
+export function currentBuild(size: Tier): string | null {
+  const f = join(tierDir(size), "current");
+  if (existsSync(f)) return readFileSync(f, "utf8").trim();
+  return null;
+}
+export const buildPath = (size: Tier, buildId: string) => join(tierDir(size), buildId);
+export function buildIdOf(dir: string): string | null {
+  try { return JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).buildId ?? null; } catch { return null; }
+}
+
+const run = (bin: string, args: string[], cwd?: string) => new Promise<void>((resolve, reject) => {
+  const p = spawn(bin, args, { stdio: "inherit", cwd });
+  p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${bin} ${args[0]} exited ${code}`))));
+});
+
+// Fetches and unpacks the vendored files for a tier; returns Gondolin postBuild.copy entries.
+async function vendor(size: Tier): Promise<{ src: string; dest: string }[]> {
+  const list = JSON.parse(await readFile(join(REPO, "images", "vendor.json"), "utf8")) as Record<string, any>;
+  const dir = join(config.dataDir, "images", "vendor", config.vmArch);
+  await mkdir(dir, { recursive: true });
+  const out: { src: string; dest: string }[] = [];
+  for (const [name, v] of Object.entries(list)) {
+    if (name === "_" || !v.tiers.includes(size)) continue;
+    const key = v.url[config.vmArch] ? config.vmArch : "any";
+    const file = join(dir, `${name}-${v.version}.${v.kind === "wheel" ? "whl" : v.kind === "tgz-binary" ? "tgz" : "bin"}`);
+    if (!existsSync(file)) {
+      const r = await fetch(v.url[key]);
+      if (!r.ok) throw new Error(`${name}: download failed (${r.status})`);
+      await writeFile(file, Buffer.from(await r.arrayBuffer()));
+    }
+    const sum = createHash("sha256").update(await readFile(file)).digest("hex");
+    if (sum !== v.sha256[key]) { await rm(file, { force: true }); throw new Error(`${name}: sha256 mismatch (${sum})`); }
+    const unpacked = join(dir, `${name}-${v.version}`);
+    if (!existsSync(unpacked)) {
+      await mkdir(unpacked, { recursive: true });
+      if (v.kind === "wheel") await run("unzip", ["-q", file, "-d", unpacked]);
+      else if (v.kind === "tgz-binary") await run("tar", ["-xzf", file, "-C", unpacked]);
+      else { await writeFile(join(unpacked, name), await readFile(file)); await chmod(join(unpacked, name), 0o755); }
+    }
+    if (v.kind === "wheel") for (const e of readdirSync(unpacked)) out.push({ src: join(unpacked, e), dest: join(v.dest, e) });
+    else { const bin = readdirSync(unpacked)[0]; await chmod(join(unpacked, bin), 0o755); out.push({ src: join(unpacked, bin), dest: v.dest }); }
   }
+  return out;
+}
+
+export async function buildImage(only?: string, opts: { extraPackages?: string[] } = {}): Promise<string[]> {
+  const ids: string[] = [];
+  for (const size of (only ? [only] : ["small", "large"]) as Tier[]) {
+    const tmp = join(tierDir(size), `.building-${Date.now()}`);
+    await mkdir(tmp, { recursive: true });
+    const cfg = JSON.parse(await readFile(join(REPO, "images", `${size}-${config.vmArch}.json`), "utf8"));
+    cfg.postBuild = { copy: await vendor(size) };
+    if (opts.extraPackages?.length) cfg.alpine.rootfsPackages.push(...opts.extraPackages);
+    const cfgFile = join(tmp, "..", `.config-${size}.json`);
+    await writeFile(cfgFile, JSON.stringify(cfg, null, 2));
+    const t0 = Date.now();
+    console.log(`building the ${size} ${config.vmArch} image`);
+    await run(join(REPO, "node_modules", ".bin", "gondolin"), ["build", "--config", cfgFile, "--output", tmp]);
+    const id = buildIdOf(tmp);
+    if (!id) throw new Error("the build has no manifest buildId");
+    const dest = buildPath(size, id);
+    if (existsSync(dest)) await rm(tmp, { recursive: true, force: true }); // same inputs, same build: keep the old one
+    else await rename(tmp, dest);
+    await writeFile(join(tierDir(size), "current"), id);
+    const bytes = readdirSync(dest).reduce((a, f) => a + statSync(join(dest, f)).size, 0);
+    await writeFile(join(dest, "peeblo-build.json"), JSON.stringify({ size, buildId: id, built_at: new Date().toISOString(), build_ms: Date.now() - t0, bytes, packages: cfg.alpine.rootfsPackages, vendored: cfg.postBuild.copy.map((c: { dest: string }) => c.dest) }, null, 2));
+    console.log(`${size}: build ${id} (${Math.round(bytes / 1e6)} MB, ${Math.round((Date.now() - t0) / 1000)} s)`);
+    await pruneImages(size).catch(() => {});
+    ids.push(id);
+  }
+  return ids;
+}
+
+// Removes build folders no teammate is pinned to (never `current`).
+export async function pruneImages(size: Tier): Promise<string[]> {
+  const cur = currentBuild(size);
+  const { rows } = await pool.query("SELECT DISTINCT pins->>$1 AS id FROM environments WHERE pins ? $1", [size]).catch(() => ({ rows: [] as { id: string }[] }));
+  const keep = new Set([cur, ...rows.map((r) => r.id)]);
+  const removed: string[] = [];
+  for (const d of readdirSync(tierDir(size))) {
+    if (d.startsWith(".") || d === "current" || keep.has(d) || !buildIdOf(join(tierDir(size), d))) continue;
+    await rm(join(tierDir(size), d), { recursive: true, force: true });
+    removed.push(d);
+  }
+  return removed;
 }
