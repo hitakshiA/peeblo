@@ -1,1 +1,6 @@
 minimumReleaseAge: 1440
+# No dependency may run install scripts. Gondolin's optional native speedups (ssh2, cpu-features)
+# are not needed: it falls back to pure JavaScript.
+allowBuilds:
+  cpu-features: false
+  ssh2: false

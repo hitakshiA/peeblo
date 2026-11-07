@@ -9,6 +9,7 @@ import "./durable/runs.ts";
 import { syncSchedules } from "./durable/schedules.ts";
 import { startApi } from "./api/server.ts";
 import { startIngress } from "./ingress/slack.ts";
+import { sleepAll } from "./environment/controller.ts";
 
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
 const applied = await migrate();
@@ -21,6 +22,7 @@ console.log(`peeblo: up (migrations applied: ${applied.length ? applied.join(", 
 const shutdown = async () => {
   api.close();
   ingress.close();
+  await sleepAll();
   await shutdownDurable();
   await pool.end();
   process.exit(0);

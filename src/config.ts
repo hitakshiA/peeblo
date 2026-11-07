@@ -22,6 +22,10 @@ export const config = {
   // The public ingress (Slack events, interactions, OAuth callback). A tunnel or reverse proxy points at it.
   ingressHost: process.env.PEEBLO_INGRESS_HOST?.trim() || "127.0.0.1",
   ingressPort: Number(process.env.PEEBLO_INGRESS_PORT ?? 8787),
+  // Teammate computers (Gondolin). The image is built once with `peeblo image`.
+  vmArch: (process.env.PEEBLO_VM_ARCH?.trim() || (process.arch === "arm64" ? "aarch64" : "x86_64")) as "aarch64" | "x86_64",
+  vmImage: process.env.PEEBLO_VM_IMAGE?.trim() || "",
+  vmIdleMs: Number(process.env.PEEBLO_VM_IDLE_MS ?? 5 * 60_000),
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
 };
 

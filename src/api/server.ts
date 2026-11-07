@@ -12,6 +12,7 @@ import { runEvents } from "../store/events.ts";
 import { getRun, getSession, openSession, submit, type SessionKind } from "../store/sessions.ts";
 import { createTeammate, getTeammate, listTeammates, teammateVersions, updateTeammate } from "../store/teammates.ts";
 import { listApps, saveApp } from "../ingress/apps.ts";
+import { exec as vmExec, sleep as vmSleep } from "../environment/controller.ts";
 import { readJson, Router, send } from "./http.ts";
 
 const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
@@ -54,6 +55,18 @@ export const router = new Router()
   .add("POST", "/v1/approvals/:id", async ({ params, body }) => {
     if (!["approved", "denied"].includes(body?.decision)) throw bad("decision must be approved or denied");
     return answerApproval(params.id, { decision: body.decision, scope: body.scope ?? "once", personId: body.person_id ?? null });
+  })
+  .add("POST", "/v1/teammates/:slug/computer/exec", async ({ params, body }) => {
+    const tm = await getTeammate(params.slug);
+    if (!tm) throw notFound("teammate");
+    if (!Array.isArray(body?.argv) || !body.argv.length) throw bad("argv (array of strings) is required");
+    return vmExec(tm.id, body.argv.map(String), { timeoutMs: Number(body.timeout_ms ?? 60_000) });
+  })
+  .add("POST", "/v1/teammates/:slug/computer/sleep", async ({ params }) => {
+    const tm = await getTeammate(params.slug);
+    if (!tm) throw notFound("teammate");
+    await vmSleep(tm.id, "admin");
+    return { ok: true };
   })
   .add("GET", "/v1/slack/apps", async () => ({ apps: await listApps() }))
   .add("POST", "/v1/slack/apps", async ({ body }) => {
