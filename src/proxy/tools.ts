@@ -120,7 +120,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: b.stuck.reason } });
     return json(res, 200, { text: `Stopped: this exact ${name} call has been made ${repeats} times in this run. Tell the person what you were trying and what kept happening.`, isError: true });
   }
-  const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}th identical ${name} call in this run; the result will not change.]` : "";
+  const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}${repeats === 3 ? "rd" : "th"} identical ${name} call in this run; the result will not change.]` : "";
   const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError) });
 
   // Untrusted results are labelled with their source and screened; a flag is appended as a warning.

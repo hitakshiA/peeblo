@@ -22,7 +22,7 @@ await check(S, "the same call gets a note from its 3rd time and stops the run on
   const out = [];
   for (let i = 1; i <= 6; i++) out.push(await call());
   expect(!out[0].text.includes("[peeblo:") && !out[1].text.includes("[peeblo:"), "a note came before the 3rd call");
-  expect(out[2].text.includes("3th identical budget_status call") || out[2].text.includes("identical budget_status"), `no note on the 3rd call: ${out[2].text.slice(-120)}`);
+  expect(out[2].text.includes("3rd identical budget_status call"), `no note on the 3rd call: ${out[2].text.slice(-120)}`);
   expect(out[5].isError && /^Stopped:/.test(out[5].text), `the 6th call was not stopped: ${out[5].text.slice(0, 120)}`);
   const { rows } = await pool.query("SELECT data FROM events WHERE session_id = $1 AND type = 'run.stuck'", [session.id]);
   expect(rows.length === 1, `run.stuck events: ${rows.length}`);
