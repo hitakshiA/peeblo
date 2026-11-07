@@ -9,6 +9,12 @@ providers:
   - id: file://../providers/peeblo-turn.mjs
     label: deepseek-v4.1-flash
     config: { teammate: eval-pc-worker }
+  - id: file://../providers/peeblo-turn.mjs
+    label: mimo-v2.6-pro
+    config: { teammate: eval-pc-mimo }
+  - id: file://../providers/peeblo-turn.mjs
+    label: glm-5.3-flash
+    config: { teammate: eval-pc-glmflash }
 defaultTest:
   assert:
     - type: javascript
