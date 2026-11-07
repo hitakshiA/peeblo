@@ -32,7 +32,7 @@ case "${1:-up}" in
       mac_compose up -d --wait db
       [ -d node_modules ] || pnpm install --frozen-lockfile
       native_env
-      [ -f "$PEEBLO_DATA_DIR/images/teammate-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)/manifest.json" ] || node src/bin.ts image
+      [ -f "$PEEBLO_DATA_DIR/images/teammate-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)/manifest.json" ] || node src/bin.ts image small
       if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else
         nohup node src/bin.ts daemon >> "$RUN/core.log" 2>&1 & echo $! > "$RUN/core.pid"
         sleep 4; core_pid >/dev/null || { echo "peeblo: core failed to start; see $RUN/core.log"; tail -20 "$RUN/core.log"; exit 1; }

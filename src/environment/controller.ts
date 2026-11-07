@@ -75,6 +75,7 @@ async function boot(teammateId: string): Promise<Live> {
   const size = tm.config.computer?.size ?? "small";
   const tier = TIERS[size];
   const disk = diskOf(tm.slug, size);
+  if (!existsSync(join(imagePath(size), "manifest.json"))) throw new Error(`the ${size} computer image isn't built yet; run ./peeblo image ${size}`);
   const options = {
     sessionLabel: `peeblo ${tm.slug}`,
     sandbox: { imagePath: imagePath(size), ...(crossArch ? { append: "console=ttyS0 initramfs_async=1" } : {}) },
