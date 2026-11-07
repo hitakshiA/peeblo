@@ -21,7 +21,12 @@ for (const [k, c] of byCase) {
 }
 const share = byCase.size ? all / byCase.size : 0;
 console.log(`\npass^k: ${all}/${byCase.size} cases passed every run (${(share * 100).toFixed(0)}%)`);
-// The gate counts only the role models; providers labelled "baseline-…" are reported apart.
-const split = (base) => { const cs = [...byCase].filter(([k]) => k.startsWith("baseline-") === base); return `${cs.filter(([, c]) => c.passed === c.runs).length}/${cs.length}`; };
+// The gate counts only the role models; providers labelled "baseline-…" are reported apart. Cases an outage
+// made impossible are listed in PEEBLO_EVAL_BLOCKED (a local JSON file: {blocked: [{provider, case, reason}]})
+// and left out of the gate, by name, until they are rerun.
+const blocked = process.env.PEEBLO_EVAL_BLOCKED ? JSON.parse(readFileSync(process.env.PEEBLO_EVAL_BLOCKED, "utf8")).blocked : [];
+const isBlocked = (k) => blocked.find((b) => k === `${b.provider} · ${b.case}`);
+const split = (base) => { const cs = [...byCase].filter(([k]) => k.startsWith("baseline-") === base && !isBlocked(k)); return `${cs.filter(([, c]) => c.passed === c.runs).length}/${cs.length}`; };
 console.log(`gate (role models): ${split(false)}  ·  baseline: ${split(true)}`);
+for (const [k] of byCase) if (isBlocked(k)) console.log(`blocked, left out of the gate: ${k} (${isBlocked(k).reason})`);
 process.exit(share >= need ? 0 : 1);
