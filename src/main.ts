@@ -42,6 +42,7 @@ const proxy = await startProxy();
 await launchDurable();
 // Recipes whose build is missing for the current base image (e.g. after `peeblo image`) are queued in the background.
 void import("./environment/recipes.ts").then((r) => r.queueMissingBuilds()).catch(() => {});
+{ const { installTriggers } = await import("./triggers.ts"); installTriggers(); }
 // Worktrees of closed or long-idle sessions are cleaned up while their teammate is awake and idle.
 setInterval(() => void import("./environment/controller.ts").then(async (c) => { const { sweep } = await import("./environment/repos.ts"); for (const a of c.awake()) if (a.inflight === 0) await sweep(a.teammateId).catch(() => 0); }), 30 * 60_000).unref();
 const schedules = await syncSchedules();

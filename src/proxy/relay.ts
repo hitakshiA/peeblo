@@ -112,7 +112,22 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   const out = Math.min(Number(j.max_tokens ?? j.max_completion_tokens ?? j.max_output_tokens ?? 1000), 8192);
   const est = await estimateCost(model, roughTokens(" ".repeat(Math.min(promptChars, 4_000_000))), out);
   if (est === null) return null; // unpriced (a role policy without a catalog default): Otari's own caps still apply
-  return capCheck(tm, b.endUser, model, est);
+  const cap = await capCheck(tm, b.endUser, model, est);
+  if (cap) return cap;
+  return runBudget(b.runId, est);
+}
+
+// A scheduled or triggered run has its own budget (K11); a run a person started has only the teammate's and theirs.
+async function runBudget(runId: string | null, est: number): Promise<CapRefusal | null> {
+  if (!runId) return null;
+  const { rows } = await pool.query(
+    `SELECT sc.budget_usd FROM runs r JOIN submissions s ON s.id = r.submission_id JOIN schedules sc ON sc.id = split_part(s.request_id, ':', 2)
+      WHERE r.id = $1 AND s.source IN ('schedule', 'webhook')`, [runId]);
+  if (!rows[0]) return null;
+  const budget = Number(rows[0].budget_usd);
+  const spent = Number((await pool.query("SELECT coalesce(sum((data->>'cost_usd')::numeric), 0) AS c FROM events WHERE run_id = $1 AND type = 'model.call'", [runId])).rows[0].c);
+  if (spent + est <= budget) return null;
+  return { scope: "teammate", spent, cap: budget, estimate: est, message: `This scheduled run has a budget of $${budget.toFixed(2)} and has spent $${spent.toFixed(4)}; the next call (about $${est.toFixed(4)}) would go over.` };
 }
 
 // Reads the response as it passes: the usage block (last chunk) and Otari's own tool calls (web, code).

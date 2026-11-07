@@ -114,6 +114,11 @@ export function startIngress(): Promise<Server> {
       if (req.method === "POST" && url.pathname === "/slack/events") out = await handleEvents(await rawBody(req), req);
       else if (req.method === "POST" && url.pathname === "/slack/interactions") out = await handleInteraction(await rawBody(req), req);
       else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") { out = await handleOAuth(url); type = "text/html"; }
+      else if (req.method === "POST" && /^\/hooks\/[a-z0-9-]{2,31}\/sc_[a-z0-9]+$/.test(url.pathname)) {
+        const [, , slug, id] = url.pathname.split("/");
+        const { handleHook } = await import("../triggers.ts");
+        out = await handleHook(slug, id, req.headers, await rawBody(req));
+      }
       else if (req.method === "GET" && /^\/cards\/[0-9a-f]{32}\.png$/.test(url.pathname)) {
         const { readFile } = await import("node:fs/promises");
         const png = await readFile(`${config.dataDir}/cards/${url.pathname.slice(7)}`).catch(() => null);

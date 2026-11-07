@@ -83,6 +83,19 @@ export const router = new Router()
     if (created) await startRun(run.id);
     return { submission_id: submissionId, run_id: run.id, created };
   })
+  // Schedules and triggers: list them, and run one now (a watch polls; the console's "run now" button).
+  .add("GET", "/v1/schedules", async () => {
+    const { pool } = await import("../db.ts");
+    return { schedules: (await pool.query("SELECT s.id, t.slug AS teammate, s.kind, s.name, s.cron, s.run_at, s.enabled, s.last_run_at, s.filter, s.watch, s.budget_usd FROM schedules s JOIN teammates t ON t.id = s.teammate_id ORDER BY s.created_at DESC")).rows };
+  })
+  .add("POST", "/v1/schedules/:id/run", async ({ params }) => {
+    const { pool } = await import("../db.ts");
+    const s = (await pool.query("SELECT * FROM schedules WHERE id = $1", [params.id])).rows[0];
+    if (!s) throw notFound("schedule");
+    const T = await import("../triggers.ts");
+    if (s.kind === "watch") return { result: await T.pollWatch(s) };
+    return { run_id: await T.fire(s, "", "schedule", `now-${Date.now()}`) };
+  })
   .add("GET", "/v1/runs/:id", async ({ params }) => {
     const run = await getRun(params.id);
     if (!run) throw notFound("run");

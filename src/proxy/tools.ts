@@ -237,7 +237,10 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       {
         await event({ status: "waiting_approval" });
         const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}) };
-        const a = await askApproval(b.runId, b.sessionId, action, await approvalTtl(b.runId));
+        // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no (K11).
+        const ttl = await approvalTtl(b.runId);
+        if (ttl > config.approvalTtlSeconds && tm.owner_person) (action as any).approvers = [tm.owner_person];
+        const a = await askApproval(b.runId, b.sessionId, action, ttl);
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
           return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : "A person said no to this call, so it did not run. Do not retry it.", isError: true });

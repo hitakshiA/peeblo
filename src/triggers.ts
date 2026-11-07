@@ -1,0 +1,146 @@
+// Schedules and triggers (K11). The agent writes them through tools; code fires them and holds the rails:
+// - cron runs at most hourly; a watch polls at most hourly; webhooks are exempt (they're events);
+// - at most PEEBLO_TRIGGER_RUNS_PER_HOUR triggered runs per teammate per hour;
+// - each run has its own budget (proxy/relay.ts) and posts only where it was allowed to (the origin, or a public
+//   channel the teammate is in);
+// - code skips a run only on objective no-change: a webhook whose event doesn't match the filter, a watch whose
+//   result hash is unchanged. Otherwise the teammate wakes and decides for itself whether anything is worth saying;
+// - the stored prompt is never consent: writes in a triggered run still go through the gate, and an approval waits
+//   12 h for the owner, then counts as no;
+// - each run is logged with findings none | some; a failure tells the creator.
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { seal, unseal } from "./crypto.ts";
+import { config } from "./config.ts";
+import { pool } from "./db.ts";
+import { startRun } from "./durable/runs.ts";
+import { newId } from "./ids.ts";
+import { appendEvent, onEvent } from "./store/events.ts";
+import { openSession, submit } from "./store/sessions.ts";
+import { getTeammate, type Teammate } from "./store/teammates.ts";
+import type { SlackPlace } from "./slack/inbound.ts";
+
+const RUNS_PER_HOUR = Number(process.env.PEEBLO_TRIGGER_RUNS_PER_HOUR ?? 6);
+export type Kind = "cron" | "once" | "webhook" | "watch";
+export type Schedule = { id: string; teammate_id: string; session_id: string; kind: Kind; name: string | null; cron: string | null; run_at: Date | null; prompt: string; output_to: any; budget_usd: string; filter: any; watch: any; state_hash: string | null; created_by: string | null; enabled: boolean; last_run_at: Date | null };
+
+// At most hourly: a fixed minute (no */n or lists in the minute field), five fields.
+export function cronProblem(cron: string): string | null {
+  const f = cron.trim().split(/\s+/);
+  if (f.length !== 5) return "a schedule is a 5-field cron like '0 21 * * *' (21:00 every day)";
+  if (!/^\d{1,2}$/.test(f[0]) || Number(f[0]) > 59) return "schedules run at most once an hour: the minute field must be one number";
+  return null;
+}
+
+// Where a schedule may post: the conversation it was made in, or a public channel the teammate's app is in.
+export async function outputPlace(tm: Teammate, origin: SlackPlace | null, channel: string | null): Promise<{ place: any } | { problem: string }> {
+  if (!channel || (origin && channel === origin.channel)) {
+    if (!origin) return { place: {} };
+    return { place: { slack: { ...origin, thread_ts: undefined, trigger_ts: undefined, direct: false } } };
+  }
+  const { slack } = await import("./slack/api.ts");
+  if (!origin) return { problem: "a schedule made outside Slack can't post to a channel" };
+  const info = await slack(origin.app_id, "conversations.info", { channel }).catch(() => null);
+  if (!info?.channel || info.channel.is_private || info.channel.is_im) return { problem: "results can go to this conversation or to a public channel only" };
+  if (!info.channel.is_member) return { problem: `${tm.config.name} isn't in that channel; invite it first` };
+  return { place: { slack: { ...origin, channel, channel_type: "channel", thread_ts: undefined, trigger_ts: undefined, direct: false } } };
+}
+
+export async function createSchedule(tm: Teammate, by: string | null, s: { kind: Kind; name: string; prompt: string; cron?: string | null; runAt?: string | null; place: any; budgetUsd?: number; filter?: any; watch?: any }): Promise<{ id: string; secret?: string }> {
+  const id = newId("sc");
+  const session = await openSession(tm.id, "api", `schedule:${id}`, { ...s.place, schedule_id: id });
+  const secret = s.kind === "webhook" ? randomBytes(24).toString("hex") : null;
+  await pool.query(
+    `INSERT INTO schedules (id, teammate_id, session_id, kind, name, cron, run_at, prompt, output_to, budget_usd, filter, watch, created_by, secret)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [id, tm.id, session.id, s.kind, s.name, s.cron ?? null, s.runAt ?? null, s.prompt, s.place, Math.min(1, s.budgetUsd ?? 0.05), s.filter ?? {}, s.watch ?? null, by, secret ? seal(secret) : null]);
+  if (s.kind === "cron") { const { syncSchedules } = await import("./durable/schedules.ts"); await syncSchedules(); }
+  await appendEvent({ type: "schedule.created", data: { schedule_id: id, teammate_id: tm.id, kind: s.kind, name: s.name, by } });
+  return { id, ...(secret ? { secret } : {}) };
+}
+export const hookUrl = (tm: Teammate, id: string) => `${config.publicUrl}/hooks/${tm.slug}/${id}`;
+
+// One triggered run. Returns null when a rail skipped it (the reason is logged).
+export async function fire(s: Schedule, extra: string, source: "schedule" | "webhook", key: string): Promise<string | null> {
+  const recent = (await pool.query("SELECT count(*)::int AS n FROM submissions sub JOIN sessions se ON se.id = sub.session_id WHERE se.teammate_id = $1 AND sub.source IN ('schedule', 'webhook') AND sub.created_at > now() - interval '1 hour'", [s.teammate_id])).rows[0].n;
+  if (recent >= RUNS_PER_HOUR) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: `hourly cap (${RUNS_PER_HOUR})` } }); return null; }
+  const text = `${s.prompt}\n\n(This is a ${s.kind === "webhook" ? "triggered" : "scheduled"} run of "${s.name ?? s.id}". First decide whether anything is worth reporting; if not, end without posting.)${extra}`;
+  const { run, created } = await submit({ sessionId: s.session_id, personId: s.created_by, requestId: `${source}:${s.id}:${key}`, text, source });
+  await pool.query("UPDATE schedules SET last_run_at = now() WHERE id = $1", [s.id]);
+  if (created) await startRun(run.id);
+  return run.id;
+}
+
+// Webhooks: a signed POST to /hooks/<teammate>/<id>. GitHub's X-Hub-Signature-256, or X-Peeblo-Signature (the same
+// HMAC), or a Bearer secret. Then the event filter (code, objective). The payload reaches the teammate as untrusted.
+export async function handleHook(slug: string, id: string, headers: Record<string, string | string[] | undefined>, body: string): Promise<[number, string]> {
+  const tm = await getTeammate(slug);
+  const s = tm ? ((await pool.query("SELECT * FROM schedules WHERE id = $1 AND teammate_id = $2 AND kind = 'webhook' AND enabled", [id, tm.id])).rows[0] as Schedule & { secret: Buffer }) : null;
+  if (!tm || !s) return [404, "not found"];
+  const secret = unseal<string>(s.secret);
+  const sig = String(headers["x-hub-signature-256"] ?? headers["x-peeblo-signature"] ?? "");
+  const mine = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+  const bearer = String(headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+  const ok = (sig && sig.length === mine.length && timingSafeEqual(Buffer.from(sig), Buffer.from(mine))) || (bearer && bearer.length === secret.length && timingSafeEqual(Buffer.from(bearer), Buffer.from(secret)));
+  if (!ok) return [401, "bad signature"];
+  let payload: any = {};
+  try { payload = JSON.parse(body); } catch { return [400, "not json"]; }
+  const event = String(headers["x-github-event"] ?? payload.event ?? payload.type ?? "");
+  if (event === "ping") return [200, "pong"];
+  const miss = filterMiss(s.filter ?? {}, event, payload);
+  if (miss) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: `filter: ${miss}`, event } }); return [202, "skipped: doesn't match the trigger's filter"]; }
+  const delivery = String(headers["x-github-delivery"] ?? createHash("sha256").update(body).digest("hex").slice(0, 16));
+  const summary = JSON.stringify(payload).slice(0, 4000).replaceAll("</untrusted>", "</ untrusted>");
+  const run = await fire(s, `\n\nEvent: ${event || "webhook"}\n<untrusted source="webhook:${slug}/${s.name ?? s.id}">\n${summary}\n</untrusted>`, "webhook", delivery);
+  return [202, run ? `run ${run}` : "skipped"];
+}
+
+// {event: "deployment_status", "deployment_status.state": "success", "deployment.environment": "production"}
+export function filterMiss(filter: Record<string, unknown>, event: string, payload: any): string | null {
+  for (const [k, want] of Object.entries(filter)) {
+    const got = k === "event" ? event : k.split(".").reduce((o: any, p) => (o == null ? undefined : o[p]), payload);
+    if (Array.isArray(want) ? !want.map(String).includes(String(got)) : String(got) !== String(want)) return `${k} is ${JSON.stringify(got)}, wants ${JSON.stringify(want)}`;
+  }
+  return null;
+}
+
+// Watches: run a connector read on a timer; wake the teammate only when the result changed. The first poll is a
+// baseline. Reads only (a watch can never write).
+export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" | "changed" | "failed"> {
+  const tm = await getTeammate(s.teammate_id);
+  if (!tm || !s.watch) return "failed";
+  const { catalogFor, classify, executeTool } = await import("./connectors/mcp.ts");
+  const t = (await catalogFor(tm.config)).tools.find((x) => x.server === s.watch.server && x.tool === s.watch.tool);
+  if (!t || classify(t, s.watch.arguments ?? {}) !== "read") { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: "a watch reads with a read tool of one of its connectors" } }); return "failed"; }
+  const { data } = await executeTool(t, s.watch.arguments ?? {}).catch(() => ({ data: null }));
+  if (data === null) return "failed";
+  const text = JSON.stringify(data).slice(0, 200_000);
+  const hash = createHash("sha256").update(text).digest("hex");
+  await pool.query("UPDATE schedules SET last_run_at = now(), state_hash = $2 WHERE id = $1", [s.id, hash]);
+  if (!s.state_hash) { await appendEvent({ type: "schedule.watch", data: { schedule_id: s.id, result: "baseline" } }); return "baseline"; }
+  if (s.state_hash === hash) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: "watch: no change" } }); return "unchanged"; }
+  await appendEvent({ type: "schedule.watch", data: { schedule_id: s.id, result: "changed" } });
+  await fire(s, `\n\nThe watched data changed (${s.watch.server}.${s.watch.tool}). Latest:\n<untrusted source="watch:${s.watch.server}">\n${text.slice(0, 4000)}\n</untrusted>`, "schedule", hash.slice(0, 16));
+  return "changed";
+}
+
+// The ticker: one-time schedules that are due, and watches whose hour has come.
+export function installTriggers(): void {
+  setInterval(() => void (async () => {
+    const due = (await pool.query("SELECT * FROM schedules WHERE enabled AND ((kind = 'once' AND run_at <= now() AND last_run_at IS NULL) OR (kind = 'watch' AND (last_run_at IS NULL OR last_run_at < now() - make_interval(hours => greatest(1, coalesce((filter->>'every_hours')::int, 1))))))")).rows as Schedule[];
+    for (const s of due) {
+      if (s.kind === "once") { await fire(s, "", "schedule", "once"); await pool.query("UPDATE schedules SET enabled = false WHERE id = $1", [s.id]); }
+      else await pollWatch(s).catch(() => null);
+    }
+  })().catch((e) => console.error("triggers:", (e as Error).message)), 60_000).unref();
+
+  // Each triggered run is logged with whether it found anything; a failure tells whoever made the trigger.
+  onEvent(async (e) => {
+    if (e.type !== "run.finished" && e.type !== "run.failed") return;
+    const src = (await pool.query("SELECT s.request_id, s.source FROM runs r JOIN submissions s ON s.id = r.submission_id WHERE r.id = $1", [e.run_id])).rows[0];
+    if (!src || !["schedule", "webhook"].includes(src.source)) return;
+    const id = String(src.request_id).split(":")[1];
+    const posted = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type IN ('slack.post', 'slack.post.blocks')", [e.run_id])).rows[0].n);
+    await appendEvent({ type: "schedule.ran", data: { schedule_id: id, run_id: e.run_id, findings: posted ? "some" : "none", ok: e.type === "run.finished" } });
+    if (e.type === "run.failed") await appendEvent({ type: "notify.owner", data: { schedule_id: id, kind: "schedule_failed", text: `A scheduled job failed: ${String((e.data as any).error ?? "").slice(0, 200)}` } });
+  });
+}
