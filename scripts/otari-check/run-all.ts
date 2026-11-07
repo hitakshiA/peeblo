@@ -4,9 +4,10 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
-const order = ["a-client", "j-admin", "c-people", "d-routing", "g-mcp", "h-guard", "i-rules", "k-search", "l-decisions", "bef-turns", "m-links", "n-agent-tools"];
+const order = ["a-client", "j-admin", "c-people", "d-routing", "g-mcp", "h-guard", "i-rules", "k-search", "l-decisions", "bef-turns", "m-links", "n-agent-tools", "n7-deferred", "p2-runtime", "p2-secrets", "p2-k5"];
+const only = process.argv.slice(2);
 let failed = 0;
-for (const name of order) {
+for (const name of only.length ? only : order) {
   console.log(`\n# ${name}`);
   const r = spawnSync(process.execPath, [join(import.meta.dirname, `${name}.ts`)], { stdio: "inherit", env: process.env });
   if (r.status !== 0) failed++;

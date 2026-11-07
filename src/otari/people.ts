@@ -6,17 +6,27 @@ import { otari, OtariError } from "./client.ts";
 
 const known = new Map<string, string | null>();
 
-// Idempotent (PUT). A budget id moves the person to that tier; none keeps the key's default tier.
+// Registers a person. A new person goes on the given tier (or the key's default); a known one keeps theirs.
 // End users belong to the key that made them, so a teammate with its own key registers people on it too.
 export async function ensureEndUser(externalId: string, alias: string | null, budgetId?: string, key?: { keyId: string; secret: string }): Promise<void> {
   const k = `${key?.keyId ?? "core"}:${externalId}`;
   if (known.has(k) && known.get(k) === (budgetId ?? null)) return;
   const opts = key ? { auth: { authorization: `Bearer ${key.secret}` } } : {};
+  // Someone Otari already knows keeps the tier they're on (an admin may have moved them); only new people get one.
+  const existing = await otari<EndUser>("GET", `/end-users/${encodeURIComponent(externalId)}`, undefined, opts).then((r) => r.data, (e) => { if ((e as OtariError).status === 404) return null; throw e; });
+  if (existing?.budget_id) { known.set(k, budgetId ?? null); return; }
   // Otari's PUT needs a budget; without one named, the key's default tier.
   const budget = budgetId ?? (await otari<Tier[]>("GET", "/end-user-budgets", undefined, opts)).data.find((t) => t.is_default)?.budget_id;
   if (!budget) throw new Error("Peeblo's Otari key has no default end-user budget; set OTARI_END_USER_BUDGET_ID or give the key a default tier");
   await otari("PUT", `/end-users/${encodeURIComponent(externalId)}`, { alias: alias ?? externalId, budget_id: budget, metadata: { app: "peeblo" } }, opts);
   known.set(k, budgetId ?? null);
+}
+
+// Moves a person to a tier (an admin decision, or a check).
+export async function moveToTier(externalId: string, alias: string | null, budgetId: string, key?: { keyId: string; secret: string }): Promise<void> {
+  const opts = key ? { auth: { authorization: `Bearer ${key.secret}` } } : {};
+  await otari("PUT", `/end-users/${encodeURIComponent(externalId)}`, { alias: alias ?? externalId, budget_id: budgetId, metadata: { app: "peeblo" } }, opts);
+  known.set(`${key?.keyId ?? "core"}:${externalId}`, budgetId);
 }
 
 export type EndUser = { user_id: string; alias: string | null; spend: number; budget_id: string | null; blocked: boolean };

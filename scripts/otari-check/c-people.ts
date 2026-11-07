@@ -3,7 +3,7 @@
 import { check, expect, save } from "./harness.ts";
 import { migrate, pool } from "../../src/db.ts";
 import { otari, OtariError } from "../../src/otari/client.ts";
-import { budgetRefusal, budgetReply, endUser, ensureEndUser, tiers } from "../../src/otari/people.ts";
+import { budgetRefusal, budgetReply, endUser, ensureEndUser, moveToTier, tiers } from "../../src/otari/people.ts";
 import { capCheck, personSpend, retireTeammateKey, teammateKey } from "../../src/otari/spend.ts";
 import { session } from "../../src/otari/admin.ts";
 import { createTeammate, getTeammate, updateTeammate } from "../../src/store/teammates.ts";
@@ -86,6 +86,17 @@ await check(S, "the cap check holds a person's tier across teammate keys", async
   expect(owner.cap !== null, "the owner has no tier");
   c.note("refused", refused.message);
   c.note("owner_spent_today_all_keys", owner.spent);
+});
+await check(S, "a person an admin moved to another tier keeps it when Peeblo sees them again", async (c) => {
+  const t = await tiers();
+  const ten = t.find((x) => x.name === "peeblo-person-daily-10")!, def = t.find((x) => x.is_default)!;
+  const person = `peeblo-check-tier-${Date.now().toString(36)}`;
+  await ensureEndUser(person, "Tier check");
+  expect((await endUser(person))?.budget_id === def.budget_id, "a new person is not on the default tier");
+  await moveToTier(person, "Tier check", ten.budget_id);
+  await ensureEndUser(`${person}`, "Tier check", def.budget_id); // as a turn would, after a restart
+  expect((await endUser(person))?.budget_id === ten.budget_id, "the move was undone");
+  c.note("tier", ten.name);
 });
 await pool.end();
 process.exit((await save(S)) ? 0 : 1);
