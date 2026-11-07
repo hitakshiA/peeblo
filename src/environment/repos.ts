@@ -37,9 +37,24 @@ export const mirrorOf = (slug: string, repo: string) => join(config.dataDir, "te
 export const CACHE_ENV = { npm_config_cache: "/var/cache/peeblo/npm", npm_config_store_dir: "/var/cache/peeblo/pnpm-store", UV_CACHE_DIR: "/var/cache/peeblo/uv", PIP_CACHE_DIR: "/var/cache/peeblo/pip" };
 
 // Host git, only ever against the host-owned mirror (its config is ours). The token goes in a header, per call.
+// The token never appears in an error: git's command line is dropped, and its output is scrubbed of the token
+// in every form it could take.
 function hostGit(args: string[], token?: string | null, cwd?: string): string {
-  const auth = token ? ["-c", `http.extraHeader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`] : [];
-  return execFileSync("git", [...auth, "-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=always", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: "/nonexistent", GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" } }).trim();
+  const header = token ? `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}` : null;
+  // The header goes in through the environment (GIT_CONFIG_*), not argv, so it isn't in the process list either.
+  const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: "/nonexistent", GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" };
+  if (header) Object.assign(env, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.extraHeader", GIT_CONFIG_VALUE_0: header });
+  try {
+    return execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=always", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env }).trim();
+  } catch (e) {
+    const raw = `${(e as { stderr?: string }).stderr ?? ""}`.trim() || `git ${args[0] === "--git-dir" ? args[2] : args[0]} failed`;
+    throw new Error(scrub(raw, token).slice(-600));
+  }
+}
+export function scrub(text: string, token?: string | null): string {
+  if (!token) return text;
+  const forms = [token, Buffer.from(`x-access-token:${token}`).toString("base64"), Buffer.from(token).toString("base64"), encodeURIComponent(token)];
+  return forms.reduce((t, f) => t.split(f).join("[redacted]"), text);
 }
 async function tokenFor(tm: Teammate, r: RepoConfig): Promise<string | null> {
   if (!r.credential) return null;
@@ -232,7 +247,8 @@ export async function publish(tm: Teammate, sessionId: string, repo: string, pr?
       catch { await appendEvent({ sessionId, runId: null, type: "repo.publish_refused", data: { repo, reason: "not a fast-forward" } }); throw new Error(`refused: ${w.branch} was rewritten since it was last published (not a fast-forward); teammates never force-push. Make new commits on top instead.`); }
     }
     const token = await tokenFor(tm, r);
-    hostGit(["--git-dir", m, "push", "--quiet", "origin", `${incoming}:${ref}`], token);
+    // To the URL, not "origin": a mirror's origin pushes every ref and takes no refspec.
+    hostGit(["--git-dir", m, "push", "--quiet", r.remote, `${incoming}:${ref}`], token);
     hostGit(["--git-dir", m, "update-ref", ref, incoming]);
     hostGit(["--git-dir", m, "update-ref", "-d", `refs/peeblo/incoming/${sessionId}`]);
     let prUrl: string | null = null;
