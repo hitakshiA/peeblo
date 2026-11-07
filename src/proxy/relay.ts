@@ -9,7 +9,7 @@ import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
 import { handleTools } from "./tools.ts";
-import { guardrailRefusal, lakeraState } from "../guard.ts";
+import { freshLakeraState, guardrailRefusal } from "../guard.ts";
 import { budgetRefusal } from "../otari/people.ts";
 import { estimateCost, roughTokens } from "../otari/catalog.ts";
 import { ROLES } from "../otari/routing.ts";
@@ -298,7 +298,7 @@ async function record(b: Binding, path: string, a: { upstream: Response; model: 
       served_model: h.get("otari-model"), provider: h.get("otari-provider"), attempts: n(h.get("otari-attempt-count")),
       otari_fallback: h.get("otari-fallback") === "true", error_code: h.get("otari-error-code"), guardrails: h.get("otari-guardrails"),
       cost_usd: n(usage?.cost_usd), prompt_tokens: n(usage?.prompt_tokens ?? usage?.input_tokens), cached_tokens: n(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens),
-      completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens), end_user: b.endUser, key: b.keyId ?? "core", guard_mandate: lakeraState(), tools_declared: (a as { tools?: number }).tools ?? null, ms: Date.now() - a.t0, ...extra,
+      completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens), end_user: b.endUser, key: b.keyId ?? "core", guard_mandate: await freshLakeraState(), tools_declared: (a as { tools?: number }).tools ?? null, ms: Date.now() - a.t0, ...extra,
     },
   }).catch((e) => console.error("proxy: could not record model call:", (e as Error).message));
 }

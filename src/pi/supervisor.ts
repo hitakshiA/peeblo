@@ -21,7 +21,7 @@ import { getSession } from "../store/sessions.ts";
 import { secretNames } from "../store/secrets.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
 import { PiRpc } from "./rpc.ts";
-import { blockedReply, guardMode, screenOpen } from "../guard.ts";
+import { blockedReply, freshLakeraState, guardMode, screenOpen } from "../guard.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const PI_CLI = join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js");
@@ -190,6 +190,8 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
   await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.attempt", data: { turn: turnNo, pid: process.pid } });
   const person = ctx.personId ? await getPerson(ctx.personId) : null;
   if (person?.end_user_id && config.otariKeyKind === "service") await ensureEndUser(person.end_user_id, person.display_name, config.otariEndUserBudget || undefined, (await teammateKey(tm)) ?? undefined);
+  // Receipts say whether Otari's org guardrail screened the turn; read its state fresh for each turn.
+  if (guardMode() === "lakera") await freshLakeraState(0);
   // The open guard screens the person's message before the teammate sees it (Lakera runs inside Otari instead).
   if (guardMode() === "open") {
     // The guard fails closed: one retry, then the message is not acted on (and the person is told why).

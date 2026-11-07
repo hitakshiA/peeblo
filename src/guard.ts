@@ -60,7 +60,14 @@ export async function screenOpen(sessionId: string, runId: string, endUser: stri
 // The mandate state Peeblo last read (null: unknown, e.g. no dashboard session). Otari leaves the verdict
 // header off streamed responses, so receipts fall back to this for streamed calls.
 let lakeraOn: boolean | null = null;
+let lakeraReadAt = 0;
 export const lakeraState = (): boolean | null => (guardMode() === "lakera" ? lakeraOn : false);
+// The same, re-read when older than maxAgeMs: the mandate can be switched from the dashboard or another
+// process. Each turn re-reads it at the start; calls within a turn accept a 30 s old reading.
+export async function freshLakeraState(maxAgeMs = 30_000): Promise<boolean | null> {
+  if (guardMode() === "lakera" && Date.now() - lakeraReadAt > maxAgeMs) await lakeraMandate().catch(() => { lakeraOn = null; });
+  return lakeraState();
+}
 
 // Lakera's org mandate, switched through the dashboard session (Peeblo's guard setting stays "lakera").
 export async function lakeraMandate(): Promise<{ id: string; enabled: boolean; definitionId: string | null } | null> {
@@ -68,6 +75,7 @@ export async function lakeraMandate(): Promise<{ id: string; enabled: boolean; d
   const g = await guardrailMandates();
   const m = ((g.data ?? g) as any[]).find((x) => x.profile === config.guardProfile);
   lakeraOn = m ? Boolean(m.enabled) : false;
+  lakeraReadAt = Date.now();
   return m ? { id: m.id, enabled: Boolean(m.enabled), definitionId: m.definition_id ?? null } : null;
 }
 
@@ -102,6 +110,7 @@ export async function setLakera(enabled: boolean): Promise<void> {
   if (!m) throw new Error(`no org guardrail with profile ${config.guardProfile}; add Lakera in the dashboard first`);
   if (m.enabled !== enabled) await setGuardrailMandate(m.id, enabled);
   lakeraOn = enabled;
+  lakeraReadAt = Date.now();
 }
 
 // Otari's answer to a call its org guardrail refused: 403 {detail:{code:"guardrail_violation", guardrails:[…]}}.
