@@ -20,7 +20,15 @@ export type Screen = { safe: boolean; categories: string[]; requestId: string | 
 export function verdict(text: string): { safe: boolean; categories: string[] } {
   const t = text.trim();
   const qwen = /Safety:\s*(\w+)/i.exec(t);
-  if (qwen) return { safe: qwen[1].toLowerCase() === "safe", categories: (/Categories:\s*(.+)/i.exec(t)?.[1] ?? "").split(",").map((s) => s.trim()).filter((s) => s && s !== "None") };
+  // Qwen3Guard has three verdicts. "Unsafe" blocks. "Controversial" covers ordinary requests too (it rated
+  // "run cat keep.txt" as controversial every time) and also some instruction attacks, so it blocks only with a
+  // Jailbreak category; otherwise it passes, with the rating kept as a category.
+  if (qwen) {
+    const level = qwen[1].toLowerCase();
+    const categories = (/Categories:\s*(.+)/i.exec(t)?.[1] ?? "").split(",").map((s) => s.trim()).filter((s) => s && s !== "None");
+    const attack = categories.some((c) => /jailbreak/i.test(c));
+    return { safe: level === "safe" || (level === "controversial" && !attack), categories: level === "controversial" ? ["controversial", ...categories] : categories };
+  }
   const first = t.split("\n")[0].trim().toLowerCase();
   if (first === "safe") return { safe: true, categories: [] };
   return { safe: false, categories: t.split("\n").slice(1).join(",").split(",").map((s) => s.trim()).filter(Boolean) };

@@ -72,7 +72,10 @@ await check(S, "the open guard model (Qwen3Guard through Otari chat)", async (c)
 });
 await check(S, "verdicts from other open guard models parse", async () => {
   expect(verdict("\n\nsafe").safe && !verdict("\n\nunsafe\nS7").safe && verdict("unsafe\nS7").categories[0] === "S7", "Llama Guard format");
-  expect(verdict("Safety: Controversial\nCategories: Politically Sensitive Topics").safe === false, "Qwen3Guard controversial must not pass");
+  const contr = verdict("Safety: Controversial\nCategories: Politically Sensitive Topics");
+  expect(contr.safe === true && contr.categories[0] === "controversial", "Qwen3Guard controversial passes, marked");
+  expect(verdict("Safety: Unsafe\nCategories: Jailbreak").safe === false, "Qwen3Guard unsafe must block");
+  expect(verdict("Safety: Controversial\nCategories: Jailbreak").safe === false, "Qwen3Guard controversial jailbreak must block");
 });
 await pool.end();
 process.exit((await save(S)) ? 0 : 1);
