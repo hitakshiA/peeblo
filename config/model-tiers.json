@@ -1,0 +1,206 @@
+{
+  "source": "Artificial Analysis Intelligence Index v5, open weights (snapshot Nov 3 2026). Tiers: S >= 40, A 30-39 (29.5 rounds up), B 25-29, C 20-24, D 15-19, E < 15. aa_cost_per_task and minutes_per_task are AA's (they include each model's token use); est_otari_cost_per_task scales them by Otari's blended price (3:1 input:output) against AA's provider. tokens_per_second is AA's where known. measured holds Peeblo's own numbers through Otari and replaces the estimates as receipts accumulate.",
+  "models": {
+    "moonshotai/kimi-k3.1-pro": {
+      "tier": "S",
+      "aa_v5": 46.0,
+      "aa_cost_per_task": 3.68,
+      "minutes_per_task": 36,
+      "est_otari_cost_per_task": 9.8
+    },
+    "deepseek/deepseek-v4.1-flash-1017": {
+      "tier": "A",
+      "aa_v5": 32.5,
+      "aa_cost_per_task": 0.6,
+      "minutes_per_task": 14,
+      "est_otari_cost_per_task": 0.44,
+      "tokens_per_second": 160,
+      "note": "best value"
+    },
+    "z-ai/glm-5.3": {
+      "tier": "A",
+      "aa_v5": 31.7,
+      "aa_cost_per_task": 5.01,
+      "minutes_per_task": 31,
+      "est_otari_cost_per_task": 12,
+      "note": "costs more per task than Kimi K3.1 Pro; no default role"
+    },
+    "xiaomi/mimo-v2.6-pro": {
+      "tier": "A",
+      "aa_v5": 29.9,
+      "aa_cost_per_task": 0.26,
+      "minutes_per_task": 43,
+      "est_otari_cost_per_task": 0.7,
+      "note": "best points per dollar in A; slow"
+    },
+    "minimax/minimax-m3.1-flash": {
+      "tier": "B",
+      "aa_v5": 28.9,
+      "aa_cost_per_task": 0.49,
+      "minutes_per_task": 17,
+      "est_otari_cost_per_task": 1.27,
+      "tokens_per_second": 134
+    },
+    "z-ai/glm-5.3-flash": {
+      "tier": "B",
+      "aa_v5": 27.8,
+      "aa_cost_per_task": 0.58,
+      "minutes_per_task": 40
+    },
+    "xiaomi/mimo-v2.6-flash": {
+      "tier": "B",
+      "aa_v5": 26.7,
+      "aa_cost_per_task": 0.13,
+      "minutes_per_task": 64,
+      "est_otari_cost_per_task": 0.2
+    },
+    "mistralai/mistral-large-4": {
+      "tier": "B",
+      "aa_v5": 26.0,
+      "aa_cost_per_task": 2.06,
+      "minutes_per_task": 14,
+      "est_otari_cost_per_task": 5
+    },
+    "meta/muse-spark-open": {
+      "tier": "B",
+      "aa_v5": 24.7,
+      "aa_cost_per_task": 2.02,
+      "minutes_per_task": 7,
+      "est_otari_cost_per_task": 5
+    },
+    "deepseek/deepseek-v4-pro-0813": {
+      "tier": "C",
+      "aa_v5": 23.1
+    },
+    "alibaba/qwen3.8-27b": {
+      "tier": "C",
+      "aa_v5": 20.1,
+      "aa_cost_per_task": 3.53,
+      "minutes_per_task": 44,
+      "note": "best single-GPU model"
+    },
+    "minimax/minimax-m3": {
+      "tier": "D",
+      "aa_v5": 18.7
+    },
+    "reflection/beam-1.0-501b-a23b": {
+      "tier": "D",
+      "aa_v5": 17.7
+    },
+    "moonshotai/kimi-k3": {
+      "tier": "D",
+      "aa_v5": 17.4
+    },
+    "nvidia/nemotron-3.5-super-vl": {
+      "tier": "E",
+      "aa_v5": 13.6,
+      "note": "vision"
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "tier": "E",
+      "aa_v5": 11.8
+    }
+  },
+  "roles": {
+    "peeblo-manager": {
+      "default": "deepseek/deepseek-v4.1-flash-1017",
+      "fallback": [
+        "xiaomi/mimo-v2.6-pro",
+        "z-ai/glm-5.3-flash"
+      ],
+      "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap)"
+    },
+    "peeblo-worker": {
+      "default": "deepseek/deepseek-v4.1-flash-1017",
+      "fallback": [
+        "xiaomi/mimo-v2.6-pro",
+        "z-ai/glm-5.3-flash"
+      ],
+      "purpose": "teammates' everyday work"
+    },
+    "peeblo-reviewer": {
+      "default": "minimax/minimax-m3.1-flash",
+      "fallback": [
+        "xiaomi/mimo-v2.6-flash"
+      ],
+      "purpose": "the approval gate's review (fast, a different family from the worker)"
+    },
+    "peeblo-grader": {
+      "default": "xiaomi/mimo-v2.6-pro",
+      "fallback": [
+        "minimax/minimax-m3.1-flash"
+      ],
+      "purpose": "output review and eval grading (best points per dollar; off the hot path)"
+    },
+    "peeblo-judge": {
+      "default": "minimax/minimax-m3.1-flash",
+      "fallback": [
+        "xiaomi/mimo-v2.6-flash"
+      ],
+      "purpose": "short typed judgments at hook points"
+    }
+  },
+  "heavy": {
+    "model": "moonshotai/kimi-k3.1-pro",
+    "fallback": [
+      "deepseek/deepseek-v4.1-flash-1017"
+    ],
+    "purpose": "hard thinking: opened as a subagent session or picked at hire or job start, always with a price card and a cap"
+  },
+  "measured": {
+    "deepseek/deepseek-v4.1-flash-1017": {
+      "cost_per_call": 3.2e-05,
+      "prompt_tokens_per_call": 819,
+      "completion_tokens_per_call": 68,
+      "output_tokens_per_second": 50.7,
+      "calls": 58,
+      "provider": "deepinfra",
+      "at": "2026-11-07"
+    },
+    "xiaomi/mimo-v2.6-pro": {
+      "cost_per_call": 9.8e-05,
+      "prompt_tokens_per_call": 712,
+      "completion_tokens_per_call": 76,
+      "output_tokens_per_second": 19.3,
+      "calls": 60,
+      "provider": "deepinfra",
+      "at": "2026-11-07"
+    },
+    "minimax/minimax-m3.1-flash": {
+      "cost_per_call": 9.4e-05,
+      "prompt_tokens_per_call": 987,
+      "completion_tokens_per_call": 123,
+      "output_tokens_per_second": 98.1,
+      "calls": 62,
+      "provider": "fireworks",
+      "at": "2026-11-07"
+    },
+    "z-ai/glm-5.3-flash": {
+      "cost_per_call": 7.4e-05,
+      "prompt_tokens_per_call": 648,
+      "completion_tokens_per_call": 39,
+      "output_tokens_per_second": 43.7,
+      "calls": 60,
+      "provider": "deepinfra",
+      "at": "2026-11-07"
+    },
+    "xiaomi/mimo-v2.6-flash": {
+      "cost_per_call": 2.9e-05,
+      "prompt_tokens_per_call": 647,
+      "completion_tokens_per_call": 70,
+      "output_tokens_per_second": 10.7,
+      "calls": 60,
+      "provider": "deepinfra",
+      "at": "2026-11-07"
+    },
+    "mistralai/mistral-large-4": {
+      "cost_per_call": 0.00063,
+      "prompt_tokens_per_call": 723,
+      "completion_tokens_per_call": 123,
+      "output_tokens_per_second": 34.3,
+      "calls": 61,
+      "provider": "mistral",
+      "at": "2026-11-07"
+    }
+  }
+}

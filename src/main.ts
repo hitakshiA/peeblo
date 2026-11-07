@@ -10,9 +10,22 @@ import { syncSchedules } from "./durable/schedules.ts";
 import { startApi } from "./api/server.ts";
 import { startIngress } from "./ingress/slack.ts";
 import { sleepAll } from "./environment/controller.ts";
+import { startProxy } from "./proxy/relay.ts";
+import { installPiExecutor, stopAllPi } from "./pi/supervisor.ts";
 
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
 const applied = await migrate();
+installPiExecutor();
+// Receipts need to know whether Otari's org guardrail is on (Otari doesn't report it on streams).
+const readGuard = () => import("./guard.ts").then(async (g) => {
+  if (g.guardMode() !== "lakera") return null;
+  // Keep Otari's Lakera definition on the configured Lakera project (its policy decides what is flagged).
+  if (config.lakeraProject) { const p = await g.lakeraProject(); if (p && p.projectId !== config.lakeraProject) await g.setLakeraProject(config.lakeraProject); }
+  return g.lakeraMandate();
+}).catch(() => null);
+await readGuard();
+setInterval(readGuard, 10 * 60_000).unref();
+const proxy = await startProxy();
 await launchDurable();
 const schedules = await syncSchedules();
 const api = await startApi();
@@ -23,6 +36,8 @@ const shutdown = async () => {
   api.close();
   ingress.close();
   await sleepAll();
+  await stopAllPi();
+  proxy.close();
   await shutdownDurable();
   await pool.end();
   process.exit(0);

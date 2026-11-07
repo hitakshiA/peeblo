@@ -1,0 +1,190 @@
+// Peeblo's tool endpoints for Pi, on the same loopback proxy and per-session token as model calls. This is the
+// gate: the model chooses a tool, the harness decides whether and how it runs.
+// GET  /peeblo/tools       → the session's fixed tool list: Peeblo's own tools and the connector tools
+// POST /peeblo/tools/call  → {name, arguments, tool_call_id}
+// For every call: arguments checked against the strict schema (one retry, then a typed stop), authority
+// checked, writes one at a time per session and approved by a person when the tool or the mode says so,
+// untrusted results labelled with their source and screened, and a tool.call event.
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { peebloTools } from "../agent-tools/index.ts";
+import { validate, type Schema } from "../agent-tools/schema.ts";
+import type { AgentTool, ToolContext, ToolResult } from "../agent-tools/types.ts";
+import { config } from "../config.ts";
+import { catalogFor, classify, executeTool, forgetServer, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
+import { pool } from "../db.ts";
+import { askApproval, fingerprint } from "../durable/approvals.ts";
+import { screen, wrapUntrusted } from "../guard.ts";
+import { newId } from "../ids.ts";
+import { appendEvent } from "../store/events.ts";
+import { getPerson } from "../store/people.ts";
+import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
+
+// A session keeps its config, but a lower mode applies at once (K5): the gate uses the stricter of the
+// session's mode and the teammate's current one. The tool list never changes within a session (K7a).
+const STRICTNESS = ["ask", "auto", "trusted", "yolo"] as const;
+async function effectiveMode(pinned: Teammate): Promise<Teammate["config"]["mode"]> {
+  const now = await getTeammate(pinned.id);
+  const a = STRICTNESS.indexOf(pinned.config.mode);
+  const b = now ? STRICTNESS.indexOf(now.config.mode) : a;
+  return STRICTNESS[Math.min(a, b)];
+}
+import type { Binding } from "./relay.ts";
+
+const json = (res: ServerResponse, status: number, body: unknown) => void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+
+async function granted(teammateId: string, runId: string | null, fp: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    "SELECT 1 FROM grants WHERE teammate_id = $1 AND fingerprint = $2 AND revoked_at IS NULL AND (scope = 'always' OR (scope = 'job' AND run_id = $3)) LIMIT 1",
+    [teammateId, fp, runId],
+  );
+  return rows.length > 0;
+}
+
+function mcpText(data: any): { text: string; isError: boolean } {
+  // /mcp/execute answers with the MCP tool result; keep its text blocks, else the JSON.
+  const r = data?.result ?? data;
+  const blocks = Array.isArray(r?.content) ? r.content : null;
+  const text = blocks ? blocks.map((b: any) => (b?.type === "text" ? b.text : JSON.stringify(b))).join("\n") : JSON.stringify(r);
+  return { text: text.slice(0, 50_000), isError: r?.isError === true || data?.is_error === true };
+}
+
+// Writes in a session run one at a time (K7h), whatever the model sends in parallel.
+const writeLocks = new Map<string, Promise<unknown>>();
+async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T> {
+  const prev = writeLocks.get(sessionId) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(f);
+  writeLocks.set(sessionId, next.catch(() => {}));
+  return next;
+}
+
+// Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
+const invalidStreak = new Map<string, number>();
+
+type Listed = { name: string; description: string; input_schema: unknown; asks: boolean };
+
+export async function handleTools(req: IncomingMessage, res: ServerResponse, b: Binding, path: string, body: Buffer | undefined): Promise<void> {
+  const tm = await teammateAt(b.teammateId, b.teammateVersion);
+  if (!tm) return json(res, 404, { detail: "teammate is gone" });
+  const own = peebloTools(tm);
+
+  if (req.method === "GET" && path === "/tools") {
+    const cat = await catalogFor(tm.config);
+    const tools: Listed[] = [
+      ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write" })),
+      ...cat.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})) })),
+    ];
+    return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
+  }
+  if (req.method !== "POST" || path !== "/tools/call") return json(res, 404, { detail: "no such tool route" });
+
+  const { name, arguments: args = {}, tool_call_id: toolCallId = newId("tc") } = JSON.parse(body?.toString("utf8") || "{}");
+  const person = b.personId ? await getPerson(b.personId) : null;
+  const ctx: ToolContext = { teammate: tm, person, sessionId: b.sessionId, runId: b.runId, endUser: b.endUser, toolCallId, otariKey: b.otariKey && b.keyId ? { keyId: b.keyId, secret: b.otariKey } : null };
+  const ownTool = own.find((t) => t.name === name);
+  const connector = ownTool ? undefined : (await catalogFor(tm.config)).tools.find((x) => x.name === name);
+  if (!ownTool && !connector) return json(res, 200, { text: `There is no tool called ${name} in this session. Use one of the tools you were given.`, isError: true });
+
+  const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), asked_by: person?.id ?? null, end_user: b.endUser };
+  const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
+  const reply = (r: ToolResult) => json(res, 200, { text: r.text, isError: Boolean(r.isError) });
+
+  // Untrusted results are labelled with their source and screened; a flag is appended as a warning.
+  const finish = async (r: ToolResult, source: string | null, extra: Record<string, unknown>) => {
+    let text = r.text;
+    let screened = null;
+    if (source && !r.isError) {
+      screened = await screen(text, b.endUser).catch(() => null);
+      text = wrapUntrusted(text, source, screened);
+    }
+    await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : {}), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
+    return reply({ ...r, text });
+  };
+
+  if (ownTool) return runOwn(ownTool, ctx, args, base, event, reply, finish, b);
+  return runConnector(connector!, ctx, args, base, event, reply, finish, b);
+}
+
+async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown>) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
+  base.via = "peeblo";
+  base.kind = t.kind;
+  const streakKey = `${ctx.sessionId}:${t.name}`;
+  const problem = validate(t.input_schema as Schema, args);
+  if (problem) {
+    const n = (invalidStreak.get(streakKey) ?? 0) + 1;
+    invalidStreak.set(streakKey, n);
+    await event({ status: "invalid", reason: problem, attempt: n });
+    return reply({ text: n < 2 ? `Invalid arguments: ${problem}. Fix that and call ${t.name} once more.` : `Invalid arguments again (${problem}). Stop calling ${t.name} and tell the person what you were trying to do.`, isError: true });
+  }
+  invalidStreak.delete(streakKey);
+  const refusal = t.authorize ? await t.authorize(ctx, args) : null;
+  if (refusal) { await event({ status: "refused", reason: refusal }); return reply({ text: refusal, isError: true }); }
+
+  const run = async () => {
+    if (t.kind === "write") {
+      // Otari settings: always a person's yes, for this one call only (K17).
+      if (!ctx.runId) return reply({ text: "This change needs a person's approval, and there is no run to ask in.", isError: true });
+      await event({ status: "waiting_approval" });
+      const action = { kind: "peeblo_tool", teammate: ctx.teammate.slug, tool: t.name, arguments: args, ...(t.describe ? await t.describe(ctx, args) : {}), asked_by: ctx.person?.id ?? null };
+      const a = await askApproval(ctx.runId, ctx.sessionId, action, config.approvalTtlSeconds);
+      if (a.status !== "approved") {
+        await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
+        return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : "A person said no, so nothing changed. Don't ask again in this conversation.", isError: true });
+      }
+      base.approval_id = a.approvalId;
+    }
+    const t0 = Date.now();
+    try {
+      const r = await t.run(ctx, args);
+      return finish(r, r.untrusted ?? null, { ms: Date.now() - t0, ...(r.data && typeof r.data === "object" ? { result: r.data } : {}) });
+    } catch (e) {
+      await event({ status: "failed", ms: Date.now() - t0, error: (e as Error).message.slice(0, 500) });
+      return reply({ text: `${t.name} failed: ${(e as Error).message.slice(0, 300)}`, isError: true });
+    }
+  };
+  return t.kind === "write" ? oneAtATime(b.sessionId, run) : run();
+}
+
+async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown>) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
+  const tm = ctx.teammate;
+  const mode = await effectiveMode(tm);
+  base.mode = mode;
+  Object.assign(base, { via: "otari_mcp", server: t.server, server_id: t.serverId, server_revision: t.revision });
+  const kind = classify(t, args);
+  base.kind = kind;
+  const scope = outOfScope(t, args, tm.config.connector_scopes);
+  if (scope) {
+    await event({ status: "refused", reason: scope });
+    return reply({ text: `Not allowed: ${scope}. Ask the teammate's owner to add it.`, isError: true });
+  }
+  const run = async () => {
+    if (needsApproval(mode, kind)) {
+      if (!b.runId) return reply({ text: "This call needs a person's approval, and there is no run to ask in.", isError: true });
+      const toolFp = fingerprint({ teammate: tm.id, server: t.serverId, tool: t.tool, ...(t.tool === "exec" && typeof args.command === "string" ? { command: args.command.trim().split(/\s+/).slice(0, 2).join(" ") } : {}) });
+      if (!(await granted(tm.id, b.runId, toolFp))) {
+        await event({ status: "waiting_approval" });
+        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser };
+        const a = await askApproval(b.runId, b.sessionId, action, config.approvalTtlSeconds);
+        if (a.status !== "approved") {
+          await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
+          return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : "A person said no to this call, so it did not run. Do not retry it.", isError: true });
+        }
+        if (a.scope === "always" || a.scope === "job") {
+          await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);
+        }
+        base.approval_id = a.approvalId;
+      }
+    }
+    const t0 = Date.now();
+    try {
+      const { data, requestId } = await executeTool(t, args);
+      const r = mcpText(data);
+      return finish(r, `mcp:${t.server}.${t.tool}`, { request_id: requestId, ms: Date.now() - t0, result_chars: r.text.length });
+    } catch (error) {
+      const e = error as Error & { status?: number; requestId?: string | null; code?: string | null };
+      if (e.status === 409 || /revision/i.test(e.message)) forgetServer(t.serverId);
+      await event({ status: "failed", request_id: e.requestId ?? null, ms: Date.now() - t0, error: e.message.slice(0, 500), error_code: e.code ?? null });
+      return reply({ text: `The ${t.server} call failed: ${e.message.slice(0, 400)}`, isError: true });
+    }
+  };
+  return kind === "read" ? run() : oneAtATime(b.sessionId, run);
+}

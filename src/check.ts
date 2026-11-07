@@ -39,6 +39,75 @@ await check("hypervisor", async () => {
   if (process.platform === "darwin") return "macOS Hypervisor.framework (Gondolin runs natively)";
   throw new Error(`unsupported platform ${process.platform}`);
 });
+await check("Otari", async () => {
+  const { keyBudget } = await import("./otari/client.ts");
+  const { models, openWeightModels } = await import("./otari/catalog.ts");
+  const b = await keyBudget();
+  const m = await models();
+  const cap = b.limits?.[0];
+  return `${config.otariKeyKind} key ok; ${m.size} models (${(await openWeightModels()).length} open-weight); ${cap ? `$${cap.used_usd} of $${cap.limit_usd} used this period` : "no key cap"}`;
+});
+await check("Otari service key (bills each person)", async () => {
+  if (config.otariKeyKind !== "service") throw new Error("OTARI_API_KEY is a plain key; set OTARI_SERVICE_KEY so each person is an Otari end user with a budget");
+  const { tiers } = await import("./otari/people.ts");
+  const t = await tiers();
+  const d = t.find((x) => x.is_default);
+  if (!d) throw new Error("the service key has no default end-user budget; give it one in the dashboard (Keys)");
+  return `${t.length} budget tiers; new people get ${d.name} ($${d.max_budget})`;
+});
+await check("Otari dashboard session (admin work)", async () => {
+  const { session } = await import("./otari/admin.ts");
+  const { links } = await import("./otari/links.ts");
+  const s = await session();
+  if (!s) throw new Error(`none: per-teammate keys, policies and guardrail switches fall back to links (sign in from the console, or do it at ${links.keys()})`);
+  return `signed in as ${s.signedInAs} until ${s.expiresAt.toISOString().slice(0, 10)}`;
+});
+await check("Otari web search and code execution", async () => {
+  const { otari } = await import("./otari/client.ts");
+  const { links } = await import("./otari/links.ts");
+  const { data } = await otari<{ data: { id: string; available: boolean; reason: string | null }[] }>("GET", "/tools");
+  const state = (id: string) => data.data.find((t) => t.id === id);
+  const off = ["otari_web_search", "otari_web_fetch", "otari_code_execution"].filter((id) => !state(id)?.available);
+  if (off.length) throw new Error(`${off.join(", ")} off for this workspace (${off.map((id) => state(id)?.reason ?? "unknown").join("; ")}); turn on at ${links.webSearch()} / ${links.codeExecution()}`);
+  return "web search, web fetch and code execution available";
+});
+await check("Otari routing policies", async () => {
+  const { session } = await import("./otari/admin.ts");
+  const { ROLES, rolePoliciesInOtari } = await import("./otari/routing.ts");
+  if (!(await session())) return "not checked without a dashboard session";
+  const have = await rolePoliciesInOtari();
+  const missing = Object.keys(ROLES).filter((n) => !have.includes(n));
+  if (missing.length) throw new Error(`missing ${missing.join(", ")}; Peeblo creates them when an admin signs in`);
+  return `${have.length} role policies (${have.join(", ")})`;
+});
+await check("Otari guardrail", async () => {
+  const { guardMode, lakeraMandate } = await import("./guard.ts");
+  const { session } = await import("./otari/admin.ts");
+  const mode = guardMode();
+  if (mode === "off") return "off (PEEBLO_GUARD=off): messages are not screened";
+  if (mode === "open") return `open guard model ${config.guardModel} through Otari chat`;
+  if (!(await session())) return "Lakera org guardrail (state not readable without a dashboard session)";
+  const m = await lakeraMandate();
+  if (!m) throw new Error(`no org guardrail with profile ${config.guardProfile}`);
+  return `Lakera org guardrail ${m.enabled ? "on (block)" : "defined but off"}`;
+});
+await check("Otari MCP connectors", async () => {
+  const { session } = await import("./otari/admin.ts");
+  const { otari } = await import("./otari/client.ts");
+  const { data } = await otari<{ servers: { name: string }[] }>("GET", "/mcp/servers");
+  if (!(await session())) return `${data.servers.length} servers listed for this key (health needs a dashboard session)`;
+  const { mcpServers } = await import("./otari/admin.ts");
+  const all = ((await mcpServers()).data ?? []) as { name: string; health?: { status?: string } }[];
+  const bad = all.filter((s) => s.health?.status && s.health.status !== "healthy");
+  if (bad.length) throw new Error(`unhealthy: ${bad.map((s) => `${s.name} (${s.health?.status})`).join(", ")}`);
+  return `${all.length} servers, all healthy`;
+});
+await check("Otari rule engine", async () => {
+  const { checkAction } = await import("./otari/rules.ts");
+  const d = await checkAction({ commands: ["git push --force origin main"] });
+  if (d.decision !== "deny") throw new Error(`the teammate policy did not refuse a force push (${d.decision})`);
+  return "teammate policy loaded; force push refused";
+});
 await check("public URL", async () => {
   if (!config.publicUrl) throw new Error("PEEBLO_PUBLIC_URL is not set; Slack needs a public HTTPS URL (a domain, or a tunnel on a Mac)");
   if (!config.publicUrl.startsWith("https://")) throw new Error("PEEBLO_PUBLIC_URL must be https://");

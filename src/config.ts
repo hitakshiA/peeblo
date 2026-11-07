@@ -1,7 +1,7 @@
 // Reads settings from the environment once at startup.
 // Secrets are removed from process.env right away, so child processes never inherit them.
 
-const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY"];
+const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY", "OTARI_API_KEY", "OTARI_SERVICE_KEY"];
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -26,6 +26,29 @@ export const config = {
   vmArch: (process.env.PEEBLO_VM_ARCH?.trim() || (process.arch === "arm64" ? "aarch64" : "x86_64")) as "aarch64" | "x86_64",
   vmImage: process.env.PEEBLO_VM_IMAGE?.trim() || "",
   vmIdleMs: Number(process.env.PEEBLO_VM_IDLE_MS ?? 5 * 60_000),
+  // Hosted Otari. Peeblo uses an org service key (it can name end users); a plain key also works without per-person billing.
+  otariBaseUrl: (process.env.OTARI_BASE_URL?.trim() || (process.env.OTARI_REGION === "eu" ? "https://eu.api.otari.ai/api/v1" : "https://api.otari.ai/api/v1")).replace(/\/+$/, ""),
+  otariKey: process.env.OTARI_SERVICE_KEY?.trim() || required("OTARI_API_KEY"),
+  otariKeyKind: (process.env.OTARI_SERVICE_KEY?.trim() ? "service" : "plain") as "service" | "plain",
+  // The default budget for a new end user, from the service key's end_user_budget_ids (optional).
+  otariEndUserBudget: process.env.OTARI_END_USER_BUDGET_ID?.trim() || "",
+  proxyPort: Number(process.env.PEEBLO_PROXY_PORT ?? 7341),
+  piIdleMs: Number(process.env.PEEBLO_PI_IDLE_MS ?? 10 * 60_000),
+  guard: process.env.PEEBLO_GUARD ?? "lakera",                       // lakera | open | off (see src/guard.ts)
+  decisionModel: process.env.PEEBLO_DECISION_MODEL ?? "typesafe:jev-latest",   // used when Otari has a decision provider
+  judgeModel: process.env.PEEBLO_JUDGE_MODEL ?? "peeblo-judge",                 // the judge-role routing policy
+  guardProfile: process.env.PEEBLO_GUARD_PROFILE ?? "peeblo-lakera",  // the org guardrail's profile in Otari
+  guardProbeModel: process.env.PEEBLO_GUARD_PROBE_MODEL ?? "deepseek/deepseek-v4.1-flash-1017", // one-token calls that ask Otari's guardrail
+  lakeraProject: process.env.PEEBLO_LAKERA_PROJECT ?? "",              // Lakera project whose policy the org guardrail uses
+  guardModel: process.env.PEEBLO_GUARD_MODEL ?? "alibaba/qwen3guard-gen-8b",
+  // A spend guard for building and testing: model calls to anything priced above these (USD per 1M tokens
+  // in,out) are refused before they leave Peeblo. Unset in production.
+  buildPriceCap: (process.env.PEEBLO_BUILD_PRICE_CAP ?? "").split(",").map(Number).filter((n) => n > 0),
+  admins: (process.env.PEEBLO_ADMINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),   // Slack user ids of Otari admins
+  priceCardUsd: Number(process.env.PEEBLO_PRICE_CARD_USD ?? 0.5),                           // above this a run needs a price card
+  teammateSpend: process.env.PEEBLO_TEAMMATE_SPEND ?? "auto",       // auto | key | tag (see src/otari/spend.ts)
+  approvalTtlSeconds: Number(process.env.PEEBLO_APPROVAL_TTL_S ?? 300),
+  turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 10 * 60_000),
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
 };
 

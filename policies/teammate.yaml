@@ -1,0 +1,39 @@
+# The floor for every teammate's computer, checked by Otari's /hooks/check before a command or file
+# access runs. "required" gates refuse; "advisory" gates make Peeblo ask a person first.
+# Override with PEEBLO_POLICY_FILE.
+schema_version: "1.0"
+policy:
+  id: peeblo/teammate-floor
+gates:
+  - id: no-force-push
+    type: command
+    runs: [pre_tool_use.command]
+    enforcement: required
+    forbidden: ["git push --force", "git push -f", "git push --force-with-lease"]
+    message: Force-pushing rewrites other people's history, so teammates never do it.
+  - id: no-wiping-disks
+    type: command
+    runs: [pre_tool_use.command]
+    enforcement: required
+    forbidden: ["rm -rf /", "rm -rf ~", "rm -rf /workspace", "mkfs", "dd if=/dev/zero"]
+    message: That would wipe the computer's disk.
+  - id: ask-before-push
+    type: command
+    runs: [pre_tool_use.command]
+    enforcement: advisory
+    forbidden: ["git push"]
+    message: Pushing sends work outside the computer, so a person approves it first.
+  - id: ask-before-publish
+    type: command
+    runs: [pre_tool_use.command]
+    enforcement: advisory
+    forbidden: ["npm publish", "pnpm publish", "docker push", "gh release create"]
+    message: Publishing is visible outside the team, so a person approves it first.
+  - id: no-secret-files
+    type: path
+    runs: [pre_tool_use.read_target, pre_tool_use.edit_target]
+    enforcement: required
+    # One "**" per glob (Otari's rule); ".aws/*" rather than its credentials file by name, which a web
+    # firewall in front of hosted Otari refuses to let through.
+    forbidden: ["**/.env", "**/.env.*", "**/id_rsa*", "**/id_ed25519*", "**/.ssh/*", "**/.aws/*"]
+    message: Secret files stay closed; ask the owner for what you need.

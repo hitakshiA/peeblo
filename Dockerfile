@@ -13,6 +13,7 @@ RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 
 COPY db ./db
 COPY images ./images
+COPY policies ./policies
 COPY src ./src
 
 RUN mkdir -p /data && chown node:node /data
