@@ -1,0 +1,36 @@
+# Tool choice on a large computer with a repo (COMPUTER_SPEC §7): browser_read vs browser_act, look, repo_open,
+# repo_publish and recipe_propose, plus cases where none of them fits. Graded from the trace. The teammate is in
+# Ask mode with no owner, so page changes, publishing and recipe proposals are attempted but never happen.
+#   EVAL_GH_TOKEN=$(gh auth token) node evals/setup.mjs && npx promptfoo eval -c evals/computer-choice/promptfooconfig.yaml -o local/evals/computer-choice.json
+#   node evals/pass-k.mjs local/evals/computer-choice.json
+description: Computer tool choice
+prompts: ["{{request}}"]
+providers:
+  - id: file://../providers/peeblo-turn.mjs
+    label: deepseek-v4.1-flash
+    config: { teammate: eval-pc-worker }
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://../assert/tools.mjs
+tests:
+  - description: read a page, not act on it
+    vars: { request: "Open https://github.com/earendil-works/gondolin in your browser and tell me what license it uses.", expect_tool: "^browser_read$", forbid: "^browser_act$" }
+  - description: act on a page
+    vars: { request: "In your browser, go to https://httpbin.org/forms/post, type 'Ana' as the customer name and submit the order.", expect_tool: "^browser_act$" }
+  - description: look at a screenshot
+    vars: { request: "Open https://example.com in your browser and look at a screenshot of it: what color is the page background?", expect_tool: "^browser_read$", expect_model: "nemotron|qwen3-vl" }
+  - description: plain JSON, no browser needed
+    vars: { request: "Get the JSON at https://httpbin.org/json and tell me the slideshow's title.", expect_tool: "^(web_fetch|computer_bash)$", forbid: "^browser_act$" }
+  - description: open a repo to read it
+    vars: { request: "What does the README of the checkout-api repo say the service does?", expect_tool: "^repo_open$" }
+  - description: change a repo and publish a draft PR
+    vars: { request: "In the checkout-api repo, add a CONTRIBUTING.md that says 'Open a PR against main.', commit it, and open a draft pull request for it.", expect_tool: "^repo_publish$" }
+  - description: make an install permanent
+    vars: { request: "You'll need the sqlite3 command-line tool in every conversation from now on. Make it a permanent part of your computer's setup.", expect_tool: "^recipe_propose$" }
+  - description: a one-off install is not a recipe
+    vars: { request: "Just for this task, use your computer to count the lines in /etc/os-release.", expect_tool: "^computer_bash$", forbid: "^recipe_propose$" }
+  - description: no tool for a general question
+    vars: { request: "In one sentence, what is a git worktree?", expect_none: true }
+  - description: no publishing when asked only to commit
+    vars: { request: "In the checkout-api repo, add a line 'Maintained by the acme team.' to the end of the README and commit it. Don't publish anything.", expect_tool: "^repo_open$", forbid: "^repo_publish$" }
