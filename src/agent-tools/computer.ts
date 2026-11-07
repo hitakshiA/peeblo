@@ -3,16 +3,43 @@
 // a timeout); files are read and written through the host mount. Every command and file access is checked
 // by the rule engine first (required gates refuse, advisory gates ask a person). Changes are local to the
 // teammate's own computer, so they run without a card, one at a time, and writes return the re-read diff.
+import { existsSync } from "node:fs";
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, join, normalize, sep } from "node:path";
 import { exec as vmExec, workspaceOf } from "../environment/controller.ts";
 import { checkAction, ruleMessage } from "../otari/rules.ts";
+import { appendEvent } from "../store/events.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
 
 const GUEST = "/workspace";
 const MAX_OUT = 30_000;
 const sessionDir = (ctx: ToolContext) => `sessions/${ctx.sessionId}`;
+
+// The session's folder. When the workspace is a git repo, it is a git worktree on the session's own branch
+// (peeblo/<session>), so parallel sessions commit without touching each other; sessions/ is kept out of the
+// main checkout through the repo's local exclude file. Otherwise it is a plain folder. Worktrees are added one
+// at a time per teammate (git locks the repo while adding one).
+const worktreeQueue = new Map<string, Promise<unknown>>();
+async function sessionFolder(ctx: ToolContext): Promise<void> {
+  const ws = workspaceOf(ctx.teammate.slug);
+  const dir = join(ws, sessionDir(ctx));
+  if (existsSync(dir)) return;
+  if (!existsSync(join(ws, ".git"))) return void (await mkdir(dir, { recursive: true }));
+  const add = async () => {
+    if (existsSync(dir)) return;
+    const sid = ctx.sessionId;
+    const r = await vmExec(ctx.teammate.id, ["sh", "-c", `cd ${GUEST} && mkdir -p .git/info && (grep -qx '/sessions/' .git/info/exclude 2>/dev/null || echo '/sessions/' >> .git/info/exclude) && git worktree add -q -b peeblo/${sid} sessions/${sid} HEAD`], { timeoutMs: 60_000 });
+    // A repo with no commit yet (or any other git refusal) gets a plain folder, and the reason is kept.
+    if (r.exitCode !== 0) {
+      await mkdir(dir, { recursive: true });
+      await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "env.worktree", data: { ok: false, error: r.stderr.slice(0, 300) } });
+    } else await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "env.worktree", data: { ok: true, branch: `peeblo/${sid}` } });
+  };
+  const next = (worktreeQueue.get(ctx.teammate.id) ?? Promise.resolve()).then(add, add);
+  worktreeQueue.set(ctx.teammate.id, next.catch(() => {}));
+  await next;
+}
 
 // A path the model gave, as a workspace-relative path; refused if it leaves the workspace.
 function resolve(ctx: ToolContext, p: string): { rel: string; host: string } | null {
@@ -59,7 +86,7 @@ export const computerTools: AgentTool[] = [
     kind: "local",
     async gate(_ctx, a) { return rules({ commands: [a.command] }); },
     async run(ctx, a) {
-      await mkdir(join(workspaceOf(ctx.teammate.slug), sessionDir(ctx)), { recursive: true });
+      await sessionFolder(ctx);
       const r = await vmExec(ctx.teammate.id, ["sh", "-c", a.command], { cwd: `${GUEST}/${sessionDir(ctx)}`, timeoutMs: (a.timeout_seconds ?? 120) * 1000 });
       const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${tail(r.stdout)}${r.stderr ? `\n[stderr]\n${tail(r.stderr)}` : ""}`;
       return { text, isError: r.exitCode !== 0, untrusted: "computer:bash", data: { exit_code: r.exitCode, ms: r.ms } };
@@ -76,6 +103,7 @@ export const computerTools: AgentTool[] = [
       return rules({ paths: [p.rel], pathSource: "pre_tool_use.read_target" });
     },
     async run(ctx, a) {
+      await sessionFolder(ctx);
       const p = await contained(ctx, a.path);
       if (!p) return { text: `${a.path} is outside your workspace.`, isError: true };
       const lines = (await readFile(p.host, "utf8")).split("\n");
@@ -95,6 +123,7 @@ export const computerTools: AgentTool[] = [
       return rules({ paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
     },
     async run(ctx, a) {
+      await sessionFolder(ctx);
       const p = await contained(ctx, a.path);
       if (!p) return { text: `${a.path} is outside your workspace.`, isError: true };
       const before = await stat(p.host).then(() => readFile(p.host, "utf8"), () => null);
@@ -116,6 +145,7 @@ export const computerTools: AgentTool[] = [
       return rules({ paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
     },
     async run(ctx, a) {
+      await sessionFolder(ctx);
       const p = await contained(ctx, a.path);
       if (!p) return { text: `${a.path} is outside your workspace.`, isError: true };
       const before = await readFile(p.host, "utf8");
