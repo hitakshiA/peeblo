@@ -135,11 +135,14 @@ async function approvalCard(v: View, e: EventRow): Promise<void> {
     blocks: [
       ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${a.summary ?? "teammate"} ID card`.slice(0, 2000) }] : []),
       { type: "section", text: { type: "mrkdwn", text: `*${v.teammate} wants to ${what}.*${detail && a.kind !== "hire" ? `\n${detail}` : ""}` } },
-      { type: "context", elements: [{ type: "mrkdwn", text: `Asks once, then waits${price}${only}` }] },
+      { type: "context", elements: [{ type: "mrkdwn", text: `Waits for your answer${a.risk === "money" ? " · moves money" : a.risk === "destructive" ? " · removes something" : a.risk === "shipping" ? " · ships a change" : a.risk === "outside_thread" ? " · posts outside this thread" : ""}${price}${only}` }] },
       { type: "actions", block_id: `approval:${id}`, elements: [
         { type: "button", style: "primary", text: { type: "plain_text", text: "Approve once" }, action_id: "approve_once", value: id },
-        { type: "button", text: { type: "plain_text", text: "For this job" }, action_id: "approve_job", value: id },
-        { type: "button", text: { type: "plain_text", text: "Always" }, action_id: "approve_always", value: id },
+        // Money, deletions, shipping, Otari settings and hires are approved one at a time.
+        ...(a.per_action || a.kind === "hire" || a.kind === "recipe_change" || String(a.tool ?? "").startsWith("otari_set") ? [] : [
+          { type: "button", text: { type: "plain_text", text: "For this job" }, action_id: "approve_job", value: id },
+          { type: "button", text: { type: "plain_text", text: "Always" }, action_id: "approve_always", value: id },
+        ]),
         { type: "button", style: "danger", text: { type: "plain_text", text: "No" }, action_id: "deny", value: id },
       ] },
     ],

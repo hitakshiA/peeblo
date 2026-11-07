@@ -34,7 +34,13 @@ export async function decide(state: string, questions: Record<string, Question>,
   const ids: string[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
     const r = await ask(state, questions, opts.endUser).catch((e) => ({ error: e as Error }));
-    if ("error" in r) { if (attempt === 2) break; continue; }
+    if ("error" in r) {
+      const e = r.error as Error & { requestId?: string | null; status?: number };
+      if (e.requestId) ids.push(e.requestId);
+      console.error(`judge: attempt ${attempt} failed (${e.status ?? "no status"}): ${String(e.message).slice(0, 200)}`);
+      if (attempt === 2) break;
+      continue;
+    }
     if (r.requestId) ids.push(r.requestId);
     const bad = Object.entries(questions).map(([n, q]) => [n, invalid(q, r.raw?.[n])] as const).filter(([, why]) => why);
     if (!bad.length) return { answers: Object.fromEntries(Object.keys(questions).map((n) => [n, normalize(r.raw[n])])), via: r.via, model: r.model, requestIds: ids, attempts: attempt };
@@ -45,13 +51,21 @@ export async function decide(state: string, questions: Record<string, Question>,
 async function ask(state: string, questions: Record<string, Question>, endUser?: string): Promise<{ raw: any; via: "otari_decisions" | "judge_model"; model: string; requestId: string | null }> {
   if (!decisionProviderMissing()) {
     try {
-      const { data, requestId } = await otari<any>("POST", "/decisions", { model: config.decisionModel, state, questions, ...(endUser ? { user: endUser } : {}) });
+      // No `user` here: /decisions refuses end-user ids in it (403), unlike chat completions.
+      const { data, requestId } = await otari<any>("POST", "/decisions", { model: config.decisionModel, state, questions });
       return { raw: Object.fromEntries(Object.entries(data.answers ?? {}).map(([k, a]: [string, any]) => [k, typeof a === "object" && a ? { value: a.value ?? a.answer ?? null, reason: a.reason ?? null, probability: a.probability ?? a.p ?? null } : { value: a, reason: null }])), via: "otari_decisions", model: data.model ?? config.decisionModel, requestId };
     } catch (e) {
-      if (!(e instanceof OtariError) || e.status !== 400 || !/configured decision provider/i.test(e.message)) throw e;
+      // No decision provider (400), or /decisions refusing the call (4xx): use the judge policy instead. Only a
+      // missing provider is remembered for 30 min; other refusals fall back on this call alone.
+      if (!(e instanceof OtariError) || !e.status || e.status >= 500) throw e;
+      if (!(e.status === 400 && /configured decision provider/i.test(e.message))) return askJudge(state, questions, endUser);
       providerMissingUntil = Date.now() + RECHECK_MS;
     }
   }
+  return askJudge(state, questions, endUser);
+}
+
+async function askJudge(state: string, questions: Record<string, Question>, endUser?: string): Promise<{ raw: any; via: "otari_decisions" | "judge_model"; model: string; requestId: string | null }> {
   const properties: Record<string, unknown> = {};
   for (const [name, q] of Object.entries(questions)) {
     const value = q.type === "noul" ? { type: ["boolean", "null"] } : q.type === "choice" ? { type: ["string", "null"], enum: [...Object.keys(q.criteria), null] } : { type: ["integer", "null"], minimum: 0, maximum: q.criteria.length - 1 };

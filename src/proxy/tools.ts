@@ -13,6 +13,7 @@ import { config } from "../config.ts";
 import { catalogFor, classify, executeTool, forgetServer, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
 import { pool } from "../db.ts";
 import { askApproval, fingerprint } from "../durable/approvals.ts";
+import { argClass, modeRule, NEVER_WITHOUT_ASKING, review, riskOf } from "../reviewer.ts";
 import { screen, wrapUntrusted } from "../guard.ts";
 import { newId } from "../ids.ts";
 import { appendEvent } from "../store/events.ts";
@@ -32,6 +33,12 @@ export async function effectiveMode(pinned: Teammate): Promise<Teammate["config"
 import type { Binding } from "./relay.ts";
 
 const json = (res: ServerResponse, status: number, body: unknown) => void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+
+// An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule).
+export async function approvalTtl(runId: string): Promise<number> {
+  const src = (await pool.query("SELECT s.source FROM runs r JOIN submissions s ON s.id = r.submission_id WHERE r.id = $1", [runId])).rows[0]?.source;
+  return src === "schedule" || src === "webhook" ? 12 * 3600 : config.approvalTtlSeconds;
+}
 
 async function granted(teammateId: string, runId: string | null, fp: string): Promise<boolean> {
   const { rows } = await pool.query(
@@ -197,18 +204,45 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     return reply({ text: `Not allowed: ${scope}. Ask the teammate's owner to add it.`, isError: true });
   }
   const run = async () => {
-    if (needsApproval(mode, kind)) {
+    // The gate (src/reviewer.ts): risk class → mode rule → grant → the reviewer in Auto → a card.
+    const risk = riskOf(t, args, kind);
+    base.risk = risk;
+    const blocks = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'review.decided' AND data->>'decision' <> 'allow'", [b.runId])).rows[0]?.n ?? 0);
+    let rule = modeRule(blocks >= 3 ? "ask" : mode, risk);
+    const toolFp = fingerprint({ teammate: tm.id, server: t.serverId, tool: t.tool, class: argClass(t, args) });
+    // Money, deletions, shipping and posts outside the thread are per action: a grant never covers them.
+    const perAction = NEVER_WITHOUT_ASKING.includes(risk);
+    if (rule !== "allow" && !perAction && b.runId && (await granted(tm.id, b.runId, toolFp))) rule = "allow";
+    // An exact repeat of a call a person already approved in this job (e.g. a retry after the service failed)
+    // doesn't ask again. Confirmation tokens a service adds don't make it a different call.
+    const { human_confirmation: _hc, approval_token: _at, ...core } = args;
+    const exactFp = fingerprint({ server: t.server, tool: t.tool, args: JSON.stringify(core) });
+    base.exact = exactFp;
+    if (rule !== "allow" && b.runId) {
+      const prior = (await pool.query("SELECT 1 FROM events WHERE run_id = $1 AND type = 'tool.call' AND data->>'exact' = $2 AND data->>'approval_id' IS NOT NULL LIMIT 1", [b.runId, exactFp])).rows[0];
+      if (prior) { rule = "allow"; base.repeat_of_approved = true; }
+    }
+    if (rule === "review" && b.runId) {
+      const r = await review(b.runId, b.sessionId, { teammate: tm.slug, server: t.server, tool: t.tool, arguments: args }, b.endUser ?? undefined).catch(() => ({ decision: "card" as const, reason: "the reviewer didn't answer", reviewed: false }));
+      await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "review.decided", data: { tool: t.tool, server: t.server, risk, decision: r.decision, reason: r.reason, request_ids: (r as any).requestIds ?? [] } });
+      if (r.decision === "revise") {
+        await event({ status: "refused", reason: `reviewer: ${r.reason}` });
+        return reply({ text: `Not yet: ${r.reason}. Change that and try again, or ask the person.`, isError: true });
+      }
+      rule = r.decision === "allow" ? "allow" : "card";
+      base.reviewer = r.reason;
+    }
+    if (rule === "card") {
       if (!b.runId) return reply({ text: "This call needs a person's approval, and there is no run to ask in.", isError: true });
-      const toolFp = fingerprint({ teammate: tm.id, server: t.serverId, tool: t.tool, ...(t.tool === "exec" && typeof args.command === "string" ? { command: args.command.trim().split(/\s+/).slice(0, 2).join(" ") } : {}) });
-      if (!(await granted(tm.id, b.runId, toolFp))) {
+      {
         await event({ status: "waiting_approval" });
-        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser };
-        const a = await askApproval(b.runId, b.sessionId, action, config.approvalTtlSeconds);
+        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}) };
+        const a = await askApproval(b.runId, b.sessionId, action, await approvalTtl(b.runId));
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
           return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : "A person said no to this call, so it did not run. Do not retry it.", isError: true });
         }
-        if (a.scope === "always" || a.scope === "job") {
+        if (!perAction && (a.scope === "always" || a.scope === "job")) {
           await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);
         }
         base.approval_id = a.approvalId;
