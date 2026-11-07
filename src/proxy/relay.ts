@@ -46,7 +46,7 @@ async function body(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string): { buf: Buffer; model: string | null; stream: boolean } {
+function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
   // Name the paying person the way each API shape expects; drop any user the agent tried to set itself.
@@ -58,7 +58,7 @@ function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?
   // Code runs in Otari's sandbox, inside the model call. One sandbox per session, held between calls.
   if (path === "/chat/completions" && b.code && sandbox) j.tools = [...(j.tools ?? []), { type: "otari_code_execution", container: sandbox }];
   if (path === "/chat/completions" && j.stream) j.stream_options = { ...(j.stream_options ?? {}), include_usage: true };
-  return { buf: Buffer.from(JSON.stringify(j)), model: typeof j.model === "string" ? j.model : null, stream: Boolean(j.stream) };
+  return { buf: Buffer.from(JSON.stringify(j)), model: typeof j.model === "string" ? j.model : null, stream: Boolean(j.stream), tools: Array.isArray(j.tools) ? j.tools.length : 0 };
 }
 
 // The session's Otari sandbox: reuse it while Otari still holds it (its idle timer restarts on each use),
@@ -201,7 +201,7 @@ export function startProxy(): Promise<Server> {
         method: req.method, headers: { ...headers, ...(isInference ? { "idempotency-key": randomUUID() } : {}) },
         body: p.buf ? new Uint8Array(p.buf) : undefined, signal: abort.signal, redirect: "error",
       });
-      return { upstream, model: p.model, stream: p.stream, t0, sandbox };
+      return { upstream, model: p.model, stream: p.stream, t0, sandbox, tools: "tools" in p ? p.tools : 0 };
     };
 
     let a;
@@ -278,7 +278,7 @@ async function record(b: Binding, path: string, a: { upstream: Response; model: 
       served_model: h.get("otari-model"), provider: h.get("otari-provider"), attempts: n(h.get("otari-attempt-count")),
       otari_fallback: h.get("otari-fallback") === "true", error_code: h.get("otari-error-code"), guardrails: h.get("otari-guardrails"),
       cost_usd: n(usage?.cost_usd), prompt_tokens: n(usage?.prompt_tokens ?? usage?.input_tokens), cached_tokens: n(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens),
-      completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens), end_user: b.endUser, key: b.keyId ?? "core", guard_mandate: lakeraState(), ms: Date.now() - a.t0, ...extra,
+      completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens), end_user: b.endUser, key: b.keyId ?? "core", guard_mandate: lakeraState(), tools_declared: (a as { tools?: number }).tools ?? null, ms: Date.now() - a.t0, ...extra,
     },
   }).catch((e) => console.error("proxy: could not record model call:", (e as Error).message));
 }

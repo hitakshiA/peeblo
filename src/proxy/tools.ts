@@ -60,7 +60,23 @@ async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T>
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();
 
-type Listed = { name: string; description: string; input_schema: unknown; asks: boolean };
+type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
+
+// K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
+// (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
+const DIRECT_CONNECTOR_TOOLS = 4;
+async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
+  const { rows } = await pool.query(
+    `SELECT e.data->>'tool' AS tool, count(*) AS n FROM events e JOIN sessions s ON s.id = e.session_id
+      WHERE s.teammate_id = $1 AND e.type = 'tool.call' AND e.data->>'via' = 'otari_mcp' AND e.data->>'status' = 'completed'
+      GROUP BY 1 ORDER BY 2 DESC`, [teammateId]);
+  const picked = rows.map((r) => r.tool as string).filter((t) => names.includes(t)).slice(0, DIRECT_CONNECTOR_TOOLS);
+  for (const n of names) {
+    if (picked.length >= DIRECT_CONNECTOR_TOOLS) break;
+    if (!picked.includes(n) && /__(list|get|search|read)/.test(n)) picked.push(n);
+  }
+  return new Set(picked);
+}
 
 export async function handleTools(req: IncomingMessage, res: ServerResponse, b: Binding, path: string, body: Buffer | undefined): Promise<void> {
   const tm = await teammateAt(b.teammateId, b.teammateVersion);
@@ -69,9 +85,10 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
 
   if (req.method === "GET" && path === "/tools") {
     const cat = await catalogFor(tm.config);
+    const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     const tools: Listed[] = [
-      ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write" })),
-      ...cat.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})) })),
+      ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: true })),
+      ...cat.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
     ];
     return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
   }
