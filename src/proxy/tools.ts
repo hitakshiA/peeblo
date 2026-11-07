@@ -76,7 +76,7 @@ type Listed = { name: string; description: string; input_schema: unknown; asks: 
 
 // K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
-const DIRECT_CONNECTOR_TOOLS = 4;
+const DIRECT_CONNECTOR_TOOLS = 3;
 export async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
   const { rows } = await pool.query(
     `SELECT e.data->>'tool' AS tool, count(*) AS n FROM events e JOIN sessions s ON s.id = e.session_id
@@ -100,7 +100,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     const tools: Listed[] = [
-      ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: true })),
+      ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: !t.deferred })),
       ...cat.tools.filter((t) => !subagent || classify(t, {}) === "read").map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
     ];
     return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
@@ -216,7 +216,11 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     // An exact repeat of a call a person already approved in this job (e.g. a retry after the service failed)
     // doesn't ask again. Confirmation tokens a service adds don't make it a different call.
     const { human_confirmation: _hc, approval_token: _at, ...core } = args;
-    const exactFp = fingerprint({ server: t.server, tool: t.tool, args: JSON.stringify(core) });
+    // For a Stripe write, the same action is the same operation on the same object for the same amount (a retry that
+    // adds an optional field like `reason` is still that refund).
+    const p = (core as any).parameters ?? {};
+    const identity = t.server === "stripe" ? { op: (core as any).stripe_api_operation_id, target: p.charge ?? p.payment_intent ?? p.id ?? p.customer ?? null, amount: p.amount ?? null } : core;
+    const exactFp = fingerprint({ server: t.server, tool: t.tool, args: JSON.stringify(identity) });
     base.exact = exactFp;
     if (rule !== "allow" && b.runId) {
       const prior = (await pool.query("SELECT 1 FROM events WHERE run_id = $1 AND type = 'tool.call' AND data->>'exact' = $2 AND data->>'approval_id' IS NOT NULL LIMIT 1", [b.runId, exactFp])).rows[0];

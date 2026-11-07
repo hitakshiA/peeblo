@@ -22,11 +22,12 @@ await check(S, "two writes in one turn run one after the other", async (c) => {
 await check(S, "a lower mode applies to the running session at once; the tools stay the same", async (c) => {
   await api("PATCH", `/v1/teammates/${tm}`, { mode: "ask", note: "lower to ask" });
   try {
-    const r = await turn(tm, "after-lower", "Now list the three most recently updated issues in the GRO team.", { place, answer: "denied" });
-    const reads = r.tools.filter((x) => x.via === "otari_mcp" && x.kind === "read");
-    expect(reads.some((x) => x.status === "waiting_approval") && reads.some((x) => x.status === "denied"), `reads ${JSON.stringify(reads.map((x) => x.status))}`);
-    expect(reads.every((x) => x.mode === "ask"), `gate mode ${JSON.stringify(reads.map((x) => x.mode))}`);
-    c.note("reads", reads.map((x) => `${x.tool}:${x.status}:${x.mode}`));
+    // Ask mode is "reads only, unless a person approves" (DESIGN): the write now waits, and a no stops it.
+    const r = await turn(tm, "after-lower", "Now add one more comment to GRO-323 saying 'check three'.", { place, answer: "denied" });
+    const writes = r.tools.filter((x) => x.via === "otari_mcp" && x.kind !== "read");
+    expect(writes.some((x) => x.status === "waiting_approval") && writes.some((x) => x.status === "denied"), `writes ${JSON.stringify(writes.map((x) => x.status))}`);
+    expect(writes.every((x) => x.mode === "ask"), `gate mode ${JSON.stringify(writes.map((x) => x.mode))}`);
+    c.note("writes", writes.map((x) => `${x.tool}:${x.status}:${x.mode}`));
   } finally {
     await api("PATCH", `/v1/teammates/${tm}`, { mode: "yolo", note: "restore" });
   }

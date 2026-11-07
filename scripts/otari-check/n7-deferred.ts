@@ -40,5 +40,13 @@ await check(S, "a less-used connector tool is found with find_tools, then used",
   expect(used.some((t: string) => pick![0].test(t)), `no ${pick![1]} used: ${used.join(", ")}`);
   expect(Math.max(...later) > Math.min(...later), "the declared set never grew (find_tools didn't turn anything on)");
 });
+await check(S, "a deferred Peeblo tool (schedule) is found when a job needs it", async (c) => {
+  const r = await turn(tm, "find-schedule", "Every Monday at 09:00 UTC, post the three newest GRO issues here; if there are none, post nothing. Set that up.");
+  const used = r.tools.map((x: any) => `${x.tool}:${x.status}`);
+  c.note("tools", used);
+  // schedule isn't in the first call's tool list; the job still gets to it (through find_tools, or by name).
+  expect(r.tools.some((x: any) => x.tool === "schedule" && x.status === "completed"), `tools: ${used.join(", ")}`);
+  await pool.query("UPDATE schedules SET enabled = false WHERE teammate_id = (SELECT id FROM teammates WHERE slug = $1)", [tm]);
+});
 await pool.end();
 process.exit((await save(S)) ? 0 : 1);

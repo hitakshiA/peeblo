@@ -20,10 +20,12 @@ import type { AgentTool, ToolContext } from "./types.ts";
 const MODES = ["ask", "auto", "trusted", "yolo"] as const;
 // A teammate by slug or by name (people and models say "Moss", not "moss").
 export async function findTeammate(nameOrSlug: string): Promise<Teammate | null> {
-  const direct = await getTeammate(nameOrSlug.toLowerCase().trim());
+  // The slug exactly, else the (unique) name.
+  const direct = await getTeammate(nameOrSlug.trim());
   if (direct) return direct;
-  const all = await listTeammates();
-  return all.find((t) => t.config.name.toLowerCase() === nameOrSlug.toLowerCase().trim()) ?? null;
+  // Two teammates can share a name; the newest is the one people mean.
+  const all = (await listTeammates()).filter((t) => t.config.name.toLowerCase() === nameOrSlug.toLowerCase().trim());
+  return all.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0] ?? null;
 }
 // The teammate's own Slack app, if it is installed in this workspace.
 async function ownApp(teammateId: string, team?: string): Promise<string | null> {
@@ -94,9 +96,16 @@ export const managerTools: AgentTool[] = [
     description: "Hire a teammate: shows the person its ID card for one approval, then creates it (its config, Otari key and budget, Slack app and face) and introduces it. Draft first in conversation; call this with the finished spec.",
     input_schema: object(hireSpec),
     kind: "write",
-    authorize(ctx, a) {
+    async authorize(ctx, a) {
       if (!ctx.person) return "Hiring needs a person to own the teammate.";
       try { validateConfig(configFrom(a)); } catch (e) { return `The spec isn't valid: ${(e as Error).message}`; }
+      // Names and slugs are unique, so a name always means one teammate.
+      const all = await listTeammates();
+      const name = String(a.name).toLowerCase().trim();
+      if (all.some((t) => t.config.name.toLowerCase() === name || t.slug === slugOf(a.name))) {
+        const variant = [2, 3, 4, 5, 6, 7, 8, 9].map((n) => `${a.name} ${n}`).find((v) => !all.some((t) => t.config.name.toLowerCase() === v.toLowerCase() || t.slug === slugOf(v)));
+        return `There's already a teammate called ${a.name}. Pick another name${variant ? `, e.g. ${variant}, or a different word` : ""}.`;
+      }
       return null;
     },
     async describe(ctx, a) {

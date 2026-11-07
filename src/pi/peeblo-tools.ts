@@ -42,11 +42,12 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
 
   const deferred = listed.filter((t) => !t.direct);
   if (!deferred.length) return;
-  const servers = [...new Set(deferred.map((t) => t.name.split("__")[0]))];
+  const servers = [...new Set(deferred.filter((t) => t.name.includes("__")).map((t) => t.name.split("__")[0]))];
+  const own = deferred.filter((t) => !t.name.includes("__")).map((t) => t.name);
   pi.registerTool({
     name: "find_tools",
     label: "Find tools",
-    description: `Find and turn on more connector tools (${servers.join(", ")}: ${deferred.length} more). Describe the action you need, e.g. "create a Linear issue" or "add a comment"; the matching tools become usable on your next step.`,
+    description: `Find and turn on more tools: ${servers.length ? `connector tools (${servers.join(", ")})` : ""}${servers.length && own.length ? ", and " : ""}${own.length ? `Peeblo's ${own.join(", ")}` : ""} (${deferred.length} in all). Describe the action you need, e.g. "create a Linear issue", "watch for changes", "run this when GitHub sends an event"; the matching tools become usable on your next step.`,
     parameters: { type: "object", properties: { query: { type: "string", description: "The action you need." } }, required: ["query"], additionalProperties: false } as any,
     async execute(_id, params: any) {
       const terms = String(params?.query ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);

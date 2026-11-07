@@ -31,4 +31,6 @@ export type AgentTool = {
   // What the approval card shows (writes only).
   describe?: (ctx: ToolContext, args: any) => Promise<Record<string, unknown>> | Record<string, unknown>;
   run: (ctx: ToolContext, args: any) => Promise<ToolResult>;
+  // Loaded on demand with find_tools instead of at session start (K7b: fewer than 20 tools up front).
+  deferred?: boolean;
 };
