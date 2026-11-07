@@ -8,6 +8,8 @@ type Result = { seam: string; check: string; ok: boolean; ms: number; ids: strin
 const results: Result[] = [];
 
 export async function check(seam: string, name: string, fn: (c: Ctx) => Promise<void>): Promise<void> {
+  // CHECK_ONLY=<pattern> runs only the matching checks (to rerun one after a fix).
+  if (process.env.CHECK_ONLY && !new RegExp(process.env.CHECK_ONLY, "i").test(name)) return;
   const ids: string[] = [];
   const notes: Record<string, unknown> = {};
   const t0 = Date.now();

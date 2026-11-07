@@ -42,8 +42,10 @@ export function fuse(lists: number[][], k = 60): number[] {
 }
 
 // The last step of a search: Otari rerank over the top candidates the caller found (keyword, vectors or both).
-export async function recall(query: string, documents: string[], candidates: number[], topN = 5, endUser?: string): Promise<{ hits: { index: number; score: number; text: string }[]; requestIds: string[]; cost: number }> {
+export async function recall(query: string, documents: string[], candidates: number[], topN = 5, endUser?: string): Promise<{ hits: { index: number; score: number; text: string }[]; requestIds: string[]; cost: number; reranked: boolean }> {
   const pool = candidates.slice(0, 20);
-  const r = await rerank(query, pool.map((i) => documents[i]), topN, endUser);
-  return { hits: r.results.map((x) => ({ index: pool[x.index], score: x.score, text: documents[pool[x.index]] })), requestIds: r.requestId ? [r.requestId] : [], cost: r.cost ?? 0 };
+  // When Otari's rerank is unavailable, the fused candidate order stands (still keyword + vector), marked as such.
+  const r = await rerank(query, pool.map((i) => documents[i]), topN, endUser).catch(() => null);
+  if (!r) return { hits: pool.slice(0, topN).map((i, n) => ({ index: i, score: 1 / (n + 1), text: documents[i] })), requestIds: [], cost: 0, reranked: false };
+  return { hits: r.results.map((x) => ({ index: pool[x.index], score: x.score, text: documents[pool[x.index]] })), requestIds: r.requestId ? [r.requestId] : [], cost: r.cost ?? 0, reranked: true };
 }

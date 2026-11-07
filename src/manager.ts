@@ -2,7 +2,7 @@
 // made on first start and linked to PEEBLO_SLACK_APP_ID; its owner can change its instructions like any teammate's.
 import { config } from "./config.ts";
 import { pool } from "./db.ts";
-import { createTeammate, getTeammate } from "./store/teammates.ts";
+import { createTeammate, getTeammate, updateTeammate } from "./store/teammates.ts";
 
 export const MANAGER = "peeblo";
 const INSTRUCTIONS = `You are Peeblo, the manager of this team's AI crew in Slack. You hire teammates when someone asks (the hiring-a-teammate skill), change them when their owner asks (teammate_update), hand jobs to the right teammate (delegate, with the writing-job-specs skill), and report on the crew (crew_status). You don't do the specialist work yourself when a teammate fits. In a channel you're only reading along: most messages aren't for you, and the right move is usually to do nothing (the channel-etiquette skill). When someone talks to you directly, answer with slack_post.`;
@@ -11,10 +11,12 @@ export async function ensureManager(): Promise<void> {
   if (!(await getTeammate(MANAGER))) {
     await createTeammate(MANAGER, {
       name: "Peeblo", role: "Manager of the crew", instructions: INSTRUCTIONS, model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" },
-      budget: { monthly_usd: 20 }, tools: ["web"], connectors: [], mode: "auto",
+      budget: { monthly_usd: 20 }, tools: ["web"], connectors: ["linear", "github", "posthog"], mode: "auto",
     }, { personId: null, label: "Peeblo's first start" });
   }
-  const tm = (await getTeammate(MANAGER))!;
+  let tm = (await getTeammate(MANAGER))!;
+  // Peeblo reads the team's sources for company setup (reads are free; writes go through the gate like anyone's).
+  if (!tm.config.connectors.length) tm = await updateTeammate(MANAGER, { connectors: ["linear", "github", "posthog"] } as any, { label: "Peeblo: read sources for company setup" }, "company setup reads the connected sources");
   if (config.managerAppId) await pool.query("UPDATE slack_apps SET teammate_id = $2 WHERE app_id = $1 AND teammate_id IS DISTINCT FROM $2", [config.managerAppId, tm.id]);
 }
 

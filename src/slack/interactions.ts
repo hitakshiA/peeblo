@@ -21,6 +21,17 @@ async function respond(url: string | undefined, body: Record<string, unknown>): 
   if (url) await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
 }
 
+async function feedbackNote(sessionId: string, runId: string, vote: string, by: string): Promise<void> {
+  const { getSession } = await import("../store/sessions.ts");
+  const { placeOfSession, writeNote } = await import("../memory/store.ts");
+  const s = await getSession(sessionId);
+  const tm = s ? await getTeammate(s.teammate_id) : null;
+  if (!s || !tm) return;
+  const asked = (await pool.query("SELECT left(sub.text, 300) AS t FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [runId])).rows[0]?.t ?? "";
+  const answer = (await pool.query("SELECT left(data->>'text', 500) AS t FROM events WHERE run_id = $1 AND type IN ('slack.post', 'turn.finished') ORDER BY id DESC LIMIT 1", [runId])).rows[0]?.t ?? "";
+  await writeNote(tm.slug, placeOfSession(s), { path: `feedback/${runId}`, title: `${by} marked a reply ${vote === "up" ? "helpful" : "not helpful"}`, body: `Asked: ${asked}\n\nReply: ${answer}`, source: `${by}, Slack feedback`, runId, tainted: true });
+}
+
 export function installSlackInteractions(): void {
   onSlackInteraction(async ({ appId, payload }) => {
     if (payload.type !== "block_actions") return;
@@ -41,11 +52,23 @@ export function installSlackInteractions(): void {
       } else await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text });
       return;
     }
+    if (a.action_id === "verify_note") {
+      const [slug, bank, ...rest] = String(a.value).split("|");
+      const tm = await getTeammate(slug);
+      const { mayManageTeammate } = await import("../authority.ts");
+      if (!tm || !mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", text: "Only this teammate's owner or an admin can verify its memory." }));
+      const { verifyNote } = await import("../memory/store.ts");
+      verifyNote(slug, bank, rest.join("|"));
+      await appendEvent({ type: "memory.verified", data: { teammate_id: tm.id, bank, path: rest.join("|"), by: who.id } });
+      return;
+    }
     if (String(a.action_id).startsWith("feedback:")) {
       const [vote, runId] = String(a.value).split(":");
       const run = (await pool.query("SELECT session_id FROM runs WHERE id = $1", [runId])).rows[0];
       await appendEvent({ sessionId: run?.session_id ?? null, runId, type: "slack.feedback", data: { vote, by: who.id } });
       if (vote === "down" && run) await pool.query("UPDATE sessions SET place = jsonb_set(place, '{muted}', 'true'::jsonb) WHERE id = $1", [run.session_id]);
+      // 👍/👎 become memory candidates (unverified until the owner verifies them).
+      if (run) await feedbackNote(run.session_id, runId, vote, who.display_name ?? payload.user.id).catch(() => null);
       await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: vote === "up" ? "Thanks, noted." : "Thanks, noted. I'll stay quiet in this thread unless someone asks me." });
     }
   });
@@ -72,8 +95,28 @@ export function installSlackInteractions(): void {
       ...(c.instructions ? [{ type: "section", text: { type: "mrkdwn", text: `*Standing instructions*\n${c.instructions.slice(0, 1500)}` } }] : []),
       { type: "divider" },
       { type: "section", text: { type: "mrkdwn", text: `*Recent jobs*\n${jobs.map((j) => `• ${j.status === "done" ? "✅" : j.status === "failed" ? "⚠️" : "⏳"} ${String(j.asked).replace(/\n/g, " ")}`).join("\n") || "none yet"}` } },
+      ...(await memoryBlocks(tm, event.user)),
       { type: "context", elements: [{ type: "mrkdwn", text: `Version ${tm.version} · every reply is signed with its model, cost and receipt` }] },
     ];
     await slack(appId, "views.publish", { user_id: event.user, view: { type: "home", blocks } });
   });
+}
+
+// Memory on the profile page: counts, and unverified notes the owner can verify with one click.
+async function memoryBlocks(tm: any, viewer: string): Promise<any[]> {
+  const { notesIn } = await import("../memory/store.ts");
+  const { readdirSync, existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { config } = await import("../config.ts");
+  const dir = join(config.dataDir, "teammates", tm.slug, "memory");
+  // Only what the viewer may see: the team's notes and their own DM's (never another person's DM or a private
+  // channel's, even as a title or a count).
+  const banks = existsSync(dir) ? readdirSync(dir).filter((b) => b === "ws" || b === `dm-${viewer}`) : [];
+  const notes = notesIn(tm.slug, banks).filter((n) => n.bank !== "company");
+  const unverified = notes.filter((n) => !n.verified).slice(0, 5);
+  return [
+    { type: "divider" },
+    { type: "section", text: { type: "mrkdwn", text: `*Memory*\n${notes.length} notes (${notes.length - notes.filter((n) => !n.verified).length} verified)` } },
+    ...unverified.map((n) => ({ type: "section", text: { type: "mrkdwn", text: `_unverified_ · ${n.title}`.slice(0, 2900) }, accessory: { type: "button", text: { type: "plain_text", text: "Verify" }, action_id: "verify_note", value: `${tm.slug}|${n.bank}|${n.path}`.slice(0, 2000) } })),
+  ];
 }
