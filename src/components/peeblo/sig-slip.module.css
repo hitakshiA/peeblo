@@ -1,0 +1,47 @@
+/* A thermal receipt slip: warm paper, mono print, faint roll texture, torn bottom edge. */
+.slip {
+  --tooth: 8px;
+  position: relative;
+  padding: 12px 14px calc(var(--tooth) + 10px);
+  background:
+    repeating-linear-gradient(180deg, transparent 0 3px, oklch(0.27 0.02 60 / 0.018) 3px 4px),
+    linear-gradient(180deg, oklch(0.985 0.006 85), oklch(0.97 0.01 82));
+  color: var(--ink);
+  font: 500 11px/1.55 var(--mono);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.wrap {
+  filter: drop-shadow(0 1px 0 oklch(0.27 0.02 60 / 0.08)) drop-shadow(0 12px 16px oklch(0.27 0.02 60 / 0.16));
+}
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.l {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.r {
+  flex: none;
+}
+.dim {
+  color: var(--ink-3);
+}
+.strong {
+  font-weight: 800;
+  font-size: 12px;
+}
+.rule {
+  height: 0;
+  margin: 6px 0;
+  border-top: 1.5px dashed oklch(0.27 0.02 60 / 0.28);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}

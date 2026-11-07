@@ -1,0 +1,137 @@
+/* Shared section frame (.story / .shell / .head-split / .lead) on Peeblo tokens. */
+
+.story {
+  --well: color-mix(in oklab, var(--card) 55%, var(--paper));
+  --dash: 1.5px dashed oklch(0.27 0.02 60 / 0.18);
+  --lift-card: 0 2px 0 oklch(0.27 0.02 60 / 0.08);
+  --lift-btn: 0 2px 0 oklch(0.27 0.02 60 / 0.14);
+  --lift-tile: 0 2px 0 oklch(0.27 0.02 60 / 0.1);
+  --press: 0 0.5px 0 oklch(0.27 0.02 60 / 0.14);
+  --gap: 32px;
+  padding-block: 84px;
+  color: var(--ink-2);
+  font-family: var(--text);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+.tight {
+  padding-block: 64px;
+}
+.shell {
+  max-width: 1180px;
+  margin-inline: auto;
+  padding-inline: 32px;
+}
+.story :where(h2, h3) {
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  line-height: 1.14;
+}
+.story :where(h2) {
+  max-width: 22ch;
+  font-size: clamp(29px, 3.1vw, 40px);
+}
+.story :where(h3) {
+  font-size: 20px;
+  line-height: 1.25;
+}
+.story :where(p, ul) {
+  margin: 0;
+}
+.story :where(ul) {
+  padding: 0;
+  list-style: none;
+}
+.lead {
+  max-width: 52ch;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1.55;
+}
+.headSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--gap);
+}
+.headC {
+  text-align: center;
+}
+.headC h2,
+.headC .lead {
+  margin-inline: auto;
+}
+.headC .lead {
+  margin-top: 16px;
+}
+.chip {
+  color: var(--ember-ink);
+  background: oklch(0.66 0.19 45 / 0.16);
+  border-radius: 8px;
+  white-space: nowrap;
+  padding: 1px 7px;
+  font-family: var(--mono);
+  font-size: 0.88em;
+  font-weight: 500;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  padding: 14px 18px;
+  font-family: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    transform 0.12s,
+    box-shadow 0.12s;
+}
+.btnLight {
+  background: #fff;
+  color: #2d2c2f;
+  padding: 14px 22px;
+  box-shadow:
+    0 1px 2px #2d2c2f0a,
+    inset 0 0 0 1px var(--line-2);
+}
+.btnLight:hover {
+  background: var(--card);
+}
+.btnLight:active {
+  transform: translateY(2px);
+}
+.story :where(a, button):focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: 2px;
+}
+
+@media (width <= 980px) {
+  .headSplit {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+  .headSplit .lead {
+    margin-top: 16px;
+  }
+}
+@media (width <= 720px) {
+  .shell {
+    padding-inline: 20px;
+  }
+  .story {
+    padding-block: 56px;
+  }
+  .tight {
+    padding-block: 44px;
+  }
+}

@@ -1,0 +1,154 @@
+/* Start band card in moss and ember. */
+
+.start {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 28px 56px;
+  padding: 48px 56px;
+  border-radius: 24px;
+  background: var(--moss);
+  box-shadow: var(--lift-card);
+}
+.start::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.08;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.start h2 {
+  max-width: 16ch;
+  color: var(--moss-ink);
+}
+.lead {
+  max-width: 44ch;
+  margin-top: 14px !important;
+  color: oklch(0.95 0.02 140 / 0.84);
+  font-size: 17.5px;
+  line-height: 1.5;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  margin-top: 28px;
+}
+.actions > a:first-child {
+  box-shadow: 0 2.5px 0 #00000047;
+}
+.link {
+  padding-bottom: 1px;
+  border-bottom: 1.5px solid oklch(0.95 0.02 140 / 0.2);
+  color: var(--moss-ink);
+  font-size: 15.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+a.link:hover {
+  border-bottom-color: var(--moss-ink);
+}
+.soon {
+  opacity: 0.7;
+  cursor: default;
+}
+.points {
+  display: grid;
+  gap: 14px;
+}
+.points li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  color: var(--moss-ink);
+  font-size: 16.5px;
+  line-height: 1.45;
+}
+.points svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: oklch(0.85 0.12 70);
+}
+
+/* Peeblo layer: the visitor's receipt, sticking up out of the card with Peeblo holding it. */
+@media (width > 1100px) {
+  .start {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) 260px;
+    gap: 28px 44px;
+  }
+}
+.slipAt {
+  position: relative;
+  align-self: start;
+  width: 260px;
+  margin-top: -104px;
+  justify-self: end;
+}
+.peek {
+  position: absolute;
+  left: 50%;
+  top: -40px;
+  z-index: 0;
+  translate: -50% 0;
+}
+.slip {
+  position: relative;
+  z-index: 1;
+  rotate: 2.2deg;
+  transform-origin: 50% 0;
+}
+.slip b {
+  font-weight: 800;
+}
+.unseen {
+  visibility: hidden;
+}
+.barcode {
+  display: block;
+  height: 22px;
+  margin: 10px 2px 0;
+  opacity: 0.8;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ink) 0 1px,
+    transparent 1px 3px,
+    var(--ink) 3px 5px,
+    transparent 5px 6px,
+    var(--ink) 6px 7px,
+    transparent 7px 10px,
+    var(--ink) 10px 13px,
+    transparent 13px 14px
+  );
+}
+@media (width <= 1100px) {
+  .slipAt {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(300px, 100%);
+    margin-top: 40px;
+  }
+}
+
+@media (width <= 880px) {
+  .start {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 36px 32px;
+  }
+}
+@media (width <= 720px) {
+  .start {
+    padding: 28px 22px;
+  }
+  .actions > a:first-child {
+    flex: 100%;
+    justify-content: center;
+  }
+}

@@ -1,0 +1,255 @@
+/* Hero section. */
+.hero {
+  overflow-x: clip;
+  padding-top: 128px;
+}
+.copy {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 clamp(48px, 8.6111vw, 124px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.title {
+  margin: 0;
+  font: 700 72px/72px var(--display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  white-space: nowrap;
+  animation: settle 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.mascot {
+  display: inline-block;
+  width: 0.98em;
+  height: 0.98em;
+  margin: 0 -0.06em 0 -0.08em;
+  vertical-align: -0.16em;
+}
+.mascot .pb-critter,
+.mascot :global(.pb-critter),
+.mascot :global(.pb-avatar) {
+  width: 100% !important;
+  height: 100% !important;
+}
+.lead {
+  margin: 20px 0 0;
+  max-width: 800px;
+  font: 400 20px/30px var(--text);
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+  text-wrap: balance;
+  animation: settle 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+.actions {
+  margin-top: 32px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  animation: settle 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font: 600 15px/22px var(--text);
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 0.2s, color 0.2s;
+}
+.soon {
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: default;
+}
+.soon small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+.primary:hover {
+  background: color-mix(in srgb, var(--ink) 85%, transparent);
+}
+.stage {
+  margin-top: 136px;
+  padding: 0 clamp(48px, 8.6111vw, 124px);
+  animation: settle 1s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both;
+}
+
+/* The row under the hero: a logo-strip layout, filled with the whole crew. */
+.crew {
+  overflow-x: clip;
+  margin: 140px auto 0;
+  padding: 0 clamp(16px, 8.6111vw, 124px);
+  max-width: 1440px;
+  text-align: center;
+}
+.crewLabel {
+  margin: 0;
+  font: 500 20px/30px var(--text);
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+}
+.row {
+  margin: 36px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 6px;
+}
+.mate {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 56px;
+}
+.mate:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+/* Peeblo layer: the pebble ledge and the receipt name tag. */
+.ledge {
+  position: relative;
+}
+.mate {
+  translate: 0 var(--y);
+}
+.mate > :global(.pb-critter) {
+  position: relative;
+  z-index: 1;
+  translate: 0 -4px;
+}
+.stone {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: var(--w);
+  height: 17px;
+  translate: -50% 0;
+  background: radial-gradient(120% 140% at 38% 18%, oklch(0.95 0.016 82), oklch(0.87 0.028 74) 58%, oklch(0.8 0.032 70));
+  box-shadow: inset 0 -2px 0 oklch(0.27 0.02 60 / 0.07), 0 4px 6px -3px oklch(0.27 0.02 60 / 0.22);
+  animation-delay: var(--d) !important;
+  transition: translate 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s;
+}
+.mate:hover .stone {
+  translate: -50% 2px;
+}
+.tag {
+  position: absolute;
+  z-index: 5;
+  translate: -50% calc(-100% - 6px);
+  opacity: 0;
+  scale: 0.9;
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1), top 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s, scale 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.tagOn {
+  opacity: 1;
+  scale: 1;
+}
+.tagIn {
+  --tooth: 6px;
+  font-size: 11.5px !important;
+  display: flex;
+  align-items: center;
+  gap: 0.6ch;
+  padding: 7px 11px calc(var(--tooth) + 6px);
+  background: oklch(0.985 0.006 85);
+  color: var(--ink-2);
+  font: 500 11px/1.2 var(--mono);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  filter: none;
+}
+.tagIn b {
+  color: var(--ink);
+  font-weight: 800;
+}
+.tagIn img {
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
+}
+.tag {
+  filter: drop-shadow(0 1px 0 oklch(0.27 0.02 60 / 0.1)) drop-shadow(0 8px 12px oklch(0.27 0.02 60 / 0.16));
+}
+
+@keyframes settle {
+  0% {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(14px);
+  }
+}
+@keyframes tagBob {
+  to {
+    rotate: 4deg;
+    translate: 0 -0.05em;
+  }
+}
+
+@media (max-width: 1100px) {
+  .title {
+    font-size: 60px;
+    line-height: 60px;
+  }
+}
+@media (max-width: 800px) {
+  .hero {
+    padding-top: 76px;
+  }
+  .title {
+    font-size: 40px;
+    line-height: 48px;
+    white-space: normal;
+  }
+  .mascot {
+    width: 0.98em;
+  }
+  .lead {
+    font-size: 17px;
+    line-height: 25.5px;
+  }
+  .stage {
+    margin-top: 96px;
+    padding: 0 16px;
+  }
+  .copy {
+    padding: 0 16px;
+  }
+  .crew {
+    margin-top: 132px;
+  }
+  .crewLabel {
+    font-size: 17px;
+  }
+  .mate {
+    width: 44px;
+    height: 48px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .title,
+  .lead,
+  .actions,
+  .stage {
+    animation: none;
+  }
+  .tag {
+    transition: opacity 0.18s;
+  }
+}
