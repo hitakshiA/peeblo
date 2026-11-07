@@ -1,0 +1,59 @@
+// A run is a DBOS workflow whose id is the run id: starting it twice is a no-op, and a run that was
+// in flight when core died resumes after restart. What a run does is the executor's job; until one
+// is configured, a run ends with a clear "no executor" failure in its events.
+import { DBOS } from "@dbos-inc/dbos-sdk";
+import { appendEvent } from "../store/events.ts";
+import { getRun, getSession, setRunStatus, type Run, type Session } from "../store/sessions.ts";
+
+export type RunContext = { run: Run; session: Session; text: string; personId: string | null };
+export type RunExecutor = (ctx: RunContext) => Promise<{ summary: string }>;
+
+let executor: RunExecutor | null = null;
+export function setRunExecutor(fn: RunExecutor): void {
+  executor = fn;
+}
+
+async function loadContext(runId: string): Promise<RunContext> {
+  const run = await getRun(runId);
+  if (!run) throw new Error(`no run ${runId}`);
+  const session = (await getSession(run.session_id))!;
+  const { pool } = await import("../db.ts");
+  const { rows } = await pool.query<{ text: string; person_id: string | null }>("SELECT text, person_id FROM submissions WHERE id = $1", [run.submission_id]);
+  return { run, session, text: rows[0].text, personId: rows[0].person_id };
+}
+
+async function runWorkflowFn(runId: string): Promise<string> {
+  const ctx = await DBOS.runStep(() => loadContext(runId), { name: "load" });
+  await DBOS.runStep(async () => {
+    await setRunStatus(runId, "running");
+    await appendEvent({ sessionId: ctx.session.id, runId, type: "run.started", data: { workflow_id: DBOS.workflowID } });
+  }, { name: "start" });
+  if (!executor) {
+    await DBOS.runStep(async () => {
+      await setRunStatus(runId, "failed", "no executor configured");
+      await appendEvent({ sessionId: ctx.session.id, runId, type: "run.failed", data: { error: "no executor configured" } });
+    }, { name: "finish" });
+    return "failed";
+  }
+  try {
+    // The executor runs in workflow context, so it can use DBOS steps and durable waits (approvals) itself.
+    const result = await executor(ctx);
+    await DBOS.runStep(async () => {
+      await setRunStatus(runId, "done");
+      await appendEvent({ sessionId: ctx.session.id, runId, type: "run.finished", data: { summary: result.summary } });
+    }, { name: "finish" });
+    return "done";
+  } catch (error) {
+    const message = (error as Error).message;
+    await DBOS.runStep(async () => {
+      await setRunStatus(runId, "failed", message);
+      await appendEvent({ sessionId: ctx.session.id, runId, type: "run.failed", data: { error: message } });
+    }, { name: "finish-failed" });
+    return "failed";
+  }
+}
+const runWorkflow = DBOS.registerWorkflow(runWorkflowFn, { name: "run" });
+
+export async function startRun(runId: string): Promise<void> {
+  await DBOS.startWorkflow(runWorkflow, { workflowID: runId })(runId);
+}
