@@ -3,7 +3,7 @@
 // talks and drafts, and the ID card is the one approval, on the finished result (K4).
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
-import { startRun } from "../durable/runs.ts";
+import { callTeammate } from "../chains.ts";
 import { isOtariAdmin, mayManageTeammate } from "../authority.ts";
 import { teammateSpend, usd } from "../otari/spend.ts";
 import { appendEvent } from "../store/events.ts";
@@ -186,16 +186,10 @@ export const managerTools: AgentTool[] = [
     async authorize(_ctx, a) { return (await findTeammate(a.teammate)) ? null : `There's no teammate called ${a.teammate}; crew_status lists them.`; },
     async run(ctx, a) {
       const t = (await findTeammate(a.teammate))!;
-      const place = await placeOf(ctx);
-      if (!place) return { text: "Delegation happens in a Slack thread.", isError: true };
-      // The teammate's own app if it is installed in this workspace, else Peeblo's (it posts with its own name and face).
-      const own = await ownApp(t.id, place.team);
-      const where: SlackPlace = { ...place, app_id: own ?? place.app_id, direct: true };
-      const s = await openSession(t.id, place.channel_type === "im" ? "dm" : "thread", `${place.channel}:${place.thread_ts}`, { slack: where, delegated_by: ctx.teammate.slug, borrowed: !own });
-      const spec = [`Job from ${ctx.teammate.config.name}, for ${ctx.person?.display_name ?? "the person in this thread"}:`, `Objective: ${a.objective}`, a.context ? `Context: ${a.context}` : "", a.constraints ? `Constraints: ${a.constraints}` : "", a.output_shape ? `Hand back: ${a.output_shape}` : ""].filter(Boolean).join("\n");
-      const { run, created } = await submit({ sessionId: s.id, personId: ctx.person?.id ?? null, requestId: `delegate:${ctx.runId}:${t.slug}:${ctx.toolCallId}`, text: spec, source: "teammate", chainId: ctx.runId });
-      if (created) await startRun(run.id);
-      return { text: `Handed to ${t.config.name}; it's working in this thread now.`, data: { run_id: run.id, session_id: s.id } };
+      const spec = [`Job from ${ctx.teammate.config.name}, for ${ctx.person?.display_name ?? "the person in this thread"}:`, `Objective: ${a.objective}`, a.context ? `Context: ${a.context}` : "", a.constraints ? `Constraints: ${a.constraints}` : "", a.output_shape ? `Hand back: ${a.output_shape}` : "", "Post your result with slack_post in this thread."].filter(Boolean).join("\n");
+      const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, t, spec, "delegate");
+      if ("refused" in r) return { text: r.refused, isError: true };
+      return { text: `Handed to ${t.config.name}; it's working in this thread now.`, data: r };
     },
   },
 ];

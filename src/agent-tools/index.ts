@@ -11,10 +11,11 @@ import { repoTools } from "./repos.ts";
 import { slackTools } from "./slack.ts";
 import { managerTools } from "./manager.ts";
 import { companyMemoryTool, memoryTools } from "./memory.ts";
+import { askTeammateTool } from "./teammates.ts";
 import { planTool, subagentTool } from "./work.ts";
 
 export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): AgentTool[] {
-  const all = [planTool, ...slackTools, ...memoryTools, ...(tm.slug === "peeblo" ? [...managerTools, companyMemoryTool] : []), ...otariTools, ...(tm.config.tools.includes("web") ? [webFetch] : []), ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
+  const all = [planTool, ...slackTools, ...memoryTools, ...(tm.slug === "peeblo" ? [...managerTools, companyMemoryTool] : []), askTeammateTool, ...otariTools, ...(tm.config.tools.includes("web") ? [webFetch] : []), ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
   // A subagent looks things up but changes nothing, and opens no subagents.
   return opts.subagent ? all.filter((t) => t.kind === "read") : all;
 }

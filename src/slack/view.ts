@@ -23,7 +23,7 @@ const TOOL_TITLES: Record<string, (d: any) => string> = {
   computer_read: () => "Read a file", computer_write: () => "Wrote a file", computer_edit: () => "Edited a file",
   browser_read: () => "Read a web page", browser_act: () => "Used a web page", web_fetch: () => "Read a web page",
   web_search: () => "Searched the web", code_execution: () => "Ran code", repo_open: () => "Opened the repo", repo_publish: () => "Published a branch",
-  plan: () => "Updated the plan", subagent: () => "Asked a helper", recipe_propose: () => "Proposed a setup change",
+  plan: () => "Updated the plan", subagent: () => "Asked a helper", ask_teammate: () => "Asked a teammate", delegate: () => "Handed off the job", teammate_hire: () => "Hired a teammate", recipe_propose: () => "Proposed a setup change",
   budget_status: () => "Checked the budget", models_list: () => "Looked up models", price_estimate: () => "Estimated a price", routing_recommend: () => "Picked a model",
 };
 const pretty = (tool: string, d: any) => {

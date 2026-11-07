@@ -22,7 +22,10 @@ installPiExecutor();
   const { installSlackView } = await import("./slack/view.ts");
   const { installSlackInteractions } = await import("./slack/interactions.ts");
   const { stopSession } = await import("./pi/supervisor.ts");
-  installSlackInbound(); installSlackView(); installSlackInteractions(); setStopHandler(stopSession);
+  installSlackInbound(); installSlackView(); installSlackInteractions();
+  // Stop in a thread stops every teammate working there (the whole chain).
+  const { threadSessions } = await import("./chains.ts");
+  setStopHandler(async (sid) => { let any = false; for (const s of await threadSessions(sid)) any = (await stopSession(s)) || any; return any; });
   const { ensureManager, installHireWelcome } = await import("./manager.ts");
   await ensureManager().catch((e) => console.error("peeblo manager:", (e as Error).message)); installHireWelcome();
 }
