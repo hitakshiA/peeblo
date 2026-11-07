@@ -1,8 +1,12 @@
 // Seam J: Otari admin through the dashboard session, and deep links when there is none.
-// Needs OTARI_DASHBOARD_EMAIL and OTARI_DASHBOARD_PASSWORD (used to sign in, never stored).
+// Needs the dashboard login (see dashboard-login.ts; used to sign in, never stored).
 import { check, expect, save } from "./harness.ts";
 import { migrate, pool } from "../../src/db.ts";
 import * as A from "../../src/otari/admin.ts";
+import { loadDashboardLogin } from "./dashboard-login.ts";
+
+// Without a login, the sign-out check below would leave Peeblo with no session at all.
+if (!loadDashboardLogin()) { console.error("J: no dashboard login (set OTARI_DASHBOARD_EMAIL/PASSWORD or PEEBLO_DASHBOARD_LOGIN_FILE)"); process.exit(1); }
 
 const S = "J";
 await migrate();

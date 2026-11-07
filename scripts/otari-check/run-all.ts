@@ -3,6 +3,9 @@
 // (e2e.ts) is separate, because it kills core halfway.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { loadDashboardLogin } from "./dashboard-login.ts";
+
+if (!loadDashboardLogin()) console.log("note: no dashboard login found; the admin checks will fail");
 
 const order = ["a-client", "j-admin", "c-people", "d-routing", "g-mcp", "h-guard", "i-rules", "k-search", "l-decisions", "bef-turns", "m-links", "n-agent-tools", "n7-deferred", "p2-runtime", "p2-secrets", "p2-k5"];
 const only = process.argv.slice(2);
