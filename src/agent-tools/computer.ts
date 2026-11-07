@@ -3,8 +3,8 @@
 // a timeout); files are read and written through the host mount. Every command and file access is checked
 // by the rule engine first (required gates refuse, advisory gates ask a person). Changes are local to the
 // teammate's own computer, so they run without a card, one at a time, and writes return the re-read diff.
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join, normalize } from "node:path";
+import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { dirname, join, normalize, sep } from "node:path";
 import { exec as vmExec, workspaceOf } from "../environment/controller.ts";
 import { checkAction, ruleMessage } from "../otari/rules.ts";
 import { object } from "./schema.ts";
@@ -21,6 +21,21 @@ function resolve(ctx: ToolContext, p: string): { rel: string; host: string } | n
   const rel = normalize(raw);
   if (rel.startsWith("..") || rel.startsWith("/")) return null;
   return { rel, host: join(workspaceOf(ctx.teammate.slug), rel) };
+}
+
+// The same path, also refused if a symlink (the VM can make them) leads the host-side file tools out of the
+// workspace. The nearest existing part of the path is resolved; a dangling link counts as leaving.
+async function contained(ctx: ToolContext, p: string): Promise<{ rel: string; host: string } | null> {
+  const r = resolve(ctx, p);
+  if (!r) return null;
+  const root = await realpath(workspaceOf(ctx.teammate.slug)).catch(() => null);
+  if (!root) return r; // no workspace yet: nothing on disk to follow
+  for (let at = r.host; ; at = dirname(at)) {
+    const real = await realpath(at).catch(() => null);
+    if (real) return real === root || real.startsWith(root + sep) ? r : null;
+    if (await lstat(at).then(() => true, () => false)) return null; // exists but can't resolve: a dangling link
+    if (dirname(at) === at) return null;
+  }
 }
 
 // The rule engine's answer for an action; a refusal or "ask" sentence, or null to go ahead.
@@ -56,12 +71,13 @@ export const computerTools: AgentTool[] = [
     input_schema: object({ path: { type: "string" }, offset: { type: ["integer", "null"], minimum: 1, description: "First line, from 1." }, limit: { type: ["integer", "null"], minimum: 1, maximum: 2000 } }),
     kind: "read",
     async gate(ctx, a) {
-      const p = resolve(ctx, a.path);
+      const p = await contained(ctx, a.path);
       if (!p) return { deny: `${a.path} is outside your workspace.` };
       return rules({ paths: [p.rel], pathSource: "pre_tool_use.read_target" });
     },
     async run(ctx, a) {
-      const p = resolve(ctx, a.path)!;
+      const p = await contained(ctx, a.path);
+      if (!p) return { text: `${a.path} is outside your workspace.`, isError: true };
       const lines = (await readFile(p.host, "utf8")).split("\n");
       const from = (a.offset ?? 1) - 1;
       const part = lines.slice(from, from + (a.limit ?? 2000));
@@ -74,12 +90,13 @@ export const computerTools: AgentTool[] = [
     input_schema: object({ path: { type: "string" }, content: { type: "string" } }),
     kind: "local",
     async gate(ctx, a) {
-      const p = resolve(ctx, a.path);
+      const p = await contained(ctx, a.path);
       if (!p) return { deny: `${a.path} is outside your workspace.` };
       return rules({ paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
     },
     async run(ctx, a) {
-      const p = resolve(ctx, a.path)!;
+      const p = await contained(ctx, a.path);
+      if (!p) return { text: `${a.path} is outside your workspace.`, isError: true };
       const before = await stat(p.host).then(() => readFile(p.host, "utf8"), () => null);
       await mkdir(dirname(p.host), { recursive: true });
       await writeFile(p.host, a.content);
@@ -94,12 +111,13 @@ export const computerTools: AgentTool[] = [
     input_schema: object({ path: { type: "string" }, old_text: { type: "string" }, new_text: { type: "string" } }),
     kind: "local",
     async gate(ctx, a) {
-      const p = resolve(ctx, a.path);
+      const p = await contained(ctx, a.path);
       if (!p) return { deny: `${a.path} is outside your workspace.` };
       return rules({ paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
     },
     async run(ctx, a) {
-      const p = resolve(ctx, a.path)!;
+      const p = await contained(ctx, a.path);
+      if (!p) return { text: `${a.path} is outside your workspace.`, isError: true };
       const before = await readFile(p.host, "utf8");
       const n = before.split(a.old_text).length - 1;
       if (n !== 1) return { text: n === 0 ? `old_text isn't in ${p.rel}; read the file and copy the exact text.` : `old_text appears ${n} times in ${p.rel}; include more surrounding text so it appears once.`, isError: true };
