@@ -6,8 +6,8 @@ import { config } from "./config.ts";
 import { migrate, pool } from "./db.ts";
 
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
-await migrate();
-console.log("peeblo: up");
+const applied = await migrate();
+console.log(`peeblo: up (migrations applied: ${applied.length ? applied.join(", ") : "none new"})`);
 
 const shutdown = async () => {
   await pool.end();

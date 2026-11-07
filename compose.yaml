@@ -1,4 +1,4 @@
-name: peeblo
+name: ${PEEBLO_PROJECT:-peeblo}
 
 services:
   db:

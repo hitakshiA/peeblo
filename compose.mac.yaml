@@ -1,0 +1,9 @@
+# macOS: Gondolin needs the host's hypervisor, so core runs natively (./peeblo up) and only Postgres runs here.
+# The database is published on loopback only.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${PEEBLO_DB_PORT:-55432}:5432"
+    networks: [internal, egress]
+  peeblo:
+    profiles: [linux]
