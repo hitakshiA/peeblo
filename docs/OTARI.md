@@ -32,7 +32,9 @@ Slack ─▶ core ─▶ run (DBOS) ─▶ Pi (on the host, no keys)
 | Guardrail | One setting, `PEEBLO_GUARD`: Otari's org guardrail (Lakera, the default), an open guard model through Otari chat, or off. Only one runs, and the receipt names it. A refused message is removed from the teammate's history so the thread keeps working. | `src/guard.ts` |
 | Rule engine | Commands and file access on a teammate's computer are checked with `/hooks/check` against `policies/teammate.yaml`: a required gate refuses, an advisory gate asks a person. | `src/otari/rules.ts`, `policies/` |
 | Admin | Keys, budgets, spend ceilings, routing policies, the guardrail switch, MCP servers and web search can only be changed by a signed-in Otari admin. An admin can sign Peeblo in once; Peeblo keeps only the session cookie, sealed. Without a session, Peeblo links to the right dashboard page. | `src/otari/admin.ts`, `src/otari/links.ts` |
-| Search | Embeddings and rerank for memory recall. Rerank does most of the work. | `src/otari/search.ts` |
+| Search | Embeddings and rerank for memory search (keyword and vector candidates, fused, then reranked). When rerank is unavailable, the fused order stands. | `src/otari/search.ts`, `src/agent-tools/memory.ts` |
+| Vision | A large teammate's `look` asks one question about a screenshot through the `peeblo-vision` routing policy (Nemotron 3.5 Super VL, Qwen3-VL as fallback) and returns text. | `src/agent-tools/browser.ts` |
+| Reviewer gate | In Auto mode, an outward write that isn't money, deletion, shipping or a post outside the thread goes to a typed judge (the judge policy, another model family than the worker), which sees only the person's own words, the action and the names of untrusted sources. | `src/reviewer.ts` |
 | Decisions | Typed yes/no, choice and score questions. Uses `/decisions` when the deployment has a decision provider, and otherwise the judge policy with a strict JSON schema; it switches by itself when a provider appears. | `src/otari/decisions.ts` |
 | Traces | Otari groups a session's calls into one trace named after the session. Receipts link to each request and to that trace. | `src/otari/traces.ts` |
 
@@ -68,6 +70,7 @@ A session's tool list is fixed when it starts. Modes change what the gate allows
 | `PEEBLO_POLICY_FILE` | `policies/teammate.yaml` | The rule engine's policy. |
 | `PEEBLO_ADMINS` | — | Slack user ids who may change Otari settings. |
 | `PEEBLO_DECISION_MODEL` | `typesafe:jev-latest` | Used when Otari has a decision provider. |
+| `PEEBLO_EMBED_MODEL` / `PEEBLO_RERANK_MODEL` | Qwen3 embedding 0.6B / Qwen3 reranker 8B | For memory search. |
 
 ## Known limits
 
@@ -83,3 +86,9 @@ A session's tool list is fixed when it starts. Modes change what the gate allows
 - **No hosted decision provider** today, so decisions use the judge model.
 - **Connector calls aren't billed per person.** `/mcp/execute` has no end-user field.
 - **Trace ids aren't in responses.** Finding one needs the dashboard session; without it, receipts link to a search.
+- **The served-model header names the provider's model id**, not the catalog id (`deepseek-ai/DeepSeek-V4.1-Flash-1017` for `deepseek/deepseek-v4.1-flash-1017`). Receipts show it as Otari sends it.
+- **With a routing policy as the model, the body's `model` is the policy name.** Peeblo reads the served model from `Otari-Model`.
+- **`/decisions` refuses an end-user id in `user`.** Peeblo doesn't send one there.
+- **A code-sandbox outage refuses the whole chat call.** Peeblo retries that call once without the code tool, so the turn goes on.
+- **Rerank can be unavailable for hours.** Memory search falls back to keyword and embedding order.
+- **Some vision models always reason**, and no setting turns it off; `look` gives them room (1,500 tokens).

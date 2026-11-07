@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ./peeblo up | down | status | logs | check | image
+# ./peeblo up | down | status | logs | check | image [small|large] | slack-app
 # Linux: everything runs in Docker Compose (core needs /dev/kvm for teammate computers).
 # macOS: Compose runs Postgres; core runs natively, because Gondolin needs the host's hypervisor.
 set -euo pipefail
@@ -52,8 +52,8 @@ case "${1:-up}" in
     load_env
     if [ "$(uname)" = Darwin ]; then mac_compose ps; pid=$(core_pid) && echo "core: running (pid $pid)" || echo "core: stopped"; else compose --profile linux ps; fi ;;
   logs) if [ "$(uname)" = Darwin ]; then tail -f "$RUN/core.log"; else load_env; compose logs -f peeblo; fi ;;
-  check|image)
+  check|image|slack-app)
     load_env
-    if [ "$(uname)" = Darwin ]; then native_env; node src/bin.ts "$1"; else compose --profile linux run --rm peeblo "$1"; fi ;;
-  *) echo "usage: ./peeblo up|down|status|logs|check|image"; exit 2 ;;
+    if [ "$(uname)" = Darwin ]; then native_env; node src/bin.ts "$@"; else compose --profile linux run --rm peeblo "$@"; fi ;;
+  *) echo "usage: ./peeblo up|down|status|logs|check|image|slack-app"; exit 2 ;;
 esac

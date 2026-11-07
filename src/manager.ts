@@ -35,3 +35,20 @@ export function installHireWelcome(): void {
     await slack(appId, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text: `I'm in Slack now as ${tm.config.name}: DM me, or tag me in any channel I'm in.` }).catch(() => null);
   }));
 }
+
+// `peeblo slack-app`: on a fresh install, makes Peeblo's own Slack app from the manifest (with its face), linked to
+// the manager, and prints the one-click install link. Needs PEEBLO_SLACK_CONFIG_FILE and PEEBLO_PUBLIC_URL.
+export async function createManagerApp(): Promise<void> {
+  const { migrate } = await import("./db.ts");
+  await migrate();
+  await ensureManager();
+  const tm = (await getTeammate(MANAGER))!;
+  const existing = (await pool.query("SELECT app_id FROM slack_apps WHERE teammate_id = $1", [tm.id])).rows[0];
+  if (existing) { console.log(`Peeblo already has a Slack app (${existing.app_id}).`); await pool.end(); return; }
+  const { createTeammateApp } = await import("./slack/admin.ts");
+  const { facePng } = await import("./slack/idcard.ts");
+  const face = { shape: "peeblo", color: "#2E7D5B" };
+  const app = await createTeammateApp(tm, face.color, await facePng(face));
+  console.log(`Made Peeblo's Slack app ${app.appId}. Install it (one click):\n${app.installUrl}`);
+  await pool.end();
+}
