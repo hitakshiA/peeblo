@@ -13,7 +13,7 @@ export type TeammateConfig = {
   web: { allowed_domains: string[]; blocked_domains: string[] }; // Otari enforces these on search and fetch
   connectors: string[];         // names of MCP servers stored in Otari, e.g. "linear", "posthog"
   connector_scopes: Record<string, string[]>; // e.g. { github: ["acme/checkout-api", "acme/*"] }
-  computer: { size: "small" | "large" };
+  computer: { size: "small" | "large"; allowed_hosts: string[] }; // hosts the computer may reach beyond the defaults
   mode: "ask" | "auto" | "trusted" | "yolo";
 };
 
@@ -36,11 +36,12 @@ export function validateConfig(c: Partial<TeammateConfig>): TeammateConfig {
   if (!Array.isArray(connectors) || !connectors.every((x) => typeof x === "string" && /^[a-zA-Z0-9_.-]{1,64}$/.test(x))) problems.push("connectors must be a list of Otari MCP server names");
   const web = { allowed_domains: hosts(c.web?.allowed_domains, "web.allowed_domains", problems), blocked_domains: hosts(c.web?.blocked_domains, "web.blocked_domains", problems) };
   const connectorScopes = scopesOf(c.connector_scopes, problems);
+  const computerHosts = hosts((c.computer as { allowed_hosts?: unknown } | undefined)?.allowed_hosts, "computer.allowed_hosts", problems);
   if (problems.length) throw Object.assign(new Error(problems.join("; ")), { status: 400 });
   return {
     name: c.name!.trim(), role: c.role!.trim(), instructions: c.instructions?.trim() ?? "",
     model: { default: c.model!.default.trim(), ...(c.model!.fallback ? { fallback: c.model!.fallback.trim() } : {}) },
-    budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, computer: { size }, mode: mode as TeammateConfig["mode"],
+    budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, computer: { size, allowed_hosts: computerHosts }, mode: mode as TeammateConfig["mode"],
   };
 }
 

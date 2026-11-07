@@ -8,6 +8,7 @@ import { createHttpHooks, RealFSProvider, VM } from "@earendil-works/gondolin";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
+import { secretsForVm } from "../store/secrets.ts";
 import { getTeammate } from "../store/teammates.ts";
 
 type Live = { vm: VM; idle?: NodeJS.Timeout; booted: number };
@@ -39,9 +40,12 @@ async function boot(teammateId: string): Promise<Live> {
   const workspace = workspaceOf(tm.slug);
   await mkdir(workspace, { recursive: true });
   await setState(tm.id, "booting", null, workspace);
-  const allowed = [...new Set([...DEFAULT_HOSTS, ...(((tm.config as any).computer?.allowed_hosts as string[]) ?? [])])];
+  // Secrets: the VM sees placeholders; the real value goes out only on requests to the secret's hosts.
+  const secrets = await secretsForVm(tm.id);
+  const allowed = [...new Set([...DEFAULT_HOSTS, ...(((tm.config as any).computer?.allowed_hosts as string[]) ?? []), ...Object.values(secrets).flatMap((x) => x.hosts)])];
   const { httpHooks, env } = createHttpHooks({
     allowedHosts: allowed,
+    secrets,
     onRequest: async (req) => {
       const u = new URL(req.url);
       if (u.pathname.endsWith("/git-receive-pack") || u.searchParams.get("service") === "git-receive-pack") {

@@ -17,6 +17,7 @@ import { exec as vmExec, sleep as vmSleep } from "../environment/controller.ts";
 import { buildReceipt, receiptLine } from "../receipts.ts";
 import { personForSlack } from "../store/people.ts";
 import { changeModel, ModelChangeRefused } from "../model-change.ts";
+import { secretNames, setSecret } from "../store/secrets.ts";
 import { readJson, Router, send } from "./http.ts";
 
 const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
@@ -46,6 +47,19 @@ export const router = new Router()
       if (e instanceof ModelChangeRefused) throw Object.assign(new Error(e.message), { status: 403 });
       throw e;
     }
+  })
+  // Computer secrets: set or replace one (the computer restarts on its next command to pick it up), list names.
+  .add("PUT", "/v1/teammates/:slug/secrets/:name", async ({ params, body }) => {
+    const tm = await getTeammate(params.slug);
+    if (!tm) throw notFound("teammate");
+    await setSecret(tm.id, params.name, String(body?.value ?? ""), Array.isArray(body?.hosts) ? body.hosts.map(String) : []);
+    await vmSleep(tm.id, "secret changed");
+    return { name: params.name, hosts: body.hosts };
+  })
+  .add("GET", "/v1/teammates/:slug/secrets", async ({ params }) => {
+    const tm = await getTeammate(params.slug);
+    if (!tm) throw notFound("teammate");
+    return { secrets: await secretNames(tm.id) };
   })
   .add("GET", "/v1/teammates/:slug/versions", async ({ params }) => ({ versions: await teammateVersions(params.slug) }))
   .add("POST", "/v1/teammates/:slug/sessions", async ({ params, body }) => {
