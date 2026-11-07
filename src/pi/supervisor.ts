@@ -17,6 +17,7 @@ import { teammateKey } from "../otari/spend.ts";
 import { bindRun, issueToken, proxyBaseUrl, revokeToken, toolsBaseUrl } from "../proxy/relay.ts";
 import { appendEvent } from "../store/events.ts";
 import { getPerson } from "../store/people.ts";
+import { getSession } from "../store/sessions.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
 import { PiRpc } from "./rpc.ts";
 import { blockedReply, guardMode, screenOpen } from "../guard.ts";
@@ -94,7 +95,10 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   await mkdir(join(dir, "pi-agent"), { recursive: true });
   const promptFile = join(dir, `system-v${tm.version}.md`);
   await writeFile(promptFile, systemPrompt(tm));
-  const models = [tm.config.model.default, tm.config.model.fallback].filter(Boolean).join(",");
+  // A subagent session may run on the model its parent chose for it (a model boundary, K3).
+  const place = ((await getSession(sessionId))?.place ?? {}) as { model?: string | null };
+  const model = place.model || tm.config.model.default;
+  const models = [model, tm.config.model.fallback].filter(Boolean).join(",");
   const web = tm.config.tools.includes("web");
   const key = await teammateKey(tm);
   const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: tm.config.tools.includes("code"), otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
@@ -103,7 +107,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
     "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
     "--session-dir", join(dir, "sessions"), "--session-id", await piSessionId(sessionId),
     "--system-prompt", promptFile,
-    "--provider", "otari", "--model", tm.config.model.default], {
+    "--provider", "otari", "--model", model], {
     cwd: dir, stdio: ["pipe", "pipe", "pipe"],
     // A bare environment: no Peeblo secrets, only what Pi and pi-otari need.
     env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: join(dir, "home"), PI_CODING_AGENT_DIR: join(dir, "pi-agent"),
@@ -150,6 +154,21 @@ async function otariToolNote(sessionId: string, runId: string): Promise<string> 
   return `<peeblo_event kind="previous_tool_calls">Tools that ran for you in the previous turn (the sandbox keeps their variables and files):\n${lines.join("\n")}</peeblo_event>\n`;
 }
 
+// Facts about this teammate's other conversations running right now (K10: facts, not strategy), added to a
+// turn only when they changed since the session last heard.
+const lastLive = new Map<string, string>();
+async function liveThreadsNote(sessionId: string, teammateId: string): Promise<string> {
+  const { rows } = await pool.query(
+    `SELECT s.id, s.kind, s.place_key, r.status, left(sub.text, 80) AS asked
+       FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
+      WHERE s.teammate_id = $1 AND s.id <> $2 AND r.status IN ('running', 'waiting') ORDER BY r.created_at`, [teammateId, sessionId]);
+  const text = rows.map((r) => `- ${r.kind} ${r.place_key} (${r.status}): "${String(r.asked).replace(/"/g, "'")}"`).join("\n");
+  if ((lastLive.get(sessionId) ?? "") === text) return "";
+  lastLive.set(sessionId, text);
+  await appendEvent({ sessionId, runId: null, type: "note.live_threads", data: { others: rows.map((r) => r.id) } }).catch(() => {});
+  return `<peeblo_event kind="live_threads">${text ? `Your other conversations right now:\n${text}` : "No other conversations of yours are running now."}</peeblo_event>\n`;
+}
+
 // One turn: send the wrapped submission, wait for agent_settled, return the answer.
 async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; stopReason: string | null }> {
   const current = await getTeammate(ctx.session.teammate_id);
@@ -177,7 +196,7 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
     touch(ctx.session.id, l);
     const from = person ? `${person.display_name ?? person.slack_user} (${person.slack_user})` : "api";
     const settled = l.rpc.settled(config.turnTimeoutMs);
-    const note = tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "";
+    const note = (tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "") + (await liveThreadsNote(ctx.session.id, tm.id));
     await l.rpc.send("prompt", { message: `${changeNote}${note}<message from="${from.replace(/"/g, "'")}">${ctx.text}</message>` });
     await settled;
     const text = (await l.rpc.send<{ text?: string }>("get_last_assistant_text"))?.text ?? "";
@@ -185,17 +204,20 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
     const lastAssistant = [...(msgs.messages ?? [])].reverse().find((m) => m.role === "assistant");
     let blocked = false;
     let money: any = null;
+    let stuck: any = null;
     if (lastAssistant?.stopReason === "error") {
-      const { rows } = await pool.query("SELECT type, data FROM events WHERE run_id = $1 AND type IN ('guard.blocked', 'budget.blocked') ORDER BY id DESC", [ctx.run.id]);
+      const { rows } = await pool.query("SELECT type, data FROM events WHERE run_id = $1 AND type IN ('guard.blocked', 'budget.blocked', 'run.stuck') ORDER BY id DESC", [ctx.run.id]);
       blocked = rows.some((r) => r.type === "guard.blocked");
       money = rows.find((r) => r.type === "budget.blocked")?.data ?? null;
+      stuck = rows.find((r) => r.type === "run.stuck")?.data ?? null;
       if (blocked) await dropRefusedTurn(l, ctx.session.id, ctx.run.id);
     }
-    return { text, stopReason: lastAssistant?.stopReason ?? null, error: lastAssistant?.errorMessage ?? null, blocked, money };
+    return { text, stopReason: lastAssistant?.stopReason ?? null, error: lastAssistant?.errorMessage ?? null, blocked, money, stuck };
   });
   l.queue = job.catch(() => {});
   const r = await job;
   if (r.blocked) return { text: blockedReply("Lakera, Otari's org guardrail"), stopReason: "guard_blocked" };
+  if (r.stuck) return { text: `${r.text ? `${r.text}\n\n` : ""}I stopped here: ${r.stuck.reason}. Tell me how you'd like to go on.`, stopReason: "stuck" };
   // Peeblo's own refusal (before Otari) carries its sentence; Otari's carries its numbers.
   if (r.money) return { text: r.money.by === "peeblo" ? `I can't run this: ${r.money.message} An admin can raise the budget, or it resets next month.` : budgetReply(r.money, tm.config.name), stopReason: "budget_blocked" };
   if (r.stopReason === "error") {

@@ -17,6 +17,7 @@ import { screen, wrapUntrusted } from "../guard.ts";
 import { newId } from "../ids.ts";
 import { appendEvent } from "../store/events.ts";
 import { getPerson } from "../store/people.ts";
+import { getSession } from "../store/sessions.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
 
 // A session keeps its config, but a lower mode applies at once (K5): the gate uses the stricter of the
@@ -57,6 +58,10 @@ async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T>
   return next;
 }
 
+const LOOP_NUDGE = 3;
+const LOOP_STOP = 6;
+const identical = new Map<string, number>();
+
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();
 
@@ -81,14 +86,15 @@ async function mostUsed(teammateId: string, names: string[]): Promise<Set<string
 export async function handleTools(req: IncomingMessage, res: ServerResponse, b: Binding, path: string, body: Buffer | undefined): Promise<void> {
   const tm = await teammateAt(b.teammateId, b.teammateVersion);
   if (!tm) return json(res, 404, { detail: "teammate is gone" });
-  const own = peebloTools(tm);
+  const subagent = Boolean(((await getSession(b.sessionId))?.place as { subagent_of?: string } | undefined)?.subagent_of);
+  const own = peebloTools(tm, { subagent });
 
   if (req.method === "GET" && path === "/tools") {
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     const tools: Listed[] = [
       ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: true })),
-      ...cat.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
+      ...cat.tools.filter((t) => !subagent || classify(t, {}) === "read").map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
     ];
     return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
   }
@@ -96,14 +102,26 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
 
   const { name, arguments: args = {}, tool_call_id: toolCallId = newId("tc") } = JSON.parse(body?.toString("utf8") || "{}");
   const person = b.personId ? await getPerson(b.personId) : null;
-  const ctx: ToolContext = { teammate: tm, person, sessionId: b.sessionId, runId: b.runId, endUser: b.endUser, toolCallId, otariKey: b.otariKey && b.keyId ? { keyId: b.keyId, secret: b.otariKey } : null };
+  const ctx: ToolContext = { teammate: tm, person, sessionId: b.sessionId, runId: b.runId, endUser: b.endUser, toolCallId, otariKey: b.otariKey && b.keyId ? { keyId: b.keyId, secret: b.otariKey } : null, subagent };
   const ownTool = own.find((t) => t.name === name);
   const connector = ownTool ? undefined : (await catalogFor(tm.config)).tools.find((x) => x.name === name);
   if (!ownTool && !connector) return json(res, 200, { text: `There is no tool called ${name} in this session. Use one of the tools you were given.`, isError: true });
 
   const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), asked_by: person?.id ?? null, end_user: b.endUser };
   const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
-  const reply = (r: ToolResult) => json(res, 200, { text: r.text, isError: Boolean(r.isError) });
+  // Loop limits (K14), the same on every model: the 3rd identical call in a run gets a factual note, the 6th
+  // stops the run.
+  const repeatKey = `${b.runId}:${name}:${base.args_fingerprint}`;
+  const repeats = (identical.get(repeatKey) ?? 0) + 1;
+  identical.set(repeatKey, repeats);
+  if (repeats >= LOOP_STOP) {
+    b.stuck = { runId: b.runId, reason: `the same ${name} call ${repeats} times` };
+    await event({ status: "refused", reason: "loop limit" });
+    await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: b.stuck.reason } });
+    return json(res, 200, { text: `Stopped: this exact ${name} call has been made ${repeats} times in this run. Tell the person what you were trying and what kept happening.`, isError: true });
+  }
+  const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}th identical ${name} call in this run; the result will not change.]` : "";
+  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError) });
 
   // Untrusted results are labelled with their source and screened; a flag is appended as a warning.
   const finish = async (r: ToolResult, source: string | null, extra: Record<string, unknown>) => {
@@ -124,6 +142,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
 async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown>) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
   base.via = "peeblo";
   base.kind = t.kind;
+  if (t.name === "computer_bash") base.command = String(args.command ?? "").slice(0, 500); // the audit keeps what ran
   const streakKey = `${ctx.sessionId}:${t.name}`;
   const problem = validate(t.input_schema as Schema, args);
   if (problem) {
@@ -135,11 +154,15 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   invalidStreak.delete(streakKey);
   const refusal = t.authorize ? await t.authorize(ctx, args) : null;
   if (refusal) { await event({ status: "refused", reason: refusal }); return reply({ text: refusal, isError: true }); }
+  // The rule engine for this exact call (computer tools): required gates refuse, advisory gates ask.
+  const rule = t.gate ? await t.gate(ctx, args) : null;
+  if (rule?.deny) { await event({ status: "refused", reason: rule.deny }); return reply({ text: rule.deny, isError: true }); }
 
   const run = async () => {
-    if (t.kind === "write") {
-      // Otari settings: always a person's yes, for this one call only (K17).
-      if (!ctx.runId) return reply({ text: "This change needs a person's approval, and there is no run to ask in.", isError: true });
+    if (t.kind === "write" || rule?.ask) {
+      // Otari settings always, and anything the rules say to ask about: a person's yes for this one call.
+      if (!ctx.runId) return reply({ text: "This needs a person's approval, and there is no run to ask in.", isError: true });
+      if (rule?.ask) base.rule = rule.ask;
       await event({ status: "waiting_approval" });
       const action = { kind: "peeblo_tool", teammate: ctx.teammate.slug, tool: t.name, arguments: args, ...(t.describe ? await t.describe(ctx, args) : {}), asked_by: ctx.person?.id ?? null };
       const a = await askApproval(ctx.runId, ctx.sessionId, action, config.approvalTtlSeconds);
@@ -158,7 +181,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       return reply({ text: `${t.name} failed: ${(e as Error).message.slice(0, 300)}`, isError: true });
     }
   };
-  return t.kind === "write" ? oneAtATime(b.sessionId, run) : run();
+  return t.kind === "read" ? run() : oneAtATime(b.sessionId, run);
 }
 
 async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown>) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
