@@ -16,6 +16,14 @@ import { installPiExecutor, stopAllPi } from "./pi/supervisor.ts";
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
 const applied = await migrate();
 installPiExecutor();
+// Slack: messages → sessions, runs → streamed replies with receipts, clicks → approvals and feedback.
+{
+  const { installSlackInbound, setStopHandler } = await import("./slack/inbound.ts");
+  const { installSlackView } = await import("./slack/view.ts");
+  const { installSlackInteractions } = await import("./slack/interactions.ts");
+  const { stopSession } = await import("./pi/supervisor.ts");
+  installSlackInbound(); installSlackView(); installSlackInteractions(); setStopHandler(stopSession);
+}
 // Receipts need to know whether Otari's org guardrail is on (Otari doesn't report it on streams).
 const readGuard = () => import("./guard.ts").then(async (g) => {
   if (g.guardMode() !== "lakera") return null;

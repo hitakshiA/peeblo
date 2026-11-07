@@ -14,8 +14,13 @@ export async function appendEvent(
     "INSERT INTO events (session_id, run_id, type, data) VALUES ($1, $2, $3, $4) RETURNING *",
     [e.sessionId ?? null, e.runId ?? null, e.type, e.data ?? {}],
   );
+  for (const l of listeners) queueMicrotask(() => { try { void Promise.resolve(l(rows[0])).catch(() => {}); } catch { /* a view never breaks the log */ } });
   return rows[0];
 }
+
+// In-process listeners (views such as Slack streams); the log itself stays the source of truth.
+const listeners: ((e: EventRow) => unknown)[] = [];
+export const onEvent = (l: (e: EventRow) => unknown) => void listeners.push(l);
 
 export async function runEvents(runId: string, afterId = 0): Promise<EventRow[]> {
   const { rows } = await pool.query<EventRow>("SELECT * FROM events WHERE run_id = $1 AND id > $2 ORDER BY id", [runId, afterId]);

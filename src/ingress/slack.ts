@@ -25,7 +25,7 @@ async function rawBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// First app to claim a human message wins; returns false for every later delivery of the same message.
+// The first delivery of a message to an app wins; returns false for every later delivery of it to the same app.
 export async function claimMessage(teamId: string, channel: string, ts: string, appId: string, eventType: string): Promise<boolean> {
   const { rowCount } = await pool.query(
     "INSERT INTO slack_claims (team_id, channel, ts, app_id, event_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
@@ -36,6 +36,13 @@ export async function claimMessage(teamId: string, channel: string, ts: string, 
 
 type Handler = (e: { appId: string; teammateId: string | null; teamId: string; event: any; payload: any }) => Promise<void>;
 const handlers: Handler[] = [];
+type InteractionHandler = (e: { appId: string; teammateId: string | null; payload: any }) => Promise<void>;
+const interactionHandlers: InteractionHandler[] = [];
+export const onSlackInteraction = (h: InteractionHandler) => void interactionHandlers.push(h);
+type EventHandler = (e: { appId: string; teammateId: string | null; teamId: string; event: any }) => Promise<void>;
+const otherHandlers: EventHandler[] = [];
+export const onSlackEvent = (h: EventHandler) => void otherHandlers.push(h);
+
 export function onSlackMessage(h: Handler): void {
   handlers.push(h);
 }
@@ -48,7 +55,7 @@ async function handleEvents(body: string, req: IncomingMessage): Promise<[number
   const app = await getApp(String(payload.api_app_id ?? ""));
   if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) return [401, "bad signature"];
   const ev = payload.event ?? {};
-  if (ev.bot_id && ev.bot_id === payload.authorizations?.[0]?.user_id) return [200, ""];
+  if (ev.user && ev.user === app.bot_user_id) return [200, ""];
   if (ev.type === "message" || ev.type === "app_mention") {
     if (ev.user === app.bot_user_id) return [200, ""];                       // our own post echoed back
     const first = await claimMessage(payload.team_id, ev.channel, ev.ts ?? ev.event_ts, app.app_id, ev.type);
@@ -58,6 +65,7 @@ async function handleEvents(body: string, req: IncomingMessage): Promise<[number
     return [200, ""];
   }
   await appendEvent({ type: `slack.${ev.type ?? payload.type}`, data: { app_id: app.app_id, team_id: payload.team_id, event_id: payload.event_id, event: ev } });
+  for (const h of otherHandlers) void h({ appId: app.app_id, teammateId: app.teammate_id, teamId: payload.team_id, event: ev }).catch((e) => console.error("slack event:", e));
   return [200, ""];
 }
 
@@ -67,6 +75,8 @@ async function handleInteraction(body: string, req: IncomingMessage): Promise<[n
   const app = await getApp(String(payload.api_app_id ?? payload.view?.app_id ?? ""));
   if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) return [401, "bad signature"];
   await appendEvent({ type: "slack.interaction", data: { app_id: app.app_id, type: payload.type, user: payload.user?.id, action: payload.actions?.[0]?.action_id, value: payload.actions?.[0]?.value, callback: payload.view?.callback_id } });
+  // Answered at once (Slack wants a reply within 3 s); the work happens after.
+  for (const h of interactionHandlers) void h({ appId: app.app_id, teammateId: app.teammate_id, payload }).catch((e) => console.error("slack interaction:", e));
   return [200, ""];
 }
 
