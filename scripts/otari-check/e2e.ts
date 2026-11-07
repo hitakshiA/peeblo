@@ -61,7 +61,8 @@ try {
     expect(ts.some((t) => t.tool === "code_execution" && t.status === "completed"), "no code execution");
     expect(ts.some((t) => t.via === "otari_mcp" && t.kind === "read" && t.status === "completed"), "no connector read");
     const write = ts.find((t) => t.via === "otari_mcp" && t.kind !== "read" && t.status === "completed");
-    expect(write?.approval_id, "no approved connector write");
+    // In Auto, a write the person asked for is allowed by the reviewer gate; anything else gets a person's approval.
+    expect(write && (write.approval_id || write.reviewer), "no connector write allowed by a person or the reviewer");
     c.ids.push(...ts.map((t) => t.request_id).filter(Boolean));
   });
   await check(S, "every model call went through the proxy, the guardrail, the person and the teammate's key", async (c) => {
