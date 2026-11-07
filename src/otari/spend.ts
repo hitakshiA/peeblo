@@ -22,8 +22,18 @@ export async function spendMode(): Promise<SpendMode> {
 type KeyRow = { key_id: string; secret: Buffer; budget_id: string | null; ceiling_id: string | null; monthly_usd: string | null };
 
 // The teammate's own key (made on first use), with its ceiling kept at the teammate's monthly budget.
+// Sessions of a new teammate can start together, so creation runs one at a time per teammate.
+const making = new Map<string, Promise<{ keyId: string; secret: string } | null>>();
 export async function teammateKey(tm: Teammate): Promise<{ keyId: string; secret: string } | null> {
   if ((await spendMode()) !== "key") return null;
+  const pending = making.get(tm.id);
+  if (pending) return pending;
+  const p = teammateKeyOnce(tm).finally(() => making.delete(tm.id));
+  making.set(tm.id, p);
+  return p;
+}
+
+async function teammateKeyOnce(tm: Teammate): Promise<{ keyId: string; secret: string } | null> {
   const { rows } = await pool.query<KeyRow>("SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [tm.id]);
   const want = tm.config.budget.monthly_usd;
   if (rows[0]) {
