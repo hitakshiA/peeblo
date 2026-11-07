@@ -70,7 +70,7 @@ type Listed = { name: string; description: string; input_schema: unknown; asks: 
 // K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
 const DIRECT_CONNECTOR_TOOLS = 4;
-async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
+export async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
   const { rows } = await pool.query(
     `SELECT e.data->>'tool' AS tool, count(*) AS n FROM events e JOIN sessions s ON s.id = e.session_id
       WHERE s.teammate_id = $1 AND e.type = 'tool.call' AND e.data->>'via' = 'otari_mcp' AND e.data->>'status' = 'completed'
