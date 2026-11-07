@@ -227,6 +227,15 @@ export function startProxy(): Promise<Server> {
           a = await attempt(undefined, "auto");
         }
       }
+      // Otari refuses the whole call while its code sandbox is down (503, any model); the turn goes on without code.
+      if (a.upstream.status === 503 && a.sandbox) {
+        const detail = await a.upstream.clone().text();
+        if (/sandbox temporarily unavailable/i.test(detail)) {
+          await record(b, path, a, null, { failed: true, error: detail.slice(0, 300) });
+          await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "code.unavailable", data: { request_id: a.upstream.headers.get("otari-request-id") } }).catch(() => {});
+          a = await attempt(undefined, "");
+        }
+      }
       // Peeblo's own cross-model fallback, before any output reached Pi: on a failure a different model can fix.
       const code = a.upstream.headers.get("otari-error-code");
       const retryable = a.upstream.status === 429 || a.upstream.status >= 500 || a.upstream.status === 424 || (code !== null && RETRYABLE_CODES.has(code));
