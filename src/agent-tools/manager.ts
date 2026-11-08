@@ -159,8 +159,10 @@ export const managerTools: AgentTool[] = [
       return { kind: "hire", hire: hireFacts, approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `${a.name} · ${a.role} · ${fake.config.model.default} · $${a.budget_usd}/month · ${fake.config.mode} mode · tools: ${[...(a.tools ?? []), ...(a.connectors ?? [])].join(", ") || "none"}` };
     },
     async run(ctx, a) {
+      // Slugs stay unique across archived teammates too (an archived "patch" keeps its history), so a taken one
+      // gets a short suffix; the name people see stays "Patch".
       let slug = slugOf(a.name);
-      if (await getTeammate(slug)) slug = `${slug}-${Math.random().toString(36).slice(2, 5)}`;
+      while ((await pool.query("SELECT 1 FROM teammates WHERE slug = $1", [slug])).rows.length) slug = `${slugOf(a.name)}-${Math.random().toString(36).slice(2, 5)}`;
       const tm = await createTeammate(slug, configFrom(a), { personId: ctx.person?.id ?? null, label: `hired by ${ctx.person?.display_name ?? "a person"} through Peeblo` });
       if (a.github_repos?.length && process.env.PEEBLO_GITHUB_TOKEN) {
         const { setSecret } = await import("../store/secrets.ts");
