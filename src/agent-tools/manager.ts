@@ -47,19 +47,21 @@ const hireSpec = {
   budget_usd: { type: "number", minimum: 0, maximum: 500, description: "Monthly budget in USD." },
   tools: { type: "array", items: { type: "string", enum: ["web", "code", "computer"] }, maxItems: 3 },
   connectors: { type: "array", items: { type: "string" }, maxItems: 10, description: "Otari MCP server names, e.g. linear, posthog, stripe." },
+  github_repos: { type: ["array", "null"], items: { type: "string" }, maxItems: 5, description: "owner/repo it works in (e.g. hitakshiA/acme-checkout-api): GitHub access scoped to these, and its own checkout of each on its computer. Required for any teammate that changes code." },
   mode: { type: ["string", "null"], enum: [...MODES, null] },
   computer_size: { type: ["string", "null"], enum: ["small", "large", null], description: "large only for teammates that browse websites." },
   face: { type: ["string", "null"], enum: [...SHAPES, null] },
   color: { type: ["string", "null"], enum: [...COLORS, null] },
   profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
 };
-function configFrom(a: any): Partial<TeammateConfig> {
+export function configFrom(a: any): Partial<TeammateConfig> {
   return {
     // The default model is the worker role's, from config/model-tiers.json.
     name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || ROLES["peeblo-worker"].default, fallback: ROLES["peeblo-worker"].fallback[0] },
     // Every teammate has its own computer (small unless it browses); code and data work run there.
-    budget: { monthly_usd: a.budget_usd }, tools: [...new Set([...(a.tools ?? []), "computer"])], connectors: a.connectors ?? [], mode: a.mode ?? "auto",
-    computer: { size: a.computer_size ?? "small", allowed_hosts: [] } as any,
+    budget: { monthly_usd: a.budget_usd }, tools: [...new Set([...(a.tools ?? []), "computer"])], connectors: [...new Set([...(a.connectors ?? []), ...(a.github_repos?.length ? ["github"] : [])])], mode: a.mode ?? "auto",
+    computer: { size: a.computer_size ?? "small", allowed_hosts: [], ...(a.github_repos?.length ? { repos: a.github_repos.map((r: string) => ({ name: r.split("/")[1], remote: `https://github.com/${r}.git`, base: "main", credential: "GH_TOKEN", protected: [], worktree: { setup: [], include: [], setup_inputs: [] } })) } : {}) } as any,
+    ...(a.github_repos?.length ? { connector_scopes: { github: a.github_repos } } : {}),
     ...(a.profile ? { profile: a.profile } : {}),
   };
 }
@@ -146,12 +148,24 @@ export const managerTools: AgentTool[] = [
       // A wide version for the hired card's hero image (Slack crops a card block's hero).
       const hero = await publishCard(await idCardHeroPng(png)).catch(() => null);
       void place;
-      return { kind: "hire", approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `${a.name} · ${a.role} · ${fake.config.model.default} · $${a.budget_usd}/month · ${fake.config.mode} mode · tools: ${[...(a.tools ?? []), ...(a.connectors ?? [])].join(", ") || "none"}` };
+      const { serviceName } = await import("../slack/look.ts");
+      const uses = [
+        ...(a.github_repos?.length ? [`GitHub (${a.github_repos.map((r: string) => r.split("/")[1]).join(", ")})`] : []),
+        ...(a.connectors ?? []).filter((c: string) => c !== "github" || !a.github_repos?.length).map((c: string) => serviceName(c)),
+        "its own computer", ...((a.tools ?? []).includes("web") ? ["the web"] : []),
+      ];
+      const asks = { ask: "asks before every write", auto: "asks before it writes anything that matters", trusted: "asks before it deletes anything", yolo: "acts without asking" }[String(fake.config.mode)] ?? "asks before it writes";
+      const hireFacts = { role: a.role, uses: uses.join(", "), budget: `$${a.budget_usd} a month`, asks };
+      return { kind: "hire", hire: hireFacts, approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `${a.name} · ${a.role} · ${fake.config.model.default} · $${a.budget_usd}/month · ${fake.config.mode} mode · tools: ${[...(a.tools ?? []), ...(a.connectors ?? [])].join(", ") || "none"}` };
     },
     async run(ctx, a) {
       let slug = slugOf(a.name);
       if (await getTeammate(slug)) slug = `${slug}-${Math.random().toString(36).slice(2, 5)}`;
       const tm = await createTeammate(slug, configFrom(a), { personId: ctx.person?.id ?? null, label: `hired by ${ctx.person?.display_name ?? "a person"} through Peeblo` });
+      if (a.github_repos?.length && process.env.PEEBLO_GITHUB_TOKEN) {
+        const { setSecret } = await import("../store/secrets.ts");
+        await setSecret(tm.id, "GH_TOKEN", process.env.PEEBLO_GITHUB_TOKEN, ["github.com", "api.github.com"]);
+      }
       const face = pickFace(slug, a.face, a.color);
       const place = await placeOf(ctx);
       await pool.query("INSERT INTO hires (teammate_id, hired_by, place, avatar) VALUES ($1, $2, $3, $4)", [tm.id, ctx.person?.id ?? null, place ? { slack: place } : {}, face]);

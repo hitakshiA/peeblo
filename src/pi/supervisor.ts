@@ -255,6 +255,19 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   const current = await getTeammate(ctx.session.teammate_id);
   if (!current) throw new Error("teammate is gone");
   const { tm, note: changeNote } = await sessionConfig(ctx.session.id, ctx.run.id, current);
+  if (turnNo === 1 && !internal) {
+    const waiting = (await pool.query(
+      `SELECT a.id, a.run_id FROM approvals a JOIN runs r ON r.id = a.run_id
+        WHERE r.session_id = $1 AND a.status = 'pending' AND a.run_id <> $2 AND a.expires_at > now() ORDER BY a.created_at DESC LIMIT 1`, [ctx.session.id, ctx.run.id])).rows[0];
+    if (waiting) {
+      const who = ctx.run.submission_id ? (await pool.query("SELECT p.id, p.display_name FROM submissions s LEFT JOIN people p ON p.id = s.person_id WHERE s.id = $1", [ctx.run.submission_id])).rows[0] : null;
+      const name = String(who?.display_name ?? "The person").split(" ")[0];
+      await DBOS.send(waiting.id, { decision: "denied", scope: "once", personId: who?.id ?? null, superseded: true,
+        reason: `${name} replied before deciding: "${ctx.text.slice(0, 600)}". Change your draft to fit what they said and ask again; answer them in one line.` }, "approval", `supersede:${waiting.id}:${ctx.run.id}`);
+      await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "run.merged", data: { into: waiting.run_id, approval_id: waiting.id } });
+      return { text: "", stopReason: "merged" };
+    }
+  }
   // One event per execution of the turn step: a second one means the turn resumed after core restarted.
   const attempts = Number((await pool.query("SELECT count(*)::int n FROM events WHERE run_id = $1 AND type = 'turn.attempt' AND (data->>'turn')::int = $2", [ctx.run.id, turnNo])).rows[0].n);
   await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.attempt", data: { turn: turnNo, pid: process.pid } });

@@ -254,6 +254,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       const a = await askApproval(ctx.runId, ctx.sessionId, action, await approvalTtl(ctx.runId));
       if (a.status !== "approved") {
         await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
+        if (a.superseded) return reply({ text: `${a.reason} Nothing ran yet; the old card is closed.`, isError: true });
         return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
       }
       base.approval_id = a.approvalId;
@@ -335,6 +336,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
         const a = await askApproval(b.runId, b.sessionId, action, ttl);
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
+          if (a.superseded) return reply({ text: `${a.reason} Nothing ran yet; the old card is closed.`, isError: true });
           return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
         }
         if (!perAction && (a.scope === "always" || a.scope === "job")) {

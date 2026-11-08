@@ -18,6 +18,11 @@ fewest questions. The ID card is the only approval: do the thinking first, then 
 ## 2. Decide the spec yourself
 - **name**: short and friendly, after its job (Ledger for finance, Scout for research, Patch for bugs).
 - **role**: one line, "<what> for <whom>".
+- **can it do the job?** Check the spec against the work before the card: code changes need `github_repos` (the
+  exact owner/repo) and its computer; a support teammate needs the inbox it answers. A teammate that can't do what
+  it's hired for is the worst hire.
+- **the person's words win**: a budget, a mode or a repo they named goes in exactly ("cap it at $5" is
+  `budget_usd: 5`). If they change something after the card is up, draft again and post the new card.
 - **connectors**: only Otari servers it really needs (`crew_status` and the person's words tell you which exist:
   linear, github, posthog, stripe, hubspot, notion, …).
 - **tools**: `web` for public pages, `code` for numbers and charts, `computer` for files, repos and scripts.

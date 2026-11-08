@@ -77,6 +77,8 @@ function what(a: any): string | null {
 
 const RISK: Record<string, string> = { money: "moves money", destructive: "removes something", shipping: "ships a change", outside_thread: "posts outside this thread", write: "writes" };
 
+const cutWord = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).replace(/\s+\S*$/, "")}…`);
+
 export async function cardBlocks(a: any, id: string, teammate: string, askedBy?: string | null): Promise<any[]> {
   const domain = a.server ? DOMAINS[a.server] ?? `${a.server}.com` : null;
   const approvers: string[] = a.approvers ?? [];
@@ -88,8 +90,10 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
     { type: "card", block_id: `approval:${id}`,
       ...(domain ? { icon: { type: "image", image_url: serviceIcon(a.server) ?? `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, alt_text: serviceName(a.server) } } : {}),
       title: { type: "plain_text", text: question(a, teammate).slice(0, 150) },
-      ...(line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
-      ...(a.kind === "hire" || a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } } : {}),
+      // A hire reads like its ID card: the role, then what it can use, its budget and how it asks.
+      ...(a.kind === "hire" && a.hire ? { subtitle: { type: "plain_text", text: cutWord(String(a.hire.role), 150) }, body: { type: "mrkdwn", text: cutWord(`Can use ${a.hire.uses} · ${a.hire.budget} · ${a.hire.asks}`, 200) } }
+        : line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
+      ...(a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } } : {}),
       // A card takes only buttons (an overflow menu is refused), so Edit is a plain third button.
       actions: [
         { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "approve_once", value: id },

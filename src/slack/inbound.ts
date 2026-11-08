@@ -36,8 +36,10 @@ export function installSlackInbound(): void {
     // along only in a channel someone asked it to keep an eye on (channel_watch); the default is mentions only (R1′).
     let kindNow: SessionKind = kind;
     let keyNow = placeKey;
+    let inThread = false;
     if (!dm && !mentioned) {
       const known = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND kind = 'thread' AND place_key = $2", [teammateId, placeKey])).rows[0];
+      inThread = Boolean(known);
       if (!known) {
         const isManager = (await pool.query("SELECT slug FROM teammates WHERE id = $1", [teammateId])).rows[0]?.slug === "peeblo";
         const attention = (await pool.query("SELECT attention FROM channel_settings WHERE team_id = $1 AND channel = $2", [teamId, ev.channel])).rows[0]?.attention ?? "mentions";
@@ -50,7 +52,7 @@ export function installSlackInbound(): void {
     }
     let text = clean(String(ev.text ?? ""), app?.bot_user_id ?? null);
     if (!text && !ev.files?.length) return;
-    const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned) };
+    const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned || inThread) }; // a reply in its own thread is addressed to it
     const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
     // Start the teammate's Pi now, in parallel with the batching wait below.
     void import("../pi/supervisor.ts").then((m) => m.prewarm(session.id, teammateId)).catch(() => null);

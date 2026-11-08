@@ -312,6 +312,7 @@ async function outcomeBlocks(d: any, runId: string | null): Promise<any[]> {
     if (!phrase || !tm || !person || !mayManageTeammate(tm, person)) return [approved];
     return [approved, { type: "actions", block_id: `always:${d.approval_id}`, elements: [{ type: "button", text: { type: "plain_text", text: phrase.replace(/\?$/, "") }, action_id: "always_allow", value: d.approval_id }] }];
   }
+  if (d.status === "denied" && d.superseded) return [{ type: "context", elements: [{ type: "mrkdwn", text: `Replaced by an updated draft · ${name}'s note` }] }];
   if (d.status === "denied") return [{ type: "context", elements: [{ type: "mrkdwn", text: `Not now · ${name}${d.reason ? `: “${String(d.reason).slice(0, 200)}”` : ""}` }] }];
   return [{ type: "section", text: { type: "mrkdwn", text: "*Expired.* Nobody answered in time, so nothing ran." } },
     ...(runId ? [{ type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Ask again" }, action_id: "retry_run", value: runId }] }] : [])];
@@ -326,7 +327,8 @@ async function approvalResolved(v: View | undefined, e: EventRow): Promise<void>
     await redraw(v, v.finished ? summaryLine(v.done) || "Done" : planTitle(v));
   } else {
     const c = (await pool.query("SELECT data FROM events WHERE type = 'approval.card' AND data->>'approval_id' = $1 LIMIT 1", [d.approval_id])).rows[0]?.data;
-    if (c && !c.inline) await slack(c.app_id, "chat.update", { channel: c.channel, ts: c.ts, text: d.status, blocks: done }).catch(() => null);
+    const words = d.status === "approved" ? "Approved" : d.status === "denied" ? (d.superseded ? "Replaced by an updated draft" : "Not now") : "Expired. Nothing ran.";
+    if (c && !c.inline) await slack(c.app_id, "chat.update", { channel: c.channel, ts: c.ts, text: words, blocks: done }).catch(() => null);
   }
   if (v && d.status !== "expired") await sessionStatus(v, "processing");
 }
@@ -442,6 +444,12 @@ export function installSlackView(): void {
       }
       // A run that ended on a typed stop (budget, a stuck loop, the guard, a model error) gets the recovery buttons.
       const stop = (await pool.query("SELECT data->>'stop_reason' AS r FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [e.run_id])).rows[0]?.r;
+      // A message folded into the work already waiting on a card: that work answers; this run shows nothing.
+      if (stop === "merged") {
+        views.delete(e.run_id);
+        await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes").catch(() => null);
+        return;
+      }
       await finish(e.run_id, v, e.type === "run.finished" && !["budget_blocked", "stuck", "guard_unavailable", "error"].includes(stop ?? ""), fallback);
     }
   });
