@@ -17,7 +17,7 @@ import type { AgentTool } from "./types.ts";
 
 export const planTool: AgentTool = {
   name: "plan",
-  description: "Write down or update your plan for this piece of work: the steps and where each stands. Use it for anything with more than two steps, and keep it current.",
+  description: "Write down or update your plan: the steps and where each stands. Only for work of 3 or more steps; a lookup or a two-source answer needs no plan. Update it alongside other tool calls, not on its own step.",
   input_schema: object({
     steps: { type: "array", maxItems: 12, items: { type: "object", properties: { step: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done", "dropped"] } }, required: ["step", "status"], additionalProperties: false } },
   }),

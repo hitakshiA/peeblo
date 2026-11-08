@@ -17,10 +17,11 @@ const UNPROMPTED_PER_HOUR = Number(process.env.PEEBLO_UNPROMPTED_PER_HOUR ?? 3);
 export const slackTools: AgentTool[] = [
   {
     name: "slack_post",
-    description: "Say something in this Slack conversation (your thread or DM). This is how you reply: your final text is not shown to anyone. Use Slack markdown. For a table or other layout, pass Block Kit blocks (e.g. a table block).",
+    description: "Reply in this Slack conversation (your thread or DM); your final text is not shown to anyone. Posting your answer ends your turn. Set more: true only for a progress note when you will keep working. Slack markdown; for a table or other layout, pass Block Kit blocks.",
     input_schema: object({
       text: { type: "string", description: "What to say (Slack markdown). Also the fallback text when blocks are given." },
       blocks: { type: ["array", "null"], description: "Optional Block Kit blocks, e.g. [{type: 'table', rows: [...]}].", items: { type: "object", additionalProperties: true } as any },
+      more: { type: ["boolean", "null"], description: "true if you will keep working after this post (a progress note). Leave it out for your answer." },
     }),
     kind: "read", // it posts only into the conversation the person started; no approval
     async run(ctx, a) {
@@ -28,7 +29,8 @@ export const slackTools: AgentTool[] = [
       const text = String(a.text ?? "").slice(0, 12_000);
       if (!text.trim()) return { text: "Nothing to post.", isError: true };
       // Outside Slack (the API, a test) the post is the reply: recorded the same way, so nothing is retried.
-      if (!place) { await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post", data: { text, outside_slack: true } }); return { text: "Posted." }; }
+      const endTurn = a.more !== true;
+      if (!place) { await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post", data: { text, outside_slack: true } }); return { text: "Posted.", endTurn }; }
       // Unprompted posts (no one asked this teammate in this conversation) are rate-limited per channel, and a
       // thread someone marked 👎 gets none (K2).
       if (!place.direct) {
@@ -45,10 +47,10 @@ export const slackTools: AgentTool[] = [
         const r = await slack(place.app_id, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text, blocks: a.blocks }).catch((e) => ({ ok: false, error: (e as Error).message }));
         await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post.blocks", data: { ok: (r as any).ok !== false, ts: (r as any).ts ?? null } });
         if ((r as any).ok === false) return { text: `Slack refused the blocks (${(r as any).error}); post plain text instead.`, isError: true };
-        return { text: "Posted." };
+        return { text: "Posted.", endTurn };
       }
       await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post", data: { text } });
-      return { text: "Posted." };
+      return { text: "Posted.", endTurn };
     },
   },
   {

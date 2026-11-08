@@ -294,7 +294,8 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
 // than the worker), and a job with a spec (a delegated objective) gets an outcome grader against that spec. Either
 // may send the teammate back once, with the reason; never more than one continuation.
 async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string | null }): Promise<{ again: string | null }> {
-  if (r.stopReason !== "stop") return { again: null };
+  // "toolUse": the turn ended on a tool that ends it (a posted answer, a hand-off).
+  if (r.stopReason !== "stop" && r.stopReason !== "toolUse") return { again: null };
   const src = (await pool.query("SELECT source FROM submissions WHERE id = $1", [ctx.run.submission_id])).rows[0]?.source;
   const place = (ctx.session.place as any)?.slack;
   // Only direct asks and delegated jobs: a channel it reads along in, a welcome or an unattended run may end quietly.
@@ -303,6 +304,8 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
   const calls = (await pool.query("SELECT data->>'tool' AS t, data->>'status' AS s FROM events WHERE run_id = $1 AND type = 'tool.call' ORDER BY id", [ctx.run.id])).rows as { t: string; s: string }[];
   // A plain reply (it posted, and used no other tool) has nothing left half-done: no judge call for a greeting.
   if (src !== "teammate" && (posted.length || r.text.trim()) && calls.every((c) => c.t === "slack_post")) return { again: null };
+  // A job handed to a teammate is done for this turn: the teammate posts the result itself.
+  if (calls.some((c) => c.t === "delegate" && c.s === "completed")) return { again: null };
   // The judge sees a short state (under ~1.5k tokens): the ask, the last post, and a tally of tool outcomes.
   const tally = new Map<string, number>();
   for (const c of calls) tally.set(`${c.t} ${c.s}`, (tally.get(`${c.t} ${c.s}`) ?? 0) + 1);

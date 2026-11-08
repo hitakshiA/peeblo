@@ -22,7 +22,7 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
   // A subagent looks things up but changes nothing, and opens no subagents.
   // The start set is small (NIGHT_PLAN_NOV9 §1): how to reply, find more tools, read a skill, recall, plan, hand
   // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) loads with find_tools.
-  const START = new Set(["slack_post", "read_skill", "memory_read", "memory_search", "plan", tm.slug === "peeblo" ? "delegate" : "ask_teammate",
+  const START = new Set(["slack_post", "read_skill", "memory_read", "memory_search", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
     "computer_bash", "computer_read", "computer_write", "computer_edit"]);
   const listed = all.map((t) => (START.has(t.name) ? t : { ...t, deferred: true }));
   return opts.subagent ? listed.filter((t) => t.kind === "read") : listed;

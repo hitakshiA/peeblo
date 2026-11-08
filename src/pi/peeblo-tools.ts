@@ -34,8 +34,9 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
           method: "POST", headers, signal,
           body: JSON.stringify({ name: t.name, arguments: params ?? {}, tool_call_id: toolCallId }),
         });
-        const out = (await r.json().catch(() => ({ text: `Peeblo answered ${r.status}`, isError: true }))) as { text: string; isError?: boolean };
-        return { content: [{ type: "text", text: out.text }], details: {}, isError: Boolean(out.isError) };
+        const out = (await r.json().catch(() => ({ text: `Peeblo answered ${r.status}`, isError: true }))) as { text: string; isError?: boolean; terminate?: boolean };
+        // A posted reply or a hand-off ends the turn: Pi stops after this batch instead of asking the model again.
+        return { content: [{ type: "text", text: out.text }], details: {}, isError: Boolean(out.isError), ...(out.terminate ? { terminate: true } : {}) };
       },
     });
   };

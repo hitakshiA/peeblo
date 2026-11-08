@@ -132,7 +132,9 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     // A scoped GitHub connector names its repos, so the model never guesses an owner.
     const scoped = tm.config.connector_scopes?.github ?? [];
+    const visible = scoped.length ? "" : await githubVisible(cat.tools);
     const repos = scoped.length ? `This teammate's GitHub repos (owner/repo): ${scoped.join(", ")}. Use these names exactly.`
+      : visible ? `Repos this GitHub connection can see (owner/repo, most recently updated first): ${visible}. Use these names exactly; never guess an owner.`
       : "Never guess a repo's owner: unless you know the exact owner/repo, find it first with search_repositories (user:<login> from get_me, or org:<org>).";
     const tools: Listed[] = [
       ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: !t.deferred })),
@@ -175,7 +177,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     return json(res, 200, { text: `[peeblo: you made this exact call earlier in this job; here is the same result again.]\n${cached}` });
   }
   const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}${repeats === 3 ? "rd" : "th"} identical ${name} call in this run; the result will not change.]` : "";
-  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError) });
+  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError), ...(r.endTurn && !r.isError ? { terminate: true } : {}) });
 
   // Untrusted results are labelled with their source and screened; a flag is appended as a warning.
   const finish = async (r: ToolResult, source: string | null, extra: Record<string, unknown>) => {
@@ -352,20 +354,55 @@ function recordCount(text: string): number | null {
   } catch { return null; }
 }
 
+// The key fields of each record, one line each (up to 40), so the summary is usually enough to answer from.
+const KEY_FIELDS = ["identifier", "key", "number", "id", "full_name", "name", "title", "subject", "state", "status", "email", "amount", "currency", "created_at", "createdAt", "updated_at", "html_url", "url"];
+function compactList(text: string): string | null {
+  let v: any;
+  try { v = JSON.parse(text); } catch { return null; }
+  const arr: any[] | undefined = Array.isArray(v) ? v : v && typeof v === "object" ? (Object.values(v).filter(Array.isArray) as any[][]).sort((a, b) => b.length - a.length)[0] : undefined;
+  if (!arr?.length || typeof arr[0] !== "object") return null;
+  const meta = v && !Array.isArray(v) ? Object.entries(v).filter(([, x]) => typeof x !== "object").map(([k, x]) => `${k}: ${x}`).join(", ") : "";
+  const line = (o: any) => KEY_FIELDS.filter((f) => o?.[f] !== undefined && o[f] !== null && typeof o[f] !== "object").map((f) => `${f}=${String(o[f]).slice(0, 90)}`).join(" · ").slice(0, 260);
+  const lines = arr.slice(0, 40).map((o, i) => `${i + 1}. ${line(o)}`);
+  return `${meta ? `${meta}\n` : ""}${lines.join("\n")}${arr.length > 40 ? `\n… and ${arr.length - 40} more` : ""}`;
+}
+
 // A long connector result goes to a file on the agent's own computer (NIGHT_PLAN_NOV9 §1). The model reads the
 // start, the record count and the path, and works on the file there with computer_bash when it needs the rest.
 async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
   const chars = r.text.length;
   if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
   const n = recordCount(r.text);
-  const head = r.text.slice(0, 3000);
+  const head = compactList(r.text) ?? r.text.slice(0, 3000);
   const path = `/work/${ctx.sessionId}/results/${t.server}-${t.tool}-${callId.slice(-8)}.${n === null ? "txt" : "json"}`;
   const write = computerTools.find((x) => x.name === "computer_write");
   try {
     const w = write ? await write.run(ctx, { path, content: r.text }) : { text: "no computer", isError: true };
     if (w.isError) throw new Error(w.text);
-    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo: the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. Read or filter it there with computer_bash (jq, grep) instead of calling again.]` };
+    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo: the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
   } catch {
     return { ...r, chars, text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]` };
   }
+}
+
+// The repos an unscoped GitHub connection can see, read once every 30 minutes (get_me, then one search), so agents
+// use exact owner/repo names instead of guessing. The first read waits at most 6 s; after that it never blocks.
+let ghSeen: { at: number; text: string } | null = null;
+let ghLoading: Promise<string> | null = null;
+async function githubVisible(tools: ConnectorTool[]): Promise<string> {
+  const me = tools.find((t) => t.server === "github" && t.tool === "get_me");
+  const search = tools.find((t) => t.server === "github" && t.tool === "search_repositories");
+  if (!me || !search) return "";
+  if (ghSeen && Date.now() - ghSeen.at < 30 * 60_000) return ghSeen.text;
+  ghLoading ??= (async () => {
+    const who = JSON.parse(mcpText((await executeTool(me, {})).data).text);
+    const login = String(who.login ?? who.user?.login ?? "");
+    if (!login) return "";
+    const found = JSON.parse(mcpText((await executeTool(search, { query: `user:${login} fork:true`, sort: "updated", perPage: 30 })).data).text);
+    const names = (found.items ?? found.repositories ?? found ?? []).map((x: any) => x.full_name ?? x.fullName ?? (x.owner?.login && x.name ? `${x.owner.login}/${x.name}` : null)).filter(Boolean);
+    ghSeen = { at: Date.now(), text: names.slice(0, 30).join(", ") };
+    return ghSeen.text;
+  })().catch(() => ghSeen?.text ?? "").finally(() => { ghLoading = null; });
+  if (ghSeen) return ghSeen.text;
+  return Promise.race([ghLoading, new Promise<string>((r) => setTimeout(() => r(""), 6000))]);
 }

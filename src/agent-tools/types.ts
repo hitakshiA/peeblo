@@ -15,7 +15,8 @@ export type ToolContext = {
   subagent: boolean;            // a read-only subagent session
 };
 
-export type ToolResult = { text: string; isError?: boolean; data?: unknown; untrusted?: string };
+// `endTurn`: the turn stops after this tool batch (a reply posted, a job handed off); no extra model call.
+export type ToolResult = { text: string; isError?: boolean; data?: unknown; untrusted?: string; endTurn?: boolean };
 
 export type AgentTool = {
   name: string;
