@@ -1,6 +1,6 @@
 ---
 name: working-in-repos
-description: Work in a git repo: open your own checkout, commit, keep up with the base, resolve conflicts and publish a draft PR. Use for any change to a repo's files.
+description: Changing code in a repo you were given: your own checkout, running tests (many times for flaky ones), commits, keeping up with the base, conflicts, and a draft PR a person merges. Use for any change to a repo's files or any test run.
 ---
 
 # Working in repos
@@ -15,6 +15,12 @@ other. Plain git works for everything local. Two tools exist where Peeblo has to
   it. Pass a short `slug` (`fix-login-redirect`) so people can read the branch name. Reopening returns the same
   checkout, restored if your computer was reset.
 - `repo_publish(repo, pr?)` pushes your branch to GitHub and, with `pr: {title, body}`, opens a draft PR.
+
+## Flaky tests
+A flaky test is a timing or ordering bug until proven otherwise. Reproduce it first: run it many times (40 is a
+good number) and count failures. Read the failing output for the shared cause (a timer, a clock, an unawaited
+promise, shared state). Fix the cause, not the test's timeout. Then run it 40 times again; "40/40" is the proof
+that goes in the PR body, with the before count.
 
 ## The loop
 1. `repo_open`, then read before you change: `git log --oneline -5`, `rg`, the README.

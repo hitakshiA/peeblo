@@ -1,53 +1,40 @@
 ---
 name: hiring-a-teammate
-description: Hire a new AI teammate when someone asks for one ("I need someone to watch our Stripe refunds", "hire a growth analyst"). Use only when a person asked; never offer a hire unprompted.
+description: Hiring a new AI teammate: when someone asks for one, or says yes to your offer after their work needed one nobody on the crew could do (a repo and test runs, an inbox to answer, a monthly close). Covers what to ask, how to shape the spec so it can actually do the job, the ID card, and install. Never offer a hire nobody's work called for.
 ---
 
 # Hiring a teammate
 
-The person asked for help with a kind of work. Your job is a teammate that fits it, at a fair price, with the
-fewest questions. The ID card is the only approval: do the thinking first, then show one finished card.
+A good hire is one that can do the job on day one, costs what the person expects, and needed at most two
+questions. The ID card is the only approval, so do the thinking before it.
 
-## 1. Understand the job (at most 2 questions)
-- From what they said, work out: what the teammate does, for whom, which tools it needs, how often, and anything
-  that must never happen.
-- Ask only what changes the hire, at most 2 questions in one `ask_human` call. Good: "Should it be able to issue
-  refunds, or only flag them?" Bad: "What should its name be?" (pick one).
-- If they gave enough, ask nothing.
+## Can it do the job?
+The most common bad hire is one that can't do what it was hired for. Before the card, check the spec against the
+work, out loud to yourself:
+- **Code work** (fix a test, ship a change): `github_repos` with the exact `owner/repo`, which gives it GitHub
+  scoped to that repo and its own checkout on its computer. Without it, it can't touch the code.
+- **Support**: the inbox it answers (`intercom`, `freshdesk`) and where policies live (Notion, Confluence).
+- **Growth or data**: the sources it reads (`posthog`, `supabase`, `hubspot`, `stripe`) and its computer for the maths.
+- **Finance**: Stripe and the sheets; money always asks a person, whatever the mode.
+- **Browsing websites** needs `computer_size: large`; nothing else does.
 
-## 2. Decide the spec yourself
-- **name**: short and friendly, after its job (Ledger for finance, Scout for research, Patch for bugs).
-- **role**: one line, "<what> for <whom>".
-- **can it do the job?** Check the spec against the work before the card: code changes need `github_repos` (the
-  exact owner/repo) and its computer; a support teammate needs the inbox it answers. A teammate that can't do what
-  it's hired for is the worst hire.
-- **the person's words win**: a budget, a mode or a repo they named goes in exactly ("cap it at $5" is
-  `budget_usd: 5`). If they change something after the card is up, draft again and post the new card.
-- **connectors**: only Otari servers it really needs (`crew_status` and the person's words tell you which exist:
-  linear, github, posthog, stripe, hubspot, notion, …).
-- **tools**: `web` for public pages, `code` for numbers and charts, `computer` for files, repos and scripts.
-  Pick `computer_size: large` only if it must click through websites.
-- **model**: call `routing_recommend` with the job; take the cheapest that fits. Leave it empty for ordinary work.
-- **budget**: start small (5–20 USD a month) unless the job is heavy; `price_estimate` helps.
-- **mode**: `auto` (asks before outward writes) unless they asked for more caution (`ask`).
-- **instructions**: their words, plus the never-do rules.
-- **profile** (what people see on its Slack profile; write it yourself, plainly):
-  - `bio`: 2–4 sentences on what it does, for whom, and how (its tools, that it asks before acting on anything
-    that matters). No hype.
-  - `agent_description`: one function-first line under 300 characters ("Reconciles Stripe charges against Xero and
-    flags mismatches for Priya").
-  - `starter_prompts`: 4 things a person would really ask it on day one, each `{title, message}`; the title is a
-    few words, the message the full ask.
+## The person's words win
+- A budget, mode, repo or limit they named goes in exactly: "cap it at $5" is `budget_usd: 5`; "read-only on
+  hubspot" means it never writes there (put it in instructions and keep writes asking).
+- If they change something after the card is up, draft again; the new card replaces the old.
+- Ask only what changes the hire, at most two questions in one go ("Should it issue refunds, or only flag them?").
+  Never ask what you can decide (its name, its face).
 
-## 3. One card
-Call `teammate_hire` with the spec. The person sees the ID card and approves once. Don't describe the card first,
-and don't ask "shall I hire it?" in text: the card is the question.
+## Shaping the rest
+- **Name**: short, after its job (Patch for bugs, Ledger for finance, Beacon for campaigns).
+- **Role**: one line, "<what> for <whom>".
+- **Budget**: small (5–20 USD a month) unless the work is heavy; `price_estimate` helps.
+- **Mode**: auto (asks before writes that matter) unless they want more caution.
+- **Profile**: a plain bio (what it does, for whom, how it works), a one-line agent description, four starter
+  prompts a person would really send it on day one.
 
-## 4. Install, then work
-A new teammate works only through its own Slack app, so it does nothing until the person clicks its install
-button (it's on the ID card and in the thread). Say in one line: "<Name> is ready. Install it to start working with
-it." Don't delegate to it before that, and never do its job yourself or speak for it. Once it's installed it says
-so in the thread, and the person can ask it directly.
-
-If someone later asks for, or mentions, a teammate that isn't installed, `delegate` tells you so and puts its
-install button in the thread again. Tell them it isn't installed yet; don't do the work yourself.
+## After the card
+- The card is the question; don't ask "shall I hire it?" in text.
+- A teammate works only through its own Slack app, so after approval it waits for the install button (on its ID
+  card and in the thread). Say in one line that it's ready to install. Don't do its job meanwhile, and never speak
+  for it. Once installed it introduces itself in the thread and takes the work.

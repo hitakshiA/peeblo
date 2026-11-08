@@ -29,7 +29,8 @@ export function skillsFor(tm: Teammate): string[] {
   const computer = tm.config.tools.includes("computer");
   return [
     ...(tm.slug === "peeblo" ? ["working-as-chief-of-staff", "hiring-a-teammate", "writing-job-specs", "channel-etiquette", "company-setup", "changing-otari-settings"] : []),
-    "writing-routines", "tidying-memory", "reviewing-work",
+    "writing-routines", "tidying-memory", "reviewing-work", "writing-in-slack", "working-with-numbers", "handling-approvals",
+    "answering-incident-questions", "reconciling-records", "replying-to-customers",
     ...(computer ? ["writing-recipes", ...(((tm.config.computer as any)?.repos ?? []).length ? ["working-in-repos"] : [])] : []),
   ].filter((s) => existsSync(join(DIR, s, "SKILL.md"))).concat(learned(tm.slug));
 }
