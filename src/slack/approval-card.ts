@@ -60,7 +60,16 @@ function what(a: any): string | null {
   const tool = String(a.tool ?? "").replace(/^[a-z]+__/, "");
   const m = /^(save|create|add|update|edit|post|send|write|set|delete|remove|archive|close)_(.+)$/.exec(tool);
   // No write verb in the name: say what the tool is, never a bare "writes".
-  if (!m) return tool ? `Uses ${tool.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}${a.server ? ` in ${serviceName(a.server)}` : ""}` : a.risk ? RISK[a.risk] ?? null : null;
+  if (!m) {
+    if (!tool) return a.risk ? RISK[a.risk] ?? null : null;
+    // In words: "Reads Sentry projects", "Runs the planner in monday.com"; the service's own name isn't repeated.
+    const words = tool.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[_\-\s.]+/).filter((w) => w && w !== String(a.server ?? "").toLowerCase());
+    const svc = a.server ? serviceName(a.server) : "";
+    const VERBS: Record<string, string> = { get: "Reads", list: "Lists", search: "Searches", run: "Runs", invoke: "Runs", submit: "Submits", generate: "Generates", execute: "Runs", send: "Sends", trigger: "Triggers", manage: "Changes" };
+    const v = VERBS[words[0]];
+    const rest = (v ? words.slice(1) : words).join(" ");
+    return v ? `${v} ${rest}${svc ? ` in ${svc}` : ""}` : `Reads ${svc ? `${svc} ` : ""}${rest}`;
+  }
   const noun = m[2].replace(/_/g, " ").replace(/s$/, "");
   const verb = /delete|remove|archive/.test(m[1]) ? "Removes" : /update|edit|set|close/.test(m[1]) ? "Changes" : "Writes";
   return `${verb} 1 ${noun}`;

@@ -12,6 +12,7 @@ export type ConnectorTool = {
   name: string;          // what the model sees: <server>__<tool>
   server: string; serverId: string; revision: string;
   tool: string; description: string; inputSchema: Record<string, unknown>; readOnlyHint: boolean | null; // null: the server says nothing
+  serverReadOnly?: boolean; // every tool on this server only reads (a registered read-only bridge, or nothing on it writes)
 };
 
 const TTL = 30 * 60_000; // tool lists change rarely; a 409 on a stale revision refreshes the server
@@ -82,12 +83,15 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
   for (const { f, t } of loaded) {
     const s = f.s!;
     if (!t) { failed.push(f.name); continue; }
+    // A read-only server: registered as one (PEEBLO_READONLY_SERVERS, the Sentry bridge by default), or none of its
+    // tools has a write or destructive word and none is marked as not read-only.
+    const serverReadOnly = READONLY_SERVERS.has(s.name) || t.tools.every((x: any) => x.annotations?.readOnlyHint !== false && !WRITE_WORDS.test(x.name) && !DESTRUCTIVE_WORDS.test(x.name));
     for (const tool of t.tools) {
       if (unavailable.has(`${s.name}.${tool.name}`)) continue;
       tools.push({
         name: `${safe(s.name)}__${safe(tool.name)}`.slice(0, 64), server: s.name, serverId: s.id, revision: t.revision,
         tool: tool.name, description: `[${s.name}] ${tool.description ?? tool.name}`.slice(0, 1024),
-        inputSchema: tool.input_schema ?? { type: "object", properties: {} }, readOnlyHint: typeof tool.annotations?.readOnlyHint === "boolean" ? tool.annotations.readOnlyHint : null,
+        inputSchema: tool.input_schema ?? { type: "object", properties: {} }, readOnlyHint: typeof tool.annotations?.readOnlyHint === "boolean" ? tool.annotations.readOnlyHint : null, serverReadOnly,
       });
     }
   }
@@ -101,6 +105,7 @@ const READ_WORDS = new Set(["get", "list", "search", "read", "fetch", "query", "
   "chart", "charts", "render", "metrics", "stats", "logs", "availability", "insights", "report", "reports", "analytics", "inspect", "whoami", "ping", "discover", "analyze", "history", "timeline", "status"]);
 // Words that make a call a write even when the server calls it read-only (a server's hint never makes a call safer
 // on its own; it can only confirm a name that says nothing about writing).
+const READONLY_SERVERS = new Set((process.env.PEEBLO_READONLY_SERVERS ?? "sentry").split(",").map((x) => x.trim()).filter(Boolean));
 const NEVER_READ = /(submit|invoke|feedback|trigger|run_|execute(?!read)|send|pay|charge)/i;
 // Word lists, matched against whole words of the tool's name (snake, kebab or camel case), never substrings:
 // "list_postgres_roles" is a read, not a "post".
@@ -133,8 +138,14 @@ function posthogExecKind(command: string): CallKind {
 // riskier, never safer: a read by name that the server says is not read-only counts as a write.
 export function classify(t: ConnectorTool, args: Record<string, unknown>): CallKind {
   if (t.server === "posthog" && t.tool === "exec" && typeof args.command === "string") return posthogExecKind(args.command);
+  // Every tool on a read-only server is a read, whatever its name.
+  if (t.serverReadOnly) return "read";
   const k = kindOfName(t.tool);
   if (k === "read" && t.readOnlyHint === false) return "write";
+  // A name of nouns only ("sentry_projects", "incidents", "deployments", "metrics"): no verb says it writes, so it
+  // reads unless its server marks it as not read-only.
+  const words = wordsOf(t.tool);
+  if (k === "write" && t.readOnlyHint !== false && !words.some((w) => WRITE.has(w) || DESTRUCTIVE.has(w) || READ_VERBS.has(w)) && !NEVER_READ.test(t.tool)) return "read";
   // A tool whose name has no write words (it was "write" only because no read word matched) and that its server
   // marks read-only is a read: Better Stack's incidents and monitors, Neon's list_*, Stripe's reports.
   if (k === "write" && t.readOnlyHint === true && !WRITE_WORDS.test(t.tool) && !DESTRUCTIVE_WORDS.test(t.tool) && !NEVER_READ.test(t.tool)) return "read";
