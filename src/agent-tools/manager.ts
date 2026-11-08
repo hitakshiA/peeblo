@@ -156,7 +156,7 @@ export const managerTools: AgentTool[] = [
       ];
       const asks = { ask: "asks before every write", auto: "asks before it writes anything that matters", trusted: "asks before it deletes anything", yolo: "acts without asking" }[String(fake.config.mode)] ?? "asks before it writes";
       const hireFacts = { role: a.role, uses: uses.join(", "), budget: `$${a.budget_usd} a month`, asks };
-      return { kind: "hire", hire: hireFacts, approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `${a.name} · ${a.role} · ${fake.config.model.default} · $${a.budget_usd}/month · ${fake.config.mode} mode · tools: ${[...(a.tools ?? []), ...(a.connectors ?? [])].join(", ") || "none"}` };
+      return { kind: "hire", hire: hireFacts, approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `Hire ${a.name}: ${String(a.role).replace(/^./, (c: string) => c.toLowerCase())}` };
     },
     async run(ctx, a) {
       // Slugs stay unique across archived teammates too (an archived "patch" keeps its history), so a taken one

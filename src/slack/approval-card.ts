@@ -10,7 +10,7 @@ const verb = (tool: string) => tool.replace(/^[a-z]+__/, "").replace(/_/g, " ");
 
 // "Okay to save comment in Linear?"
 export function question(a: any, teammate: string): string {
-  if (a.kind === "hire") return `Okay to hire ${a.summary?.split(" · ")[0] ?? "this teammate"}?`;
+  if (a.kind === "hire") return `Okay to hire ${String(a.summary ?? "").replace(/^Hire /, "").split(":")[0] || "this teammate"}?`;
   if (a.kind === "recipe_change") return `Okay to change ${teammate}'s computer setup?`;
   if (a.kind === "company_memory") return "Okay to save this company note?";
   if (a.risk === "money") {
@@ -86,7 +86,7 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
   const onlyOthers = approvers.length && (!askedBy || !approvers.includes(askedBy)) ? `only ${await approverNames(approvers)} can answer` : null;
   const line = [what(a), target(a), a.price_usd ? `≈ ${money(Number(a.price_usd))}` : null, onlyOthers].filter(Boolean).join(" · ");
   return [
-    ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${a.summary ?? "teammate"} ID card`.slice(0, 2000) }] : []),
+    ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${String(a.summary ?? "teammate").replace(/^Hire /, "").split(":")[0]}'s ID card`.slice(0, 2000) }] : []),
     { type: "card", block_id: `approval:${id}`,
       ...(domain ? { icon: { type: "image", image_url: serviceIcon(a.server) ?? `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, alt_text: serviceName(a.server) } } : {}),
       title: { type: "plain_text", text: question(a, teammate).slice(0, 150) },
