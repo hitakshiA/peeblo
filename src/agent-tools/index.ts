@@ -3,7 +3,8 @@
 import type { Teammate } from "../store/teammates.ts";
 import { otariTools } from "./otari.ts";
 import type { AgentTool } from "./types.ts";
-import { webFetch } from "./web.ts";
+import { webFetch, webSearchTool } from "./web.ts";
+import { config } from "../config.ts";
 import { computerTools } from "./computer.ts";
 import { recipeTools } from "./recipe.ts";
 import { browserTools } from "./browser.ts";
@@ -17,7 +18,7 @@ import { planTool, subagentTool } from "./work.ts";
 import { readSkillTool } from "./skills.ts";
 
 export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): AgentTool[] {
-  const all = [planTool, readSkillTool, ...slackTools, ...memoryTools, ...(tm.slug === "peeblo" ? [...managerTools, companyMemoryTool] : [askHumanTool]), askTeammateTool, ...scheduleTools, ...otariTools, ...(tm.config.tools.includes("web") ? [webFetch] : []), ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
+  const all = [planTool, readSkillTool, ...slackTools, ...memoryTools, ...(tm.slug === "peeblo" ? [...managerTools, companyMemoryTool] : [askHumanTool]), askTeammateTool, ...scheduleTools, ...otariTools, ...(tm.config.tools.includes("web") ? [webSearchTool, ...(config.webFetch ? [webFetch] : [])] : []), ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
   // A subagent looks things up but changes nothing, and opens no subagents.
   // Rarely used tools start deferred: found with find_tools when a job needs them.
   // Direct: speaking, plan, memory basics, files and shell, asking a teammate, money and models, web, and the few

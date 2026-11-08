@@ -132,6 +132,7 @@ async function look(ctx: ToolContext, question: string, guestPath: string): Prom
 
 async function perform(ctx: ToolContext, op: string, a: Record<string, any>, write: boolean): Promise<ToolResult> {
   await ensureSession(ctx);
+  if (op === "look" && !(await import("../config.ts")).config.vision) return { text: "look (asking a vision model about a screenshot) is switched off right now; read the page text instead.", isError: true };
   if (op === "look") {
     let path = a.screenshot ? String(a.screenshot) : shotPath(ctx);
     if (!a.screenshot) {

@@ -79,6 +79,8 @@ let chain: Promise<unknown> = Promise.resolve();
 let last = 0;
 export function syncManifest(teammateId: string): Promise<{ ok: boolean; error?: string }> {
   const job = chain.then(async () => {
+    // No Slack app, nothing to update (and no reason to wait a turn in the queue).
+    if (!(await pool.query("SELECT 1 FROM slack_apps WHERE teammate_id = $1 LIMIT 1", [teammateId])).rows.length) return { ok: false, error: "no Slack app" };
     const wait = last + 61_000 - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     last = Date.now();

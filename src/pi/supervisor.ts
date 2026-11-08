@@ -120,7 +120,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const models = [model, tm.config.model.fallback].filter(Boolean).join(",");
   const web = tm.config.tools.includes("web");
   const key = await teammateKey(tm);
-  const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: tm.config.tools.includes("code"), otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
+  const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: tm.config.tools.includes("code") && config.otariCode, otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
   const child = spawn(process.execPath, [PI_CLI, "--mode", "rpc",
     "--no-extensions", "-e", PI_OTARI, "-e", PEEBLO_TOOLS,
     "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
@@ -133,7 +133,8 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
     // A bare environment: no Peeblo secrets, only what Pi and pi-otari need.
     env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: join(dir, "home"), PI_CODING_AGENT_DIR: join(dir, "pi-agent"),
       PI_TELEMETRY: "0", PI_SKIP_VERSION_CHECK: "1", OTARI_BASE_URL: proxyBaseUrl(), OTARI_API_KEY: token, OTARI_MODELS: models,
-      OTARI_WEB_SEARCH: web ? "on" : "off", OTARI_WEB_FETCH: "off", OTARI_GUARDRAILS: "off", PEEBLO_TOOLS_URL: toolsBaseUrl() },
+      // Web search isn't attached to every call: it's Peeblo's own web_search tool, which the model chooses.
+      OTARI_WEB_SEARCH: "off", OTARI_WEB_FETCH: "off", OTARI_GUARDRAILS: "off", PEEBLO_TOOLS_URL: toolsBaseUrl() },
   });
   child.stderr!.on("data", (d) => { const s = String(d).trim(); if (s && !s.startsWith("Warning: No project session")) console.error(`pi[${tm.slug}/${sessionId}]: ${s.slice(0, 300)}`); });
   const rpc = new PiRpc(child.stdin!, child.stdout!);

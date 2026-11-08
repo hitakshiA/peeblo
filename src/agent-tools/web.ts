@@ -37,3 +37,27 @@ export const webFetch: AgentTool = {
     }
   },
 };
+
+// web_search: the model chooses it (it isn't attached to every call). One small call with Otari's web search on,
+// limited to the teammate's sites, answered as a list of results; the text is untrusted like any page.
+export const webSearchTool: AgentTool = {
+  name: "web_search",
+  description: "Search the public web. Returns up to 5 results (title, link, one line). Cite what you use.",
+  input_schema: object({ query: { type: "string" } }),
+  kind: "read",
+  async run(ctx, a) {
+    const { allowed_domains: allow, blocked_domains: block } = ctx.teammate.config.web;
+    const tool: Record<string, unknown> = { type: "otari_web_search", ...(allow.length ? { allowed_domains: allow } : {}), ...(block.length ? { blocked_domains: block } : {}) };
+    try {
+      const r = await otari<any>("POST", "/chat/completions", {
+        model: ctx.teammate.config.model.default, max_tokens: 600, temperature: 0, tools: [tool], ...(ctx.endUser ? { user: ctx.endUser } : {}),
+        messages: [{ role: "user", content: `Search the web for: ${a.query}\nReply with up to 5 results, one per line: title — URL — one short line on what it says. Nothing else.` }],
+      });
+      const text = String(r.data?.choices?.[0]?.message?.content ?? "").trim() || "No results.";
+      return { text, untrusted: "web:search", data: { request_id: r.requestId, cost_usd: r.data?.usage?.cost_usd ?? null } };
+    } catch (e) {
+      const o = e as OtariError;
+      return { text: `Web search failed: ${o.message.slice(0, 200)}`, isError: true, data: { request_id: o.requestId } };
+    }
+  },
+};

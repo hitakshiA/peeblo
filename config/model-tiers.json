@@ -104,39 +104,27 @@
   "roles": {
     "peeblo-manager": {
       "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [
-        "xiaomi/mimo-v2.6-pro",
-        "z-ai/glm-5.3-flash"
-      ],
+      "fallback": [],
       "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap)"
     },
     "peeblo-worker": {
       "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [
-        "xiaomi/mimo-v2.6-pro",
-        "z-ai/glm-5.3-flash"
-      ],
+      "fallback": [],
       "purpose": "teammates' everyday work"
     },
     "peeblo-reviewer": {
-      "default": "minimax/minimax-m3.1-flash",
-      "fallback": [
-        "xiaomi/mimo-v2.6-flash"
-      ],
+      "default": "deepseek/deepseek-v4.1-flash-1017",
+      "fallback": [],
       "purpose": "the approval gate's review (fast, a different family from the worker)"
     },
     "peeblo-grader": {
-      "default": "xiaomi/mimo-v2.6-pro",
-      "fallback": [
-        "minimax/minimax-m3.1-flash"
-      ],
+      "default": "deepseek/deepseek-v4.1-flash-1017",
+      "fallback": [],
       "purpose": "output review and eval grading (best points per dollar; off the hot path)"
     },
     "peeblo-judge": {
-      "default": "minimax/minimax-m3.1-flash",
-      "fallback": [
-        "xiaomi/mimo-v2.6-flash"
-      ],
+      "default": "deepseek/deepseek-v4.1-flash-1017",
+      "fallback": [],
       "purpose": "short typed judgments at hook points"
     },
     "peeblo-vision": {
@@ -156,7 +144,7 @@
   },
   "measured": {
     "deepseek/deepseek-v4.1-flash-1017": {
-      "cost_per_call": 0.000032,
+      "cost_per_call": 3.2e-05,
       "prompt_tokens_per_call": 819,
       "completion_tokens_per_call": 68,
       "output_tokens_per_second": 50.7,
@@ -165,7 +153,7 @@
       "at": "2026-11-07"
     },
     "xiaomi/mimo-v2.6-pro": {
-      "cost_per_call": 0.000098,
+      "cost_per_call": 9.8e-05,
       "prompt_tokens_per_call": 712,
       "completion_tokens_per_call": 76,
       "output_tokens_per_second": 19.3,
@@ -174,7 +162,7 @@
       "at": "2026-11-07"
     },
     "minimax/minimax-m3.1-flash": {
-      "cost_per_call": 0.000094,
+      "cost_per_call": 9.4e-05,
       "prompt_tokens_per_call": 987,
       "completion_tokens_per_call": 123,
       "output_tokens_per_second": 98.1,
@@ -183,7 +171,7 @@
       "at": "2026-11-07"
     },
     "z-ai/glm-5.3-flash": {
-      "cost_per_call": 0.000074,
+      "cost_per_call": 7.4e-05,
       "prompt_tokens_per_call": 648,
       "completion_tokens_per_call": 39,
       "output_tokens_per_second": 43.7,
@@ -192,7 +180,7 @@
       "at": "2026-11-07"
     },
     "xiaomi/mimo-v2.6-flash": {
-      "cost_per_call": 0.000029,
+      "cost_per_call": 2.9e-05,
       "prompt_tokens_per_call": 647,
       "completion_tokens_per_call": 70,
       "output_tokens_per_second": 10.7,
@@ -209,5 +197,6 @@
       "provider": "mistral",
       "at": "2026-11-07"
     }
-  }
+  },
+  "night": "Nov 9 night: DeepSeek V4.1 Flash only for every role, no fallbacks to other families (routing build in the morning). peeblo-vision is unused tonight (PEEBLO_VISION=off)."
 }

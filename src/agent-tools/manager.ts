@@ -57,7 +57,8 @@ function configFrom(a: any): Partial<TeammateConfig> {
   return {
     // The default model is the worker role's, from config/model-tiers.json.
     name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || ROLES["peeblo-worker"].default, fallback: ROLES["peeblo-worker"].fallback[0] },
-    budget: { monthly_usd: a.budget_usd }, tools: a.tools ?? [], connectors: a.connectors ?? [], mode: a.mode ?? "auto",
+    // Every teammate has its own computer (small unless it browses); code and data work run there.
+    budget: { monthly_usd: a.budget_usd }, tools: [...new Set([...(a.tools ?? []), "computer"])], connectors: a.connectors ?? [], mode: a.mode ?? "auto",
     computer: { size: a.computer_size ?? "small", allowed_hosts: [] } as any,
     ...(a.profile ? { profile: a.profile } : {}),
   };
