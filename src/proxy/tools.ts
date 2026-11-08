@@ -151,6 +151,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   base.via = "peeblo";
   base.kind = t.kind;
   if (t.name === "computer_bash") base.command = String(args.command ?? "").slice(0, 500); // the audit keeps what ran
+  if (t.name === "read_skill") base.skill = String(args.skill ?? ""); // which skill was read (the skills eval reads it)
   const streakKey = `${ctx.sessionId}:${t.name}`;
   const problem = validate(t.input_schema as Schema, args);
   if (problem) {

@@ -207,6 +207,13 @@ export function startProxy(): Promise<Server> {
 
     // Money is code (K16): a call whose estimate would take the teammate or the person over their budget is
     // refused here, before it reaches Otari, in Otari's own refusal shape.
+    // Debugging aid (off unless PEEBLO_DUMP_SYSTEM names a folder): the system prompt each session really sends.
+    if (isInference && raw && process.env.PEEBLO_DUMP_SYSTEM) {
+      const sys = JSON.parse(raw.toString("utf8")).messages?.find((m: any) => m.role === "system" || m.role === "developer")?.content;
+      const { writeFile, mkdir } = await import("node:fs/promises");
+      await mkdir(process.env.PEEBLO_DUMP_SYSTEM, { recursive: true }).catch(() => {});
+      await writeFile(`${process.env.PEEBLO_DUMP_SYSTEM}/${b.sessionId}.txt`, typeof sys === "string" ? sys : JSON.stringify(sys)).catch(() => {});
+    }
     if (isInference && raw && config.buildPriceCap.length) {
       const why = await overBuildCap(JSON.parse(raw.toString("utf8")).model).catch(() => null);
       if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "build_price_cap", "peeblo-refused": "build_price_cap" }).end(JSON.stringify({ detail: why, code: "build_price_cap" }));

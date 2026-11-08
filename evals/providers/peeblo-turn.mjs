@@ -26,8 +26,10 @@ export default class PeebloTurn {
     const person = PEOPLE[vars.person ?? "owner"];
     const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     // A session per test; config.kind and config.place make it e.g. a channel session in Slack (speaking cases).
-    const place = this.config.place ? JSON.parse(JSON.stringify(this.config.place).replaceAll("{stamp}", stamp)) : {};
-    const session = await api("POST", `/v1/teammates/${teammate}/sessions`, { kind: this.config.kind ?? "thread", place_key: `C0EVAL:${stamp}`, place });
+    // A test may set its own kind and place (vars.kind, vars.place) over the provider's.
+    const placeCfg = vars.place ?? this.config.place;
+    const place = placeCfg ? JSON.parse(JSON.stringify(placeCfg).replaceAll("{stamp}", stamp)) : {};
+    const session = await api("POST", `/v1/teammates/${teammate}/sessions`, { kind: vars.kind ?? this.config.kind ?? "thread", place_key: `C0EVAL:${stamp}`, place });
     const sub = await api("POST", `/v1/sessions/${session.id}/submissions`, { text: prompt, request_id: `eval-${stamp}`, person });
     const until = Date.now() + 300_000;
     const answered = new Set();
@@ -36,10 +38,11 @@ export default class PeebloTurn {
       for (const e of j.events.filter((x) => x.type === "approval.requested")) {
         if (answered.has(e.data.approval_id)) continue;
         answered.add(e.data.approval_id);
-        await api("POST", `/v1/approvals/${e.data.approval_id}`, { decision: "denied", scope: "once" }).catch(() => {});
+        // Declined by the person the card names (every card has approvers; anyone else is refused).
+        await api("POST", `/v1/approvals/${e.data.approval_id}`, { decision: "denied", scope: "once", person_id: e.data.action?.approvers?.[0] ?? null }).catch(() => {});
       }
       if (["done", "failed", "cancelled"].includes(j.run.status)) {
-        const tools = j.events.filter((x) => x.type === "tool.call").map((x) => ({ tool: x.data.tool, status: x.data.status }));
+        const tools = j.events.filter((x) => x.type === "tool.call").map((x) => ({ tool: x.data.tool, status: x.data.status, ...(x.data.skill ? { skill: x.data.skill } : {}) }));
         const calls = j.events.filter((x) => x.type === "model.call" && x.data.role !== "guard");
         const answer = j.events.filter((x) => x.type === "turn.finished").map((x) => x.data.text).pop() ?? "";
         const cost = calls.reduce((a, c) => a + (Number(c.data.cost_usd) || 0), 0);
