@@ -20,7 +20,7 @@ Slack ─▶ core ─▶ run (DBOS) ─▶ Pi (on the host, no keys)
 
 | Part | What it does | Where |
 |---|---|---|
-| Client and catalog | One client for hosted Otari: region, retries for safe calls, request ids on errors. The model catalog with prices and context windows, and Peeblo's list of open-weight families (the catalog has no such flag). Cost estimates before a run. | `src/otari/client.ts`, `src/otari/catalog.ts` |
+| Client and catalog | One client for hosted Otari: region, retries for safe calls, request ids on errors. The model catalog with prices and context windows, and Peeblo's hand-kept list of open-weight families (the catalog's `/catalog/models` does carry an `open_weights` field; switching to it is a morning item). Cost estimates before a run. | `src/otari/client.ts`, `src/otari/catalog.ts` |
 | Model proxy | Pi talks to a loopback proxy with a per-session token. The proxy swaps in the real key and adds the end user, `Otari-Conversation-Id` (the session), `Otari-Tags` (teammate, session, run) and an idempotency key per attempt. It reads `Otari-Request-ID`, `-Provider`, `-Model`, `-Attempt-Count`, `-Fallback`, `-Guardrails` and the inline `cost_usd` into events. | `src/proxy/relay.ts` |
 | Receipts | A receipt is a fold over a run's events: models, providers, cost, fallbacks, web and code calls, connector calls, approvals, which guard checked it, and links into the dashboard. A call cut off by a crash is reconciled against Otari's usage record. | `src/receipts.ts` |
 | People and budgets | Each Slack person is an Otari end user (`slack-<team>-<user>`) on a budget tier. When Otari refuses a call for budget, the person gets a sentence with Otari's own numbers. | `src/otari/people.ts` |
