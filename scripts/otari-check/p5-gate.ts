@@ -21,10 +21,12 @@ await check(S, "in Auto, a Stripe refund asks once, per action", async (c) => {
   c.note("asks", asks.map((e: any) => `${e.data.action?.tool}:${e.data.action?.risk}`)); c.note("writes", writes.map((x) => x.status));
   expect(money.length === 1, `money approvals: ${money.length}`);
   expect(money[0].data.action.per_action === true, "the refund card offered a standing grant");
-  // Stripe's agent key also asks a Stripe admin for writes (its own approval page): Peeblo's one card is the part
-  // Peeblo controls; the refund then either completes or waits on Stripe's approval (an account setting).
-  const stripeWaits = writes.some((x) => /approval request/i.test(String(x.error ?? ""))) || /approval/i.test(answer(r.events));
-  expect(writes.some((x) => x.status === "completed") || stripeWaits, `refund write: ${JSON.stringify(writes.map((x) => [x.status, x.error]))}`);
+  // Peeblo's card is the only approval: Stripe's own approval is off for the agent key (docs/SETUP.md), so the
+  // refund completes right after the card, with no wait in Stripe.
+  expect(asks.length === 1, `cards: ${asks.length}`);
+  const stripeWaits = writes.some((x) => /approval request/i.test(String(x.error ?? "")));
+  expect(!stripeWaits, "the refund waited for Stripe's own approval");
+  expect(writes.some((x) => x.status === "completed"), `refund write: ${JSON.stringify(writes.map((x) => [x.status, x.error]))}`);
   c.note("stripe_side_approval", stripeWaits);
   c.note("answer", answer(r.events).slice(0, 160));
 });
