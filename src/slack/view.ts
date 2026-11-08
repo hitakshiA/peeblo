@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean;
+  held?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[];
 };
 
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u.slice(0, 40); } };
@@ -54,7 +54,7 @@ async function placeOf(sessionId: string | null): Promise<SlackPlace | null> {
 
 const enqueue = (v: View, f: () => Promise<unknown>) => { v.queue = v.queue.then(f).catch((e) => console.error("slack view:", (e as Error).message)); return v.queue; };
 const newView = (place: SlackPlace, name: string, slug: string, failedStream: boolean): View =>
-  ({ place, teammate: name, slug, streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), byTitle: new Map(), queue: Promise.resolve(), failedStream, text: "", approvals: [], done: [] });
+  ({ place, teammate: name, slug, streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), byTitle: new Map(), queue: Promise.resolve(), failedStream, text: "", approvals: [], done: [], displays: [] });
 
 async function start(runId: string, place: SlackPlace, teammateId: string): Promise<View> {
   const tm = await getTeammate(teammateId);
@@ -150,7 +150,7 @@ function step(v: View, callId: string, title: string, status: Task["status"], ou
   // sources within a stream rather than replacing them).
   const t: Task = { title, status, output: prev?.output ?? output, sources: src };
   v.tasks.set(id, t);
-  if (status === "complete") v.done.push(title);
+  if (status === "complete" && output !== "not now") v.done.push(title);
   const fresh = src.filter((s) => !(prev?.sources ?? []).some((x) => x.url === s.url));
   const newOutput = !prev?.output && output ? output : undefined;
   return chunks(v, [
@@ -177,10 +177,14 @@ async function ending(runId: string, ok: boolean): Promise<any[]> {
 async function finish(runId: string, v: View, ok: boolean, fallbackText: string | null): Promise<void> {
   await enqueue(v, async () => {
     v.finished = true;
-    const blocks = await ending(runId, ok);
+    // Tables, charts and KPI strips (show_data) sit under the answer, before the receipt; at most 2 charts.
+    let charts = 0;
+    const shown = v.displays.filter((b) => b.type !== "data_visualization" || ++charts <= 2);
+    const blocks = [...shown, ...(await ending(runId, ok))];
     // Open steps close with the run; the plan folds into one line made from the step verbs.
     for (const t of v.tasks.values()) if (t.status === "in_progress" || t.status === "pending") t.status = ok ? "complete" : "error";
-    const summary = summaryLine(v.done) || (ok ? "Done" : "Stopped");
+    const declined = v.approvals.some((x) => x.done && JSON.stringify(x.done).includes("Not now"));
+    const summary = summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
     if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }
     if (v.frozen) {
       if (fallbackText) v.text = `${v.text}${v.text ? "\n\n" : ""}${fallbackText}`;
@@ -263,7 +267,18 @@ async function outcomeBlocks(d: any, runId: string | null): Promise<any[]> {
   const name = who ? String(who).split(" ")[0] : "someone";
   const now = Math.floor(Date.now() / 1000);
   const at = `<!date^${now}^{time}|just now>`;
-  if (d.status === "approved") return [{ type: "context", elements: [{ type: "mrkdwn", text: `✓ Approved by ${name}${d.edited ? " (edited)" : ""} · ${at}` }] }];
+  if (d.status === "approved") {
+    const approved = { type: "context", elements: [{ type: "mrkdwn", text: `✓ Approved by ${name}${d.edited ? " (edited)" : ""} · ${at}` }] };
+    // One quiet offer to make it standing, only when the approver is the teammate's owner (or an admin).
+    const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [d.approval_id])).rows[0];
+    const { alwaysPhrase } = await import("./approval-card.ts");
+    const phrase = row ? alwaysPhrase(row.action) : null;
+    const tm = row ? await getTeammate(row.action.teammate) : null;
+    const person = d.by ? (await pool.query("SELECT * FROM people WHERE id = $1", [d.by])).rows[0] : null;
+    const { mayManageTeammate } = await import("../authority.ts");
+    if (!phrase || !tm || !person || !mayManageTeammate(tm, person)) return [approved];
+    return [approved, { type: "actions", block_id: `always:${d.approval_id}`, elements: [{ type: "button", text: { type: "plain_text", text: phrase.replace(/\?$/, "") }, action_id: "always_allow", value: d.approval_id }] }];
+  }
   if (d.status === "denied") return [{ type: "context", elements: [{ type: "mrkdwn", text: `Not now · ${name}${d.reason ? `: “${String(d.reason).slice(0, 200)}”` : ""}` }] }];
   return [{ type: "section", text: { type: "mrkdwn", text: "*Expired.* Nobody answered in time, so nothing ran." } },
     ...(runId ? [{ type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Ask again" }, action_id: "retry_run", value: runId }] }] : [])];
@@ -283,6 +298,41 @@ async function approvalResolved(v: View | undefined, e: EventRow): Promise<void>
   if (v && d.status !== "expired") await sessionStatus(v, "processing");
 }
 
+// After a core restart the in-memory view is gone. If the run's message already holds an inline approval card, the
+// view is rebuilt from the event log (steps, cards and their outcomes, posted text, displays) so the rest of the run
+// keeps redrawing that one message instead of starting a second one.
+const plain = new Set<string>(); // runs checked after a restart that have no inline card to rebuild
+async function revive(runId: string, sessionId: string | null): Promise<View | undefined> {
+  const cards = (await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'approval.card' AND (data->>'inline')::boolean ORDER BY id", [runId])).rows.map((r) => r.data);
+  if (!cards.length) return undefined;
+  const place = await placeOf(sessionId);
+  if (!place) return undefined;
+  const s = await getSession(sessionId!);
+  const tm = await getTeammate(s!.teammate_id);
+  const v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", false);
+  v.streamTs = cards[0].ts; v.frozen = true;
+  const { cardBlocks } = await import("./approval-card.ts");
+  const askedBy = (await pool.query("SELECT sub.person_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [runId])).rows[0]?.person_id;
+  for (const e of (await pool.query("SELECT id, type, data FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'slack.display', 'approval.requested', 'approval.resolved') ORDER BY id", [runId])).rows) {
+    const d = e.data as any;
+    if (e.type === "tool.call") {
+      const title = stepTitle(d.tool, { command: d.command, kind: d.kind, callee: d.callee });
+      if (!title) continue;
+      const st: Task["status"] = d.status === "completed" || d.status === "denied" ? "complete" : ["failed", "refused", "expired", "invalid"].includes(d.status) ? "error" : "in_progress";
+      const id = (d.kind === "read" && v.byTitle.get(title)) || String(d.id ?? e.id);
+      if (d.kind === "read") v.byTitle.set(title, id);
+      const prev = v.tasks.get(id);
+      v.tasks.set(id, { title, status: st, output: prev?.output ?? (d.status === "waiting_approval" ? "waiting for approval" : st === "complete" ? stepOutput(d.tool, d.summary, Number(d.lines ?? 0)) : undefined), sources: prev?.sources ?? [] });
+      if (st === "complete") v.done.push(title);
+    } else if (e.type === "slack.post") { v.posted++; v.text += `${v.posted > 1 ? "\n\n" : ""}${d.text}`; }
+    else if (e.type === "slack.display") v.displays.push(...(d.blocks ?? []));
+    else if (e.type === "approval.requested" && cards.some((c) => c.approval_id === d.approval_id)) v.approvals.push({ id: d.approval_id, blocks: await cardBlocks(d.action ?? {}, d.approval_id, v.teammate, askedBy) });
+    else if (e.type === "approval.resolved") { const a = v.approvals.find((x) => x.id === d.approval_id); if (a) a.done = await outcomeBlocks(d, runId); }
+  }
+  views.set(runId, v);
+  return v;
+}
+
 export function installSlackView(): void {
   onEvent(async (e) => {
     if (!e.run_id) return;
@@ -294,7 +344,16 @@ export function installSlackView(): void {
       await start(e.run_id, place, s!.teammate_id);
       return;
     }
+    // After a restart: a message with an inline card is rebuilt and keeps being redrawn in place.
+    if (!v && e.type !== "run.started" && !plain.has(e.run_id)) { v = await revive(e.run_id, e.session_id); if (!v) plain.add(e.run_id); }
     if (!v && e.type === "approval.resolved") return void approvalResolved(undefined, e);
+    // A run that began before a restart and now needs an approval: the card goes out as its own message.
+    if (!v && e.type === "approval.requested") {
+      const place = await placeOf(e.session_id);
+      const s = place ? await getSession(e.session_id!) : null;
+      const tm = s ? await getTeammate(s.teammate_id) : null;
+      if (place) { v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true); views.set(e.run_id, v); }
+    }
     if (!v && (e.type === "run.finished" || e.type === "run.failed")) {
       // Core restarted mid-run: the stream is gone, so the reply and receipt go out as a plain message.
       const place = await placeOf(e.session_id);
@@ -316,7 +375,7 @@ export function installSlackView(): void {
     } else if (e.type === "tool.call") {
       const title = stepTitle(d.tool, { command: d.command, kind: d.kind, callee: d.callee });
       if (!title) return;
-      const st = d.status === "completed" ? "complete" : ["failed", "refused", "denied", "expired", "invalid"].includes(d.status) ? "error" : "in_progress";
+      const st = d.status === "completed" || d.status === "denied" ? "complete" : ["failed", "refused", "expired", "invalid"].includes(d.status) ? "error" : "in_progress";
       // A failed attempt that a later call fixes isn't news; it shows only as the step's state.
       const output = d.status === "waiting_approval" ? "waiting for approval" : d.status === "denied" ? "not now" : st === "complete" ? stepOutput(d.tool, d.summary, Number(d.lines ?? 0)) : undefined;
       const sources = [...(d.sources ?? []), ...(d.url ? [d.url] : [])].filter((u: any) => typeof u === "string" && /^https?:/.test(u));
@@ -326,6 +385,8 @@ export function installSlackView(): void {
       const text = `${v.posted > 1 ? "\n\n" : ""}${d.text}`;
       if (v.frozen) { v.text += text; void enqueue(v, () => redraw(v!, planTitle(v!))); }
       else void enqueue(v, () => chunks(v!, [{ type: "markdown_text", text }]));
+    } else if (e.type === "slack.display") {
+      v.displays.push(...(d.blocks ?? []));
     } else if (e.type === "budget.blocked" && (d.scope === "teammate" || d.scope === "api_token" || d.scope === "key")) {
       void enqueue(v, () => budgetCard(v!, d));
     } else if (e.type === "approval.requested") {

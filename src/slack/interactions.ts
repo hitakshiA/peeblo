@@ -51,21 +51,13 @@ async function namesFor(approvalId: string): Promise<string> {
 
 export function installSlackInteractions(): void {
   onSlackInteraction(async ({ appId, payload }) => {
-    // The "Not now" form: not now (with an optional reason), or approve with edits, for this job, or always.
-    if (payload.type === "view_submission" && payload.view?.callback_id === "not_now") {
+    // The "Not now" form: a no, with the reason if one was given (Send), or without one (Skip closes the form).
+    if ((payload.type === "view_submission" || payload.type === "view_closed") && payload.view?.callback_id === "not_now") {
       const id = String(payload.view.private_metadata);
       const team = payload.team?.id ?? payload.user?.team_id;
       const who = await personForSlack(team, payload.user.id);
-      const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [id])).rows[0];
-      if (!row) return;
-      const values = payload.view.state?.values ?? {};
-      const choice = String(values.choice?.v?.selected_option?.value ?? "deny");
-      const reason = String(values.reason?.v?.value ?? "").trim() || undefined;
-      const { editedArgs } = await import("./approval-card.ts");
-      const argValues = Object.fromEntries(Object.entries(values).filter(([k]) => k.startsWith("arg:")));
-      await answerApproval(id, choice === "deny" ? { decision: "denied", scope: "once", personId: who.id, reason }
-        : choice === "edit" ? { decision: "approved", scope: "once", personId: who.id, arguments: editedArgs(row.action.arguments ?? {}, argValues), reason }
-        : { decision: "approved", scope: choice === "always" ? "always" : "job", personId: who.id, reason });
+      const reason = payload.type === "view_submission" ? String(payload.view.state?.values?.reason?.v?.value ?? "").trim() || undefined : undefined;
+      await answerApproval(id, { decision: "denied", scope: "once", personId: who.id, reason });
       return;
     }
     // The Edit form on an approval card: the approver's edited call is what runs.
@@ -103,6 +95,22 @@ export function installSlackInteractions(): void {
       const tm = await getTeammate(row.action.teammate);
       const { notNowModal } = await import("./approval-card.ts");
       await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: notNowModal(row.action, String(a.value), tm?.config.name ?? "the teammate") });
+      return;
+    }
+    // "Always allow …?" under an approved card: the teammate's owner (or an admin) adds a standing grant.
+    if (a.action_id === "always_allow") {
+      const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [a.value])).rows[0];
+      const tm = row ? await getTeammate(row.action.teammate) : null;
+      const { mayManageTeammate } = await import("../authority.ts");
+      if (!row?.action?.grant_fp || !tm) return;
+      if (!mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${tm.config.name}'s owner can allow this for good.` }));
+      const exists = (await pool.query("SELECT 1 FROM grants WHERE teammate_id = $1 AND fingerprint = $2 AND scope = 'always' LIMIT 1", [tm.id, row.action.grant_fp])).rows.length;
+      if (!exists) await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, 'always', NULL)", [`gr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, tm.id, row.action.grant_fp]);
+      await appendEvent({ type: "grant.added", data: { teammate_id: tm.id, approval_id: a.value, fingerprint: row.action.grant_fp, by: who.id } });
+      const { alwaysPhrase } = await import("./approval-card.ts");
+      const done = `${(alwaysPhrase(row.action) ?? "This").replace(/^Always allow /, "").replace(/\?$/, "")}: always allowed now · ${String(who.display_name ?? "").split(" ")[0]}`;
+      const blocks = (payload.message?.blocks ?? []).map((b: any) => (b.block_id === `always:${a.value}` ? { type: "context", elements: [{ type: "mrkdwn", text: done.charAt(0).toUpperCase() + done.slice(1) }] } : b));
+      if (payload.channel?.id && payload.message?.ts) await slack(appId, "chat.update", { channel: payload.channel.id, ts: payload.message.ts, text: payload.message.text ?? "", blocks }).catch(() => null);
       return;
     }
     // The Receipt button: the receipt modal (facts, steps, one "Open full trace" link).

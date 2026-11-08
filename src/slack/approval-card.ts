@@ -2,7 +2,7 @@
 // the service's icon, "Okay to write to Linear?", one quiet line ("Writes 1 comment · GRO-323 · ≈ $0.0002"), and
 // Approve / Not now. "Not now" opens a small form: a reason (optional), or approve with edits, or for the whole job.
 import { approverNames } from "../approvers.ts";
-import { money, serviceName } from "./look.ts";
+import { money, serviceIcon, serviceName } from "./look.ts";
 
 const DOMAINS: Record<string, string> = { linear: "linear.app", github: "github.com", posthog: "posthog.com", stripe: "stripe.com", hubspot: "hubspot.com", notion: "notion.so", sheets: "google.com", intercom: "intercom.com", freshdesk: "freshdesk.com", supabase: "supabase.com", airtable: "airtable.com" };
 const human = (k: string) => k.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -76,39 +76,39 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
   return [
     ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${a.summary ?? "teammate"} ID card`.slice(0, 2000) }] : []),
     { type: "card", block_id: `approval:${id}`,
-      ...(domain ? { icon: { type: "image", image_url: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, alt_text: serviceName(a.server) } } : {}),
+      ...(domain ? { icon: { type: "image", image_url: serviceIcon(a.server) ?? `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, alt_text: serviceName(a.server) } } : {}),
       title: { type: "plain_text", text: question(a, teammate).slice(0, 150) },
       ...(line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
       ...(a.kind === "hire" || a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } } : {}),
+      // A card takes only buttons (an overflow menu is refused), so Edit is a plain third button.
       actions: [
         { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "approve_once", value: id },
         { type: "button", text: { type: "plain_text", text: "Not now" }, action_id: "not_now", value: id },
+        ...(a.arguments && typeof a.arguments === "object" && Object.keys(a.arguments).length && a.kind !== "hire" ? [{ type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "edit_approval", value: id }] : []),
       ] },
   ];
 }
 
-// "Not now" opens this: a reason (optional), and behind it the other answers (approve with edits, for this job,
-// always). Edit and Reply live here, not as extra buttons on the card.
+// "Not now" is a no: it only asks why (optional, one line). Send passes the reason to the agent; Skip says no
+// without one (the modal tells Peeblo when it's closed).
 export function notNowModal(a: any, id: string, teammate: string): any {
-  const grantable = !(a.per_action || a.kind === "hire" || a.kind === "recipe_change" || a.kind === "company_memory" || String(a.tool ?? "").startsWith("otari_set"));
-  const editable = a.arguments && typeof a.arguments === "object" && Object.keys(a.arguments).length > 0 && a.kind !== "hire";
-  const opt = (value: string, text: string) => ({ value, text: { type: "plain_text", text } });
-  const choices = [opt("deny", "Not now"), ...(editable ? [opt("edit", "Approve with my edits")] : []), ...(grantable ? [opt("job", "Approve for this whole job"), opt("always", "Always approve this")] : [])];
-  const inputs = editable ? Object.entries(a.arguments ?? {}).slice(0, 12).map(([k, v]) => {
-    const text = typeof v === "string" ? v : JSON.stringify(v);
-    return { type: "input", block_id: `arg:${k}`, label: { type: "plain_text", text: human(k).slice(0, 2000) }, optional: true,
-      element: { type: "plain_text_input", action_id: "v", initial_value: text.slice(0, 3000), multiline: text.length > 60 } };
-  }) : [];
   return {
-    type: "modal", callback_id: "not_now", private_metadata: id,
-    title: { type: "plain_text", text: "Not now" }, submit: { type: "plain_text", text: "Send" }, close: { type: "plain_text", text: "Cancel" },
+    type: "modal", callback_id: "not_now", private_metadata: id, notify_on_close: true,
+    title: { type: "plain_text", text: "Not now" }, submit: { type: "plain_text", text: "Send" }, close: { type: "plain_text", text: "Skip" },
     blocks: [
-      { type: "section", text: { type: "mrkdwn", text: `*${question(a, teammate)}*\n${preview(a).slice(0, 1500)}` } },
-      { type: "input", block_id: "choice", label: { type: "plain_text", text: "What should happen" }, element: { type: "radio_buttons", action_id: "v", initial_option: choices[0], options: choices } },
-      { type: "input", block_id: "reason", optional: true, label: { type: "plain_text", text: `Tell ${teammate} why, or what to do instead` }, element: { type: "plain_text_input", action_id: "v", multiline: true } },
-      ...(inputs.length ? [{ type: "context", elements: [{ type: "mrkdwn", text: "Edits below apply only with “Approve with my edits”." }] }, ...inputs] : []),
+      { type: "context", elements: [{ type: "mrkdwn", text: question(a, teammate).slice(0, 300) }] },
+      { type: "input", block_id: "reason", optional: true, label: { type: "plain_text", text: `Tell ${teammate} why` }, element: { type: "plain_text_input", action_id: "v", max_length: 300, placeholder: { type: "plain_text", text: "e.g. wait until Maya has seen it" } } },
     ],
   };
+}
+
+// "Always allow comments in Linear?": offered once, after an owner approves a call a grant can cover.
+export function alwaysPhrase(a: any): string | null {
+  if (a.per_action || !a.grant_fp || !a.server) return null;
+  const tool = String(a.tool ?? "").replace(/^[a-z]+__/, "");
+  const m = /^(?:save|create|add|update|edit|post|send|write|set)_(.+)$/.exec(tool);
+  const noun = m ? m[1].replace(/_/g, " ").replace(/y$/, "ie").replace(/s?$/, "s") : "this";
+  return `Always allow ${noun === "this" ? "this" : noun} in ${serviceName(a.server)}?`;
 }
 
 // The Edit form: one input per argument (top level; nested ones as JSON), prefilled.

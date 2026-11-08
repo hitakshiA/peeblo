@@ -156,6 +156,12 @@ export function startIngress(): Promise<Server> {
         const png = await readFile(`${config.dataDir}/cards/${url.pathname.slice(7)}`).catch(() => null);
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
       }
+      else if (req.method === "GET" && /^\/services\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
+        // A connected service's brand tile, for approval cards.
+        const { readFile } = await import("node:fs/promises");
+        const png = await readFile(new URL(`../../assets/services/${url.pathname.slice(10)}`, import.meta.url)).catch(() => null);
+        if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
+      }
       else if (req.method === "GET" && /^\/models\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
         // A model maker's logo for the receipt chip (Slack images can't be SVG).
         const { readFile } = await import("node:fs/promises");

@@ -246,7 +246,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       const a = await askApproval(ctx.runId, ctx.sessionId, action, await approvalTtl(ctx.runId));
       if (a.status !== "approved") {
         await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
-        return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : `A person said no${a.reason ? `: "${a.reason}"` : ""}, so nothing changed. ${a.reason ? "Act on what they said." : "Don't ask again in this conversation."}`, isError: true });
+        return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
       }
       base.approval_id = a.approvalId;
       if (a.arguments) { args = a.arguments; base.edited = true; }
@@ -312,14 +312,14 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       if (!b.runId) return reply({ text: "This call needs a person's approval, and there is no run to ask in.", isError: true });
       {
         await event({ status: "waiting_approval" });
-        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}) };
+        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, grant_fp: perAction ? null : toolFp, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}) };
         // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no (K11).
         const ttl = await approvalTtl(b.runId);
         // Who may answer: src/approvers.ts (the owner when unattended, else the person who asked).
         const a = await askApproval(b.runId, b.sessionId, action, ttl);
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
-          return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : `A person said no to this call${a.reason ? `: "${a.reason}"` : ""}, so it did not run. ${a.reason ? "Act on what they said; don't repeat the same call." : "Do not retry it."}`, isError: true });
+          return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
         }
         if (!perAction && (a.scope === "always" || a.scope === "job")) {
           await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);

@@ -64,8 +64,25 @@ export async function requestApproval(runId: string, sessionId: string, action: 
   return handle.getResult();
 }
 
-// From outside a workflow (a tool call during a turn).
+// The same call in the same run (what a person sees on the card): its kind, teammate, tool and arguments.
+const sameCall = (a: any) => fingerprint({ kind: a.kind ?? null, teammate: a.teammate ?? null, server: a.server ?? null, tool: a.tool ?? null, arguments: JSON.stringify(a.arguments ?? {}) });
+
+// From outside a workflow (a tool call during a turn). After a restart the call that was waiting is gone; when the
+// agent makes the same call again it joins the card already shown (still waiting, or answered but never run), so a
+// person never answers twice and an approved call runs once.
 export async function askApproval(runId: string, sessionId: string, action: Record<string, unknown>, ttlSeconds: number): Promise<ApprovalResult> {
+  const key = sameCall(action);
+  const earlier = (await pool.query(
+    `SELECT a.id FROM approvals a WHERE a.run_id = $1 AND a.status IN ('pending', 'approved', 'denied')
+       AND NOT EXISTS (SELECT 1 FROM events e WHERE e.run_id = $1 AND e.type = 'tool.call' AND e.data->>'approval_id' = a.id)
+     ORDER BY a.created_at DESC`, [runId])).rows as { id: string }[];
+  for (const r of earlier) {
+    const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [r.id])).rows[0];
+    if (row && sameCall(row.action) === key) {
+      await appendEvent({ sessionId, runId, type: "approval.rejoined", data: { approval_id: r.id } });
+      return DBOS.retrieveWorkflow<ApprovalResult>(r.id).getResult();
+    }
+  }
   const id = await record(runId, sessionId, action, ttlSeconds);
   const handle = await DBOS.startWorkflow(approvalWorkflow, { workflowID: id })(id, runId, sessionId, ttlSeconds);
   return handle.getResult();

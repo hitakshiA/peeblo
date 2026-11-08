@@ -67,7 +67,7 @@ export function stepOutput(tool: string, summary: string | undefined, listed = 0
     return noun ? `${count} ${noun}` : `${count} found`;
   }
   const s = summary.trim();
-  if (/^[[{]/.test(s) || /\/work\/|\/Users\/|[a-z]+__[a-z]/.test(s) || /^\[(company|team|you)\]/.test(s)) return undefined;
+  if (/^[[{]/.test(s) || /\/work\/|\/Users\/|[a-z]+__[a-z]/.test(s) || /^\[(company|team|you)\]/.test(s) || /^[a-z][A-Za-z_]*: /.test(s) || /^[0-9a-f-]{20,}$/.test(s)) return undefined;
   return s.length > 60 ? `${s.slice(0, 59)}…` : s;
 }
 function nounOf(tool: string, count: number): string | null {
@@ -114,7 +114,15 @@ export function receiptChip(r: Receipt | null): any {
   if (!r || r.calls === 0) return { type: "context", elements: [{ type: "mrkdwn", text: "Nothing was charged." }] };
   const models = r.models.map(readableModel);
   const first = models[0] ?? { name: "a model", logo: null };
-  const parts = [`*${first.name}*`, ...(r.providers.length ? [`via ${readableProvider(r.providers[0])}`] : []), `${r.calls} call${r.calls === 1 ? "" : "s"}`,
+  const rest = [...(r.providers.length ? [`via ${readableProvider(r.providers[0])}`] : []), `${r.calls} call${r.calls === 1 ? "" : "s"}`,
     ...(r.fallbacks && models[1] ? [`fell back to ${models[1].name}`] : []), money(r.cost_usd)];
-  return { type: "context", elements: [...(first.logo ? [{ type: "image", image_url: first.logo, alt_text: first.name }] : []), { type: "mrkdwn", text: parts.join(" · ") }] };
+  // Short pieces wrap as a unit, so the logo stays on the same line as the model's name in a narrow thread.
+  return { type: "context", elements: [...(first.logo ? [{ type: "image", image_url: first.logo, alt_text: first.name }] : []), { type: "mrkdwn", text: `*${first.name}*` }, { type: "mrkdwn", text: rest.join(" · ") }] };
+}
+
+// A service's brand mark on a light rounded tile (as on the landing page), served by Peeblo; else its favicon.
+const TILES = new Set(["linear", "github", "posthog", "stripe", "hubspot", "notion", "intercom", "sheets", "supabase", "atlassian", "neon", "airtable", "monday", "betterstack", "cloudflare", "exa", "grafana", "pagerduty", "freshdesk", "sentry", "slack", "sanity", "upstash", "resend", "zapier", "apify", "postman", "deepwiki", "context7"]);
+export function serviceIcon(server: string): string | null {
+  if (TILES.has(server) && config.publicUrl) return `${config.publicUrl}/services/${server}.png`;
+  return null;
 }
