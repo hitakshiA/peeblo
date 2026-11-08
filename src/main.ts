@@ -23,6 +23,7 @@ installPiExecutor();
   const { installSlackInteractions } = await import("./slack/interactions.ts");
   const { stopSession } = await import("./pi/supervisor.ts");
   installSlackInbound(); installSlackView(); installSlackInteractions();
+  (await import("./memory/work.ts")).installWorkMemory();
   // Stop in a thread stops every teammate working there (the whole chain).
   const { threadSessions } = await import("./chains.ts");
   setStopHandler(async (sid) => { let any = false; for (const s of await threadSessions(sid)) any = (await stopSession(s)) || any; return any; });

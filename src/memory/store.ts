@@ -104,6 +104,17 @@ async function learnSetting(slug: string): Promise<"off" | "unverified"> {
   return rows[0]?.l === "off" ? "off" : "unverified";
 }
 
+// Forgetting: the note leaves the place's memory (one commit; git keeps the history for an audit, not for recall).
+export function deleteNote(slug: string, place: Place, bank: string, path: string, why: string): boolean {
+  if (bank === "company" || !readBanks(place).includes(bank)) return false;
+  const p = notePath(path);
+  const repo = repoOf(slug);
+  if (!p || !existsSync(join(repo, bank, p))) return false;
+  git(repo, ["rm", "-q", join(bank, p)]);
+  git(repo, ["commit", "-q", "-m", `${bank}/${p}: forgotten (${why.replace(/\n/g, " ").slice(0, 120)})`]);
+  return true;
+}
+
 export function verifyNote(slug: string, bank: string, path: string): boolean {
   const repo = repoOf(slug);
   const f = join(repo, bank, notePath(path) ?? "");

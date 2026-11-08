@@ -194,6 +194,17 @@ async function liveThreadsNote(sessionId: string, teammateId: string): Promise<s
 
 // One turn: send the wrapped submission, wait for agent_settled, return the answer.
 // 👍/👎 on this teammate's replies since it last heard about them, as a fact (it decides what to remember).
+// Who's asking: their person card (how they like answers) and what this agent promised them and hasn't done yet.
+async function personNote(ctx: RunContext, tm: Teammate, person: { id: string; display_name: string | null } | null): Promise<string> {
+  if (!person) return "";
+  const { personCard, openPromises } = await import("../memory/work.ts");
+  const { placeOfSession } = await import("../memory/store.ts");
+  const card = personCard(person.id);
+  const open = openPromises(tm.slug, placeOfSession(ctx.session), person.display_name);
+  if (!card && !open.length) return "";
+  return `<peeblo_event kind="person">${card ? `How ${person.display_name ?? "they"} like answers:\n${card.slice(0, 800)}\n` : ""}${open.length ? `You promised ${person.display_name ?? "them"}: ${open.map((n) => `${n.title} (${n.path})`).join("; ")}.` : ""}</peeblo_event>\n`;
+}
+
 async function feedbackNote(sessionId: string, runId: string, teammateId: string): Promise<string> {
   const { rows } = await pool.query(
     `SELECT f.id, f.data->>'vote' AS vote, left(sub.text, 120) AS asked FROM events f JOIN runs r ON r.id = f.run_id JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
@@ -266,7 +277,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     const channelNote = slackPlace && !slackPlace.direct ? `<peeblo_event kind="reading_along">This is a message in a channel you're reading along in. No one tagged or DMed you; it is addressed to the channel${/<@U[A-Z0-9]+>/.test(ctx.text) ? " (and to the people it tags, who aren't you)" : ""}.</peeblo_event>\n` : "";
     const tNote = Date.now();
     const note = (tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "") + (await liveThreadsNote(ctx.session.id, tm.id)) + repoNote + channelNote
-      + (await feedbackNote(ctx.session.id, ctx.run.id, tm.id)) + (slackPlace && !slackPlace.direct ? await rosterNote(slackPlace) : "");
+      + (await feedbackNote(ctx.session.id, ctx.run.id, tm.id)) + (await personNote(ctx, tm, person)) + (slackPlace && !slackPlace.direct ? await rosterNote(slackPlace) : "");
     if (Date.now() - tNote > 1000) console.error(`slow: turn notes ${Date.now() - tNote} ms`);
     snapshotAfter = () => snapshotWip(tm.id, ctx.session.id).catch(() => 0);
     // A continuation from the Stop check is Peeblo's own note, not a person's message.

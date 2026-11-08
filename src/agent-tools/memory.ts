@@ -5,7 +5,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
-import { notesIn, placeOfSession, readBanks, readNote, sha, writeCompany, writeNote, type Note } from "../memory/store.ts";
+import { deleteNote, notesIn, placeOfSession, readBanks, readNote, sha, writeCompany, writeNote, type Note } from "../memory/store.ts";
+import { addToCard, openPromises, recallNotes } from "../memory/work.ts";
 import { embed, cosine, fuse, recall } from "../otari/search.ts";
 import { getSession } from "../store/sessions.ts";
 import { isOtariAdmin } from "../authority.ts";
@@ -93,19 +94,97 @@ export const memoryTools: AgentTool[] = [
     kind: "read",
     async run(ctx, a) {
       const place = await where(ctx);
-      const notes = notesIn(ctx.teammate.slug, readBanks(place));
-      if (!notes.length) return { text: "Memory is empty here." };
-      const kw = keywordRank(notes, a.query);
-      let vec: number[] = [];
-      try {
-        const vs = await vectors(ctx.teammate.slug, notes, ctx.endUser ?? undefined);
-        const q = (await embed([a.query], "query", ctx.endUser ?? undefined)).vectors[0];
-        vec = vs.map((v, i) => ({ i, s: cosine(q, v) })).sort((x, y) => y.s - x.s).slice(0, 20).map((x) => x.i);
-      } catch { /* embeddings unavailable: keyword only */ }
-      const cands = fuse([kw, vec].filter((l) => l.length));
-      if (!cands.length) return { text: "Nothing relevant in memory." };
-      const r = await recall(a.query, notes.map((n) => `${n.title}\n${n.body}`), cands, 5, ctx.endUser ?? undefined);
-      return { text: `${r.hits.map((h) => `${show(notes[h.index])}\n  ${notes[h.index].body.slice(0, 300).replace(/\n/g, " ")}`).join("\n")}${r.reranked ? "" : "\n(ranked by keywords and meaning; Otari's reranker was unavailable)"}` };
+      return search(ctx, notesIn(ctx.teammate.slug, readBanks(place)), a.query);
+    },
+  },
+];
+
+// Keyword and meaning ranking over the notes, then Otari's reranker: the best five, with their text.
+async function search(ctx: ToolContext, notes: Note[], query: string): Promise<{ text: string }> {
+  if (!notes.length) return { text: "Memory is empty here." };
+  const kw = keywordRank(notes, query);
+  let vec: number[] = [];
+  try {
+    const vs = await vectors(ctx.teammate.slug, notes, ctx.endUser ?? undefined);
+    const q = (await embed([query], "query", ctx.endUser ?? undefined)).vectors[0];
+    vec = vs.map((v, i) => ({ i, s: cosine(q, v) })).sort((x, y) => y.s - x.s).slice(0, 20).map((x) => x.i);
+  } catch { /* embeddings unavailable: keyword only */ }
+  const cands = fuse([kw, vec].filter((l) => l.length));
+  if (!cands.length) return { text: "Nothing relevant in memory." };
+  const r = await recall(query, notes.map((n) => `${n.title}\n${n.body}`), cands, 5, ctx.endUser ?? undefined);
+  return { text: `${r.hits.map((h) => `${show(notes[h.index])}\n  ${notes[h.index].body.slice(0, 500).replace(/\n/g, " ")}`).join("\n")}${r.reranked ? "" : "\n(ranked by keywords and meaning; Otari's reranker was unavailable)"}` };
+}
+
+const findPerson = async (who: string) => (await pool.query("SELECT id, display_name, slack_user FROM people WHERE slack_user = $1 OR lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) ORDER BY created_at LIMIT 1", [String(who).replace(/^<@|>$/g, "").replace(/^@/, "")])).rows[0];
+
+// recall, person cards, promises and forgetting (NIGHT_PLAN_NOV9 §7.2).
+export const workMemoryTools: AgentTool[] = [
+  {
+    name: "recall",
+    description: "Look back: your past jobs (what, for whom, where, the result, links) and your notes, by meaning. Use it for \"do what you did last time\", \"what did we decide about X\", \"who handled Y\". Peeblo also sees the crew's jobs from shared places.",
+    input_schema: object({ query: { type: "string" } }),
+    kind: "read",
+    async run(ctx, a) {
+      return search(ctx, await recallNotes(ctx.teammate.slug, await where(ctx)), a.query);
+    },
+  },
+  {
+    name: "memory_forget",
+    description: "Forget a note: when someone says \"forget X\", or a fact you kept is now wrong (write the new one, then forget the old). Give the bank and path from recall or your index, and why.",
+    input_schema: object({ bank: { type: "string" }, path: { type: "string" }, why: { type: "string" } }),
+    kind: "local",
+    async run(ctx, a) {
+      const ok = deleteNote(ctx.teammate.slug, await where(ctx), a.bank, a.path, a.why);
+      return ok ? { text: `Forgot ${a.bank}/${a.path}.` } : { text: `No note ${a.bank}/${a.path} you can forget here (company memory changes only through an admin).`, isError: true };
+    },
+  },
+  {
+    name: "person_note",
+    description: "Note how a person likes to work with you, so every teammate answers them well: \"Maya wants numbers first, no tables\", \"Jun reads on his phone; keep it to 2 lines\". Style and preferences only, never private content.",
+    input_schema: object({ person: { type: "string", description: "Their name or Slack id." }, note: { type: "string" } }),
+    kind: "local",
+    async run(ctx, a) {
+      const p = await findPerson(a.person);
+      if (!p) return { text: `I don't know anyone called ${a.person} here.`, isError: true };
+      addToCard(p.id, a.note, ctx.teammate.config.name);
+      return { text: `Noted for ${p.display_name}. Every teammate sees it when ${p.display_name} talks to them.` };
+    },
+  },
+  {
+    name: "promise",
+    description: "Keep track of something you said you'd do later (\"I'll check again Thursday\", \"I'll send it once Maya replies\"): make records it and, with due_at, wakes you then to do it or update them; done closes it; list shows open ones.",
+    input_schema: object({
+      action: { type: "string", enum: ["make", "done", "list"] },
+      what: { type: ["string", "null"], description: "make: what you promised, in a line." },
+      for_person: { type: ["string", "null"], description: "make: who you promised (name)." },
+      due_at: { type: ["string", "null"], description: "make: an ISO time to follow up, or null." },
+      id: { type: ["string", "null"], description: "done: the promise's path (from list)." },
+    }),
+    kind: "local",
+    async run(ctx, a) {
+      const place = await where(ctx);
+      if (a.action === "list") {
+        const open = openPromises(ctx.teammate.slug, place);
+        return { text: open.length ? open.map((n) => `- ${n.path}: ${n.title}`).join("\n") : "No open promises." };
+      }
+      if (a.action === "done") {
+        const n = a.id ? readNote(ctx.teammate.slug, place, "ws", a.id) ?? notesIn(ctx.teammate.slug, readBanks(place)).find((x) => x.path === a.id || x.path === `${a.id}.md`) : null;
+        if (!n) return { text: `No open promise ${a.id}; list shows them.`, isError: true };
+        await writeNote(ctx.teammate.slug, place, { path: n.path, title: n.title, body: n.body.replace("Status: open", `Status: done ${new Date().toISOString().slice(0, 10)}`), source: "promise kept", runId: ctx.runId, tainted: false });
+        return { text: `Marked done: ${n.title}.` };
+      }
+      if (!a.what) return { text: "Say what you promised.", isError: true };
+      const due = a.due_at && new Date(a.due_at).getTime() > Date.now() ? new Date(a.due_at).toISOString() : null;
+      const id = `promises/${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 7)}`;
+      const n = await writeNote(ctx.teammate.slug, place, { path: id, title: String(a.what).slice(0, 100), body: `Promised: ${a.what}\nFor: ${a.for_person ?? ctx.person?.display_name ?? "the team"}\nDue: ${due ?? "no date"}\nStatus: open`, source: `${ctx.teammate.config.name}'s promise`, runId: ctx.runId, tainted: false });
+      let follow = "";
+      if (due) {
+        const { createSchedule } = await import("../triggers.ts");
+        const slack = ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
+        const sc = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { kind: "once", name: `Promise: ${String(a.what).slice(0, 60)}`, prompt: `You promised ${a.for_person ?? "them"}: ${a.what}. Do it now, or tell them plainly where it stands. Then mark the promise done (promise action done, id ${n.path}).`, runAt: due, place: slack ? { slack } : {}, budgetUsd: 0.05, originRequest: null });
+        follow = ` I'll be woken at ${due} to follow up (${sc.id}).`;
+      }
+      return { text: `Recorded the promise (${n.path}).${follow}` };
     },
   },
 ];

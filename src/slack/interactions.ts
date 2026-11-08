@@ -63,6 +63,8 @@ export function installSlackInteractions(): void {
       const who = await personForSlack(team, payload.user.id);
       await appendEvent({ sessionId: run?.session_id ?? null, runId, type: "slack.feedback_detail", data: { what, by: who.id } });
       if (run) await feedbackNote(run.session_id, runId, "down", who.display_name ?? payload.user.id, what || undefined).catch(() => null);
+      // "Too long" is how this person likes answers: it goes on their card for every teammate.
+      if (picked.includes("Too long")) { const { addToCard } = await import("../memory/work.ts"); addToCard(who.id, "Found a reply too long; keep answers short", "their 👎"); }
       return;
     }
     // The "Not now" form: a no, with the reason if one was given (Send), or without one (Skip closes the form).
