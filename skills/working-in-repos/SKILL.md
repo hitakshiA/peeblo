@@ -5,6 +5,9 @@ description: Work in a git repo: open your own checkout, commit, keep up with th
 
 # Working in repos
 
+Use the exact `owner/repo` names you were given (start context or memory). If you don't have them, list the repos
+before guessing: one GitHub `search_repositories` call with `user:<login>` or `org:<org>` (`get_me` gives the login).
+
 Each conversation gets its own checkout of a repo on its own branch, so parallel conversations never step on each
 other. Plain git works for everything local. Two tools exist where Peeblo has to act for you:
 

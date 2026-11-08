@@ -2,6 +2,9 @@
 // needs a person's yes, and then has Otari execute exactly that call (caller-orchestrated /mcp/execute with
 // the server_revision seen at listing time, so a changed server config is refused rather than run).
 import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "../config.ts";
 import { otari } from "../otari/client.ts";
 import type { TeammateConfig } from "../store/teammates.ts";
 
@@ -14,9 +17,24 @@ export type ConnectorTool = {
 const TTL = 30 * 60_000; // tool lists change rarely; a 409 on a stale revision refreshes the server
 let servers: { at: number; list: { id: string; name: string; purpose_hint?: string }[] } | null = null;
 const toolCache = new Map<string, { at: number; revision: string; tools: any[] }>();
+// A copy on disk, so the first session after a restart doesn't wait ~30 s for ~28 servers. A stale entry is served
+// while a fresh one loads; a call on a changed server is refused (409) and that server is re-read.
+const CACHE_FILE = join(config.dataDir, "catalog-cache.json");
+try {
+  const saved = JSON.parse(readFileSync(CACHE_FILE, "utf8")) as { servers?: { list: { id: string; name: string; purpose_hint?: string }[] }; tools?: [string, { at: number; revision: string; tools: any[] }][] };
+  if (saved.servers?.list) servers = { list: saved.servers.list, at: 0 };
+  for (const [id, e] of saved.tools ?? []) toolCache.set(id, { ...e, at: 0 });
+} catch { /* no copy yet */ }
+const saveCache = () => { try { writeFileSync(CACHE_FILE, JSON.stringify({ servers, tools: [...toolCache] })); } catch { /* best effort */ } };
+const refreshing = new Set<string>();
 
 export async function serverList() {
   if (servers && Date.now() - servers.at < TTL) return servers.list;
+  if (servers && !refreshing.has("servers")) {
+    refreshing.add("servers");
+    void otari<{ servers: any[] }>("GET", "/mcp/servers").then(({ data }) => { servers = { at: Date.now(), list: data.servers ?? [] }; saveCache(); }).catch(() => {}).finally(() => refreshing.delete("servers"));
+    return servers.list;
+  }
   const { data } = await otari<{ servers: { id: string; name: string; purpose_hint?: string }[] }>("GET", "/mcp/servers");
   servers = { at: Date.now(), list: data.servers ?? [] };
   return servers.list;
@@ -25,9 +43,14 @@ export async function serverList() {
 async function serverTools(id: string, fresh = false) {
   const hit = toolCache.get(id);
   if (!fresh && hit && Date.now() - hit.at < TTL) return hit;
+  if (!fresh && hit) {
+    if (!refreshing.has(id)) { refreshing.add(id); void serverTools(id, true).catch(() => {}).finally(() => refreshing.delete(id)); }
+    return hit;
+  }
   const { data } = await otari<{ server_revision: string; tools: any[] }>("GET", `/mcp/servers/${id}/tools`);
   const entry = { at: Date.now(), revision: data.server_revision, tools: data.tools ?? [] };
   toolCache.set(id, entry);
+  saveCache();
   return entry;
 }
 

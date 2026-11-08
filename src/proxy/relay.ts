@@ -221,7 +221,9 @@ export function startProxy(): Promise<Server> {
     // The night cap (a hard stop on total Otari spend since the run's baseline).
     if (isInference) {
       const { overNightCap } = await import("../otari/night-cap.ts");
+      const t0 = Date.now();
       const why = await overNightCap();
+      if (Date.now() - t0 > 1000) console.error(`slow: night cap ${Date.now() - t0} ms`);
       if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "night_cap", "peeblo-refused": "night_cap" }).end(JSON.stringify({ detail: why, code: "night_cap" }));
     }
     if (isInference && raw && config.buildPriceCap.length) {
@@ -230,7 +232,8 @@ export function startProxy(): Promise<Server> {
     }
     if (isInference && raw) {
       // A budget check that fails refuses the call (fail closed).
-      const refusal = await budgetGate(b, raw).catch((e) => { console.error("proxy: budget check failed:", (e as Error).message); return unchecked(`the check failed: ${(e as Error).message.slice(0, 120)}`); });
+      const t1 = Date.now();
+      const refusal = await budgetGate(b, raw).finally(() => { if (Date.now() - t1 > 1000) console.error(`slow: budget gate ${Date.now() - t1} ms`); }).catch((e) => { console.error("proxy: budget check failed:", (e as Error).message); return unchecked(`the check failed: ${(e as Error).message.slice(0, 120)}`); });
       if (refusal) {
         const text = JSON.stringify({ detail: refusal.message, code: "budget_exceeded" });
         b.blocked = { runId: b.runId, turn: b.turn, status: 403, body: text };

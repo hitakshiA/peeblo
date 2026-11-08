@@ -30,6 +30,12 @@ export async function ensureManager(): Promise<void> {
     tm = await updateTeammate(MANAGER, { role: ROLE, instructions: INSTRUCTIONS, connectors: ["all"], tools: [...new Set([...tm.config.tools, "web", "code"])] } as any, { label: "Peeblo becomes the chief of staff (R1′)" }, "Peeblo helps directly, owns company memory and manages the crew");
     await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.chief_of_staff', $1, '{}')", [tm.id]);
   }
+  // The identity moved into code (supervisor.ts PEEBLO_IDENTITY, Nov 9): an owner's instructions only add to it.
+  const moved = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.identity_in_code' LIMIT 1")).rows.length > 0;
+  if (!moved) {
+    if (tm.config.instructions === INSTRUCTIONS || tm.config.instructions.startsWith("You are Peeblo")) tm = await updateTeammate(MANAGER, { instructions: "" } as any, { label: "Peeblo's identity is part of the product now" }, "identity in code; owner instructions start empty");
+    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.identity_in_code', $1, '{}')", [tm.id]);
+  }
   if (config.managerAppId) await pool.query("UPDATE slack_apps SET teammate_id = $2 WHERE app_id = $1 AND teammate_id IS DISTINCT FROM $2", [config.managerAppId, tm.id]);
 }
 

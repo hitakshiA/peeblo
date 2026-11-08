@@ -20,18 +20,10 @@ import { readSkillTool } from "./skills.ts";
 export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): AgentTool[] {
   const all = [planTool, readSkillTool, ...slackTools, ...memoryTools, ...(tm.slug === "peeblo" ? [...managerTools, companyMemoryTool] : [askHumanTool]), askTeammateTool, ...scheduleTools, ...otariTools, ...(tm.config.tools.includes("web") ? [webSearchTool, ...(config.webFetch ? [webFetch] : [])] : []), ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
   // A subagent looks things up but changes nothing, and opens no subagents.
-  // Rarely used tools start deferred: found with find_tools when a job needs them.
-  // Direct: speaking, plan, memory basics, files and shell, asking a teammate, money and models, web, and the few
-  // most-used connectors. Everything else (schedules and triggers, recipes, repos, Otari settings) loads when needed.
-  const DEFERRED = new Set([
-    "schedule", "webhook_trigger", "watch",
-    "otari_read_setting", "otari_prepare_change", "otari_set_web_search", "otari_set_guardrail", "otari_set_routing_policy",
-    "recipe_propose", "build_status", "computer_reset", "repo_open", "repo_publish",
-    "memory_search", "slack_react", "subagent",
-    "company_memory_propose", "models_list", "price_estimate", "budget_status",
-  ]);
-  // Peeblo hands work on with delegate, so asking a teammate loads on demand for it.
-  const deferHere = (n: string) => DEFERRED.has(n) || (tm.slug === "peeblo" && (n === "ask_teammate" || n === "web_fetch"));
-  const listed = all.map((t) => (deferHere(t.name) ? { ...t, deferred: true } : t));
+  // The start set is small (NIGHT_PLAN_NOV9 §1): how to reply, find more tools, read a skill, recall, plan, hand
+  // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) loads with find_tools.
+  const START = new Set(["slack_post", "read_skill", "memory_read", "memory_search", "plan", tm.slug === "peeblo" ? "delegate" : "ask_teammate",
+    "computer_bash", "computer_read", "computer_write", "computer_edit"]);
+  const listed = all.map((t) => (START.has(t.name) ? t : { ...t, deferred: true }));
   return opts.subagent ? listed.filter((t) => t.kind === "read") : listed;
 }

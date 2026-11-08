@@ -25,9 +25,10 @@ export const slackTools: AgentTool[] = [
     kind: "read", // it posts only into the conversation the person started; no approval
     async run(ctx, a) {
       const place = await placeOf(ctx);
-      if (!place) return { text: "This conversation isn't in Slack; your answer is your final text.", isError: true };
       const text = String(a.text ?? "").slice(0, 12_000);
       if (!text.trim()) return { text: "Nothing to post.", isError: true };
+      // Outside Slack (the API, a test) the post is the reply: recorded the same way, so nothing is retried.
+      if (!place) { await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post", data: { text, outside_slack: true } }); return { text: "Posted." }; }
       // Unprompted posts (no one asked this teammate in this conversation) are rate-limited per channel, and a
       // thread someone marked 👎 gets none (K2).
       if (!place.direct) {

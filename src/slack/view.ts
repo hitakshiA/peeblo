@@ -14,7 +14,7 @@ import { getTeammate } from "../store/teammates.ts";
 import { react, slack, unreact } from "./api.ts";
 import type { SlackPlace } from "./inbound.ts";
 
-type View = { place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number; tasks: Map<string, { title: string; status: string }>; queue: Promise<unknown>; failedStream: boolean; sources?: Map<string, string>; done?: string[] };
+type View = { place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number; tasks: Map<string, { title: string; status: string }>; queue: Promise<unknown>; failedStream: boolean; sources?: Map<string, string>; done?: string[]; held?: string };
 
 // The connector's logo on its task card (SLACK_UX_SPEC §3.3), by its service's domain.
 const DOMAINS: Record<string, string> = { linear: "linear.app", github: "github.com", posthog: "posthog.com", stripe: "stripe.com", hubspot: "hubspot.com", notion: "notion.so", sheets: "google.com", intercom: "intercom.com", freshdesk: "freshdesk.com", sentry: "sentry.io", supabase: "supabase.com", airtable: "airtable.com", atlassian: "atlassian.com", cloudflare: "cloudflare.com", pagerduty: "pagerduty.com", grafana: "grafana.com", web_search: "duckduckgo.com", web_fetch: "duckduckgo.com" };
@@ -79,7 +79,7 @@ async function start(runId: string, place: SlackPlace, teammateId: string): Prom
     const sub = (await pool.query("SELECT left(sub.text, 200) AS t, sub.source FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [runId])).rows[0];
     const asked = ["slack", "api"].includes(sub?.source) ? sub.t ?? "" : sub?.source === "welcome" ? `Welcome from ${v.teammate}` : "";
     await sessionStatus(v, "processing", String(asked).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() || `${v.teammate} is working`);
-    await openStream(v);
+    // The stream opens on the first tool call (NIGHT_PLAN_NOV9 §1): a reply with no tools is one plain message.
   });
   return v;
 }
@@ -100,7 +100,20 @@ async function openStream(v: View): Promise<void> {
   }
 }
 
+// Text posted before any tool runs waits here, so a plain reply goes out once, with its receipt.
+async function flushHeld(v: View): Promise<void> {
+  if (!v.held) return;
+  const text = v.held; v.held = undefined;
+  await post(v, text, [{ type: "markdown", text }]);
+}
+
 async function chunks(v: View, c: any[]): Promise<void> {
+  if (!v.streamTs && !v.failedStream) {
+    if (c.every((x) => x.type === "markdown_text")) { v.held = `${v.held ?? ""}${c.map((x) => x.text).join("")}`; return; }
+    await openStream(v);
+    if (v.held && v.streamTs && !v.failedStream) { const text = v.held; v.held = undefined; c = [{ type: "markdown_text", text }, ...c]; }
+    else await flushHeld(v);
+  }
   if (v.failedStream || !v.streamTs) {
     const text = c.filter((x) => x.type === "markdown_text").map((x) => x.text).join("");
     if (text.trim()) await post(v, text);
@@ -145,6 +158,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       { type: "context_actions", elements: [{ type: "feedback_buttons", action_id: `feedback:${runId}`, positive_button: { text: { type: "plain_text", text: "Good" }, value: `up:${runId}` }, negative_button: { text: { type: "plain_text", text: "Bad" }, value: `down:${runId}` } }] },
     ];
     const tail = fallbackText ? [{ type: "markdown_text", text: fallbackText }] : [];
+    if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }
     if (v.streamTs && !v.failedStream) {
       // Open tasks close with the run.
       const open = [...v.tasks.entries()].filter(([, t]) => t.status === "in_progress" || t.status === "pending").map(([id, t]) => ({ type: "task_update", id, title: t.title, status: ok ? "complete" : "error" }));
@@ -167,6 +181,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
 
 // The teammate's monthly budget is used up (SLACK_UX_SPEC §3.6): a card with a way to ask its owner for more.
 async function budgetCard(v: View, d: any): Promise<void> {
+  await flushHeld(v);
   const tm = await getTeammate(v.slug);
   if (!tm) return;
   const owner = tm.owner_person ? (await pool.query("SELECT slack_user, display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0] : null;
@@ -197,6 +212,7 @@ async function personBudget(runId: string): Promise<string | null> {
 async function approvalCard(v: View, e: EventRow): Promise<void> {
   const a = (e.data as any).action ?? {};
   const id = (e.data as any).approval_id as string;
+  await flushHeld(v);
   const { cardBlocks, question } = await import("./approval-card.ts");
   const blocks = await cardBlocks(a, id, v.teammate);
   const posted: any = await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text: question(a, v.teammate), blocks });
@@ -287,7 +303,9 @@ export function installSlackView(): void {
       let fallback: string | null = null;
       if (!v.posted && v.place.direct) {
         const { rows } = await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [e.run_id]);
-        fallback = String(rows[0]?.data?.text ?? "").trim() || (e.type === "run.failed" ? `I hit a problem and stopped: ${String(d.error ?? "").slice(0, 300)}` : null);
+        // Clean final text: no thinking tags, and no "Peeblo:" style name prefix.
+        const name = v.teammate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        fallback = String(rows[0]?.data?.text ?? "").replace(/<think(ing)?>[\s\S]*?<\/think(ing)?>/g, "").trim().replace(new RegExp(`^\\**${name}\\**\\s*:\\s*`, "i"), "").trim() || (e.type === "run.failed" ? `I hit a problem and stopped: ${String(d.error ?? "").slice(0, 300)}` : null);
       }
       // A run that ended on a typed stop (budget, a stuck loop, the guard, a model error) gets the recovery buttons.
       const stop = (await pool.query("SELECT data->>'stop_reason' AS r FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [e.run_id])).rows[0]?.r;

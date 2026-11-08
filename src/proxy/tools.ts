@@ -7,6 +7,7 @@
 // untrusted results labelled with their source and screened, and a tool.call event.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { peebloTools } from "../agent-tools/index.ts";
+import { computerTools } from "../agent-tools/computer.ts";
 import { validate, type Schema } from "../agent-tools/schema.ts";
 import type { AgentTool, ToolContext, ToolResult } from "../agent-tools/types.ts";
 import { config } from "../config.ts";
@@ -90,6 +91,13 @@ async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T>
 const LOOP_NUDGE = 3;
 const LOOP_STOP = 6;
 const identical = new Map<string, number>();
+// A repeat of a read in the same run gets the earlier result back without calling the service again.
+const readCache = new Map<string, string>();
+// At most this many tool calls in one turn; after that only slack_post runs (NIGHT_PLAN_NOV9 §1).
+const TURN_CALLS = 12;
+const turnCalls = new Map<string, number>();
+// A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
+const RESULT_CAP = 8000;
 
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();
@@ -98,7 +106,8 @@ type Listed = { name: string; description: string; input_schema: unknown; asks: 
 
 // K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
-const DIRECT_CONNECTOR_TOOLS = 3;
+// Connector tools all start deferred (the small start set, NIGHT_PLAN_NOV9 §1); find_tools loads what a job needs.
+const DIRECT_CONNECTOR_TOOLS = 0;
 export async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
   const { rows } = await pool.query(
     `SELECT e.data->>'tool' AS tool, count(*) AS n FROM events e JOIN sessions s ON s.id = e.session_id
@@ -121,9 +130,13 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   if (req.method === "GET" && path === "/tools") {
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
+    // A scoped GitHub connector names its repos, so the model never guesses an owner.
+    const scoped = tm.config.connector_scopes?.github ?? [];
+    const repos = scoped.length ? `This teammate's GitHub repos (owner/repo): ${scoped.join(", ")}. Use these names exactly.`
+      : "Never guess a repo's owner: unless you know the exact owner/repo, find it first with search_repositories (user:<login> from get_me, or org:<org>).";
     const tools: Listed[] = [
       ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: !t.deferred })),
-      ...cat.tools.filter((t) => !subagent || classify(t, {}) === "read").map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
+      ...cat.tools.filter((t) => !subagent || classify(t, {}) === "read").map((t) => ({ name: t.name, description: t.server === "github" && repos ? `${t.description}\n${repos}` : t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
     ];
     return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
   }
@@ -149,6 +162,18 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: b.stuck.reason } });
     return json(res, 200, { text: `Stopped: this exact ${name} call has been made ${repeats} times in this run. Tell the person what you were trying and what kept happening.`, isError: true });
   }
+  const turnKey = `${b.runId}:${b.turn}`;
+  const used = (turnCalls.get(turnKey) ?? 0) + 1;
+  turnCalls.set(turnKey, used);
+  if (used > TURN_CALLS && name !== "slack_post") {
+    await event({ status: "refused", reason: "turn call limit" });
+    return json(res, 200, { text: `That is ${TURN_CALLS} tool calls this turn. Stop looking things up: post what you have with slack_post, and say what you couldn't check.`, isError: true });
+  }
+  const cached = repeats >= 2 ? readCache.get(repeatKey) : undefined;
+  if (cached !== undefined) {
+    await event({ status: "completed", reused: true });
+    return json(res, 200, { text: `[peeblo: you made this exact call earlier in this job; here is the same result again.]\n${cached}` });
+  }
   const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}${repeats === 3 ? "rd" : "th"} identical ${name} call in this run; the result will not change.]` : "";
   const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError) });
 
@@ -159,6 +184,10 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     if (source && !r.isError) {
       screened = await screen(text, b.endUser).catch(() => null);
       text = wrapUntrusted(text, source, screened);
+    }
+    if (!r.isError && (extra.kind ?? base.kind) === "read") {
+      if (readCache.size > 2000) readCache.clear();
+      readCache.set(repeatKey, text);
     }
     await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : { summary: summarize(r.text), sources: urlsIn(r.text) }), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
     return reply({ ...r, text });
@@ -300,8 +329,8 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     const t0 = Date.now();
     try {
       const { data, requestId } = await executeTool(t, args);
-      const r = mcpText(data);
-      return finish(r, `mcp:${t.server}.${t.tool}`, { request_id: requestId, ms: Date.now() - t0, result_chars: r.text.length });
+      const r = await capResult(ctx, t, mcpText(data), toolCallIdOf(base));
+      return finish(r, `mcp:${t.server}.${t.tool}`, { request_id: requestId, ms: Date.now() - t0, result_chars: r.chars, ...(r.saved ? { saved_to: r.saved } : {}) });
     } catch (error) {
       const e = error as Error & { status?: number; requestId?: string | null; code?: string | null };
       if (e.status === 409 || /revision/i.test(e.message)) forgetServer(t.serverId);
@@ -310,4 +339,33 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     }
   };
   return kind === "read" ? run() : oneAtATime(b.sessionId, run);
+}
+
+const toolCallIdOf = (base: Record<string, unknown>) => String(base.id ?? newId("tc"));
+
+// How many records a JSON result holds: the longest array at the top or one level down.
+function recordCount(text: string): number | null {
+  try {
+    const v = JSON.parse(text);
+    const arrays = Array.isArray(v) ? [v] : v && typeof v === "object" ? Object.values(v).filter(Array.isArray) : [];
+    return arrays.length ? Math.max(...arrays.map((a) => (a as unknown[]).length)) : null;
+  } catch { return null; }
+}
+
+// A long connector result goes to a file on the agent's own computer (NIGHT_PLAN_NOV9 §1). The model reads the
+// start, the record count and the path, and works on the file there with computer_bash when it needs the rest.
+async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
+  const chars = r.text.length;
+  if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
+  const n = recordCount(r.text);
+  const head = r.text.slice(0, 3000);
+  const path = `/work/${ctx.sessionId}/results/${t.server}-${t.tool}-${callId.slice(-8)}.${n === null ? "txt" : "json"}`;
+  const write = computerTools.find((x) => x.name === "computer_write");
+  try {
+    const w = write ? await write.run(ctx, { path, content: r.text }) : { text: "no computer", isError: true };
+    if (w.isError) throw new Error(w.text);
+    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo: the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. Read or filter it there with computer_bash (jq, grep) instead of calling again.]` };
+  } catch {
+    return { ...r, chars, text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]` };
+  }
 }

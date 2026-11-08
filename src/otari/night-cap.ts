@@ -37,12 +37,10 @@ async function refresh(b: Baseline): Promise<void> {
   const start = new Date(b.at);
   const byKey: Record<string, number> = {};
   let spent = 0;
-  for (const k of await keys(start)) {
-    // A key that can't be read counts as unknown: keep its last value rather than dropping it to zero.
-    const v = await usageSummary({ start, auth: k.auth }).then((u) => Number(u.totals.cost ?? 0)).catch(() => last?.byKey[k.name] ?? 0);
-    byKey[k.name] = v;
-    spent += v;
-  }
+  const ks = await keys(start);
+  // All keys at once. A key that can't be read counts as unknown: keep its last value rather than dropping it to zero.
+  const vals = await Promise.all(ks.map((k) => usageSummary({ start, auth: k.auth }).then((u) => Number(u.totals.cost ?? 0)).catch(() => last?.byKey[k.name] ?? 0)));
+  ks.forEach((k, i) => { byKey[k.name] = vals[i]; spent += vals[i]; });
   last = { at: Date.now(), spent, byKey };
 }
 

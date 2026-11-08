@@ -77,16 +77,48 @@ const readings = new Map<string, Reading>();
 const sinceRead = new Map<string, number>();
 const FRESH_MS = 30_000;
 export function noteSpend(teammateId: string, endUser: string | null, usdSpent: number): void {
-  for (const k of [`tm:${teammateId}`, ...(endUser ? [`person:${endUser}`] : [])]) sinceRead.set(k, (sinceRead.get(k) ?? 0) + usdSpent);
+  for (const k of [`tm:${teammateId}`, ...(endUser ? [`person:${endUser}`] : [])]) {
+    sinceRead.set(k, (sinceRead.get(k) ?? 0) + usdSpent);
+    const list = notes.get(k) ?? [];
+    list.push({ at: Date.now(), usd: usdSpent });
+    while (list.length > 500) list.shift();
+    notes.set(k, list);
+    if (!spentBefore.has(k)) spentBefore.set(k, (t) => {
+      const l = notes.get(k) ?? [];
+      const before = l.filter((x) => x.at < t).reduce((a, x) => a + x.usd, 0);
+      notes.set(k, l.filter((x) => x.at >= t));
+      return before;
+    });
+  }
 }
+// A stale reading is still used (plus what was spent since) while a fresh one loads in the background, so no
+// model call waits on Otari's usage reads; only the first reading for a key is awaited.
+const loading = new Map<string, Promise<Reading>>();
 async function reading(key: string, read: () => Promise<Omit<Reading, "at">>): Promise<Reading> {
   const r = readings.get(key);
+  const load = () => {
+    let p = loading.get(key);
+    if (!p) {
+      const started = Date.now();
+      p = read().then((x) => {
+        const fresh = { ...x, at: Date.now() };
+        readings.set(key, fresh);
+        // Spend noted after the read started stays counted on top of it.
+        sinceRead.set(key, Math.max(0, (sinceRead.get(key) ?? 0) - (spentBefore.get(key)?.(started) ?? 0)));
+        return fresh;
+      }).finally(() => loading.delete(key));
+      loading.set(key, p);
+    }
+    return p;
+  };
   if (r && Date.now() - r.at < FRESH_MS) return { ...r, spent: r.spent + (sinceRead.get(key) ?? 0) };
-  const fresh = { ...(await read()), at: Date.now() };
-  readings.set(key, fresh);
-  sinceRead.set(key, 0);
-  return fresh;
+  if (r) { void load().catch(() => {}); return { ...r, spent: r.spent + (sinceRead.get(key) ?? 0) }; }
+  const fresh = await load();
+  return { ...fresh, spent: fresh.spent + (sinceRead.get(key) ?? 0) };
 }
+// What was noted for a key before a moment (so a background read doesn't drop spend that came after it began).
+const notes = new Map<string, { at: number; usd: number }[]>();
+const spentBefore = new Map<string, (t: number) => number>();
 
 // The teammate this month: its own key's ceiling use in key mode, else its tag's spend.
 export async function teammateSpend(tm: Teammate): Promise<{ spent: number; cap: number; mode: SpendMode }> {
@@ -112,15 +144,12 @@ export async function personSpend(externalId: string): Promise<{ spent: number; 
     const auths = [undefined, ...rows.map((x) => ({ authorization: `Bearer ${unseal<string>(x.secret)}` }))];
     let spent = 0;
     let budgetId: string | null = null;
-    for (const auth of auths) {
-      try {
-        const u = (await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`, undefined, { auth })).data;
-        spent += Number(u.spend ?? 0);
-        budgetId ??= u.budget_id ?? null;
-      } catch (e) {
-        if ((e as OtariError).status !== 404) throw e;
-      }
-    }
+    // Every key at once (one by one took ~12 s with 44 keys).
+    const users = await Promise.all(auths.map(async (auth) => {
+      try { return (await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`, undefined, { auth })).data; }
+      catch (e) { if ((e as OtariError).status !== 404) throw e; return null; }
+    }));
+    for (const u of users) if (u) { spent += Number(u.spend ?? 0); budgetId ??= u.budget_id ?? null; }
     const t = await tiers();
     const tier = t.find((x) => x.budget_id === budgetId) ?? t.find((x) => x.is_default);
     return { spent, cap: tier?.max_budget ?? null, label: tier?.name ?? "" };

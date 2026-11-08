@@ -1,9 +1,9 @@
 // Peeblo's Pi extension: the teammate's tools. It runs inside Pi, so it imports nothing from core and holds
 // no secret: it asks core's loopback proxy (with the per-session token Pi already has) which tools exist,
 // and sends every call back to it. Core decides, asks for approval, and has Otari run it.
-// The list is fixed for the session (K7a). Peeblo's own tools and a teammate's most-used connector tools
-// are declared up front; the other connector tools are registered but inactive until find_tools turns
-// them on (K7b), so a session starts with few tools.
+// A session starts with the small start set (NIGHT_PLAN_NOV9 §1). Every other tool (Peeblo's own and every
+// connector's, ~1,200 for Peeblo) is registered only when find_tools picks it (K7b): registering them all at start
+// cost ~25 s per session.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Listed = { name: string; description: string; input_schema: Record<string, unknown>; asks: boolean; direct: boolean };
@@ -22,7 +22,7 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
     // Pi starts without them; core's turn notes say so.
   }
 
-  for (const t of listed) {
+  const register = (t: Listed) => {
     pi.registerTool({
       name: t.name,
       label: t.name.replace("__", " · "),
@@ -38,7 +38,9 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
         return { content: [{ type: "text", text: out.text }], details: {}, isError: Boolean(out.isError) };
       },
     });
-  }
+  };
+  for (const t of listed) if (t.direct) register(t);
+  const registered = new Set(listed.filter((t) => t.direct).map((t) => t.name));
 
   const deferred = listed.filter((t) => !t.direct);
   if (!deferred.length) return;
@@ -56,7 +58,8 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
         .map((t) => ({ t, score: terms.reduce((s, w) => s + (t.name.toLowerCase().includes(w) ? 2 : 0) + (t.description.toLowerCase().includes(w) ? 1 : 0), 0) }))
         .filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 5).map((x) => x.t);
       if (!ranked.length) return { content: [{ type: "text", text: `No more tools match "${params?.query}". Try other words, or tell the person you can't do it.` }], details: {} };
-      pi.setActiveTools([...active, ...ranked.map((t) => t.name)]);
+      for (const t of ranked) if (!registered.has(t.name)) { register(t); registered.add(t.name); }
+      pi.setActiveTools([...new Set([...pi.getActiveTools(), ...ranked.map((t) => t.name)])]);
       return { content: [{ type: "text", text: `Turned on: ${ranked.map((t) => `${t.name} (${t.description.slice(0, 80)})`).join("; ")}.` }], details: {} };
     },
   });
