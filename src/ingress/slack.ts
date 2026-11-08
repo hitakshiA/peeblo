@@ -172,7 +172,7 @@ export function startIngress(): Promise<Server> {
         const png = await readFile(new URL(`../../assets/models/${url.pathname.slice(8)}`, import.meta.url)).catch(() => null);
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
       }
-      else if (req.method === "GET" && /^\/faces\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
+      else if (req.method === "GET" && /^\/faces\/[a-z0-9-]{2,31}\.png$/.test(url.pathname) /* ?v= busts Slack's image cache */) {
         // A teammate's face (public, like any Slack avatar): Slack fetches it for posts made before its own app exists.
         const png = await facePngFor(url.pathname.slice(7, -4));
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);

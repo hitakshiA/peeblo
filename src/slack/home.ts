@@ -29,9 +29,11 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   const running = (await pool.query(
     `SELECT r.id, r.status, s.place, left(sub.text, 90) AS asked, sub.source FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
       WHERE s.teammate_id = $1 AND r.status IN ('queued', 'running', 'waiting') ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
-  const owner = tm.owner_person ? (await pool.query("SELECT slack_user, display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0] : null;
+  // Peeblo's owner is whoever runs it (the first admin), never "none yet".
+  const owner = tm.owner_person ? (await pool.query("SELECT slack_user, display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0]
+    : tm.slug === "peeblo" ? (await pool.query("SELECT slack_user, display_name FROM people WHERE slack_user = ANY($1) ORDER BY created_at LIMIT 1", [config.admins])).rows[0] : null;
   const status = paused ? "Paused" : running.length ? `Working on ${running.length} job${running.length > 1 ? "s" : ""}` : "Idle";
-  const face = config.publicUrl ? { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png`, alt_text: c.name } : undefined;
+  const face = config.publicUrl ? { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png?v=${tm.version}`, alt_text: c.name } : undefined;
   const blocks: any[] = [
     { type: "section", text: { type: "mrkdwn", text: `*${c.name}*  ·  ${c.role}\nOwner: ${owner?.slack_user ? `<@${owner.slack_user}>` : owner?.display_name ?? "none yet"}  ·  *${status}*` }, ...(face ? { accessory: face } : {}) },
   ];
@@ -68,7 +70,8 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   const recent = (await pool.query(
     `SELECT r.id, r.status, left(sub.text, 80) AS asked, (SELECT coalesce(sum((e.data->>'cost_usd')::numeric), 0) FROM events e WHERE e.run_id = r.id AND e.type = 'model.call') AS cost
        FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
-      WHERE s.teammate_id = $1 AND r.status IN ('done', 'failed') AND sub.source <> 'welcome' ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
+      WHERE s.teammate_id = $1 AND r.status IN ('done', 'failed') AND sub.source <> 'welcome'
+        AND r.created_at > coalesce((SELECT max(at) FROM audit WHERE action = 'peeblo.clean_start'), 'epoch') ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
   blocks.push({ type: "header", text: { type: "plain_text", text: "Recent" } });
   const lines: string[] = [];
   for (const r of recent) {
@@ -98,7 +101,8 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
     paused ? { type: "button", style: "primary", text: { type: "plain_text", text: "Resume teammate" }, action_id: "resume_teammate", value: tm.slug }
       : { type: "button", style: "danger", text: { type: "plain_text", text: "Pause teammate" }, action_id: "pause_teammate", value: tm.slug },
   ] });
-  blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `${c.model.default} · ${c.mode} mode · version ${tm.version} · every reply is signed with its model, cost and receipt` }] });
+  const { readableModel } = await import("./look.ts");
+  blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `Runs on ${readableModel(c.model.default).name} · ${c.mode.charAt(0).toUpperCase()}${c.mode.slice(1)} mode · every reply ends with its receipt` }] });
   return blocks;
 }
 

@@ -42,6 +42,9 @@ if (!dry) {
   // 2. Peeblo fresh.
   const peeblo = (await pool.query("SELECT id FROM teammates WHERE slug = 'peeblo'")).rows[0].id;
   console.log(`schedules off: ${(await pool.query("UPDATE schedules SET enabled = false WHERE enabled RETURNING id")).rowCount}`);
+  // Peeblo's own test schedules are its test objects: removed, so App Home starts empty.
+  console.log(`Peeblo test schedules removed: ${(await pool.query("DELETE FROM schedules WHERE teammate_id = $1 RETURNING id", [peeblo])).rowCount}`);
+  await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('builder', 'peeblo.clean_start', $1, '{}')", [peeblo]);
   console.log(`grants removed: ${(await pool.query("DELETE FROM grants WHERE teammate_id = $1 RETURNING id", [peeblo])).rowCount}`);
   console.log(`Peeblo sessions closed: ${(await pool.query("UPDATE sessions SET status = 'closed' WHERE teammate_id = $1 AND status = 'open' RETURNING id", [peeblo])).rowCount}`);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");

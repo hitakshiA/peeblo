@@ -82,7 +82,7 @@ export async function hireCard(tm: Teammate, appId: string, team: string, image:
   return {
     type: "card", block_id: `hired:${tm.slug}`,
     ...(image ? { hero_image: { type: "image", image_url: image, alt_text: `${tm.config.name} ID card` } } : {}),
-    ...(config.publicUrl ? { icon: { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png`, alt_text: tm.config.name } } : {}),
+    ...(config.publicUrl ? { icon: { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png?v=${tm.version}`, alt_text: tm.config.name } } : {}),
     title: { type: "plain_text", text: tm.config.name.slice(0, 150) },
     subtitle: { type: "plain_text", text: subtitle },
     ...(bio ? { body: { type: "mrkdwn", text: bio.length > 196 ? `${bio.slice(0, 195).replace(/\s+\S*$/, "")}…` : bio } } : {}),
