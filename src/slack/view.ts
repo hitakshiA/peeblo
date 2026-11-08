@@ -138,8 +138,12 @@ async function chunks(v: View, c: any[]): Promise<void> {
     else await flushHeld(v);
   }
   if (v.failedStream || !v.streamTs) {
+    // No stream here (some channels refuse them): one plain message, edited in place, that the receipt joins at the end.
     const text = c.filter((x) => x.type === "markdown_text").map((x) => x.text).join("");
-    if (text.trim()) await post(v, text);
+    if (!text.trim()) return;
+    v.held = text;
+    if (v.heldTs) await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text, blocks: [{ type: "markdown", text }] }).catch(() => null);
+    else { const r: any = await post(v, text, [{ type: "markdown", text }]).catch(() => null); if (r?.ts) v.heldTs = r.ts; }
     return;
   }
   if (Date.now() - v.startedAt > HANDOVER_MS) {
@@ -206,7 +210,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     const summary = summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
     if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }
     // The reply is already on screen: add the receipt to that message instead of posting a second one.
-    if (v.heldTs && !v.frozen && !(v.streamTs && !v.failedStream)) {
+    if (v.heldTs && !v.frozen && !(v.streamTs && !v.failedStream)) { // the answer is on screen: the receipt joins it
       await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text: fallbackText ?? summary, blocks: [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks] }).catch(() => null);
       if (v.place.direct) { await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes"); await react(v.place.app_id, v.place.channel, v.place.trigger_ts, ok ? "white_check_mark" : "warning"); await sessionStatus(v, "active"); }
       return;
@@ -225,7 +229,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       // Answered privately: the receipt goes to the asker privately too.
       await slack(v.place.app_id, "chat.postEphemeral", { channel: v.place.channel, user: v.place.user, thread_ts: v.place.channel_type === "im" ? undefined : v.place.thread_ts, text: "Receipt", blocks: blocks.filter((b) => b.type !== "context_actions") }).catch(() => null);
     } else if (v.place.direct || v.posted || fallbackText) {
-      await post(v, fallbackText ?? v.teammate, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
+      await post(v, fallbackText ?? summary, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
     }
     if (v.place.direct) {
       await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes");

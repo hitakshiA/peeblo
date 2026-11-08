@@ -94,7 +94,9 @@ const identical = new Map<string, number>();
 // A repeat of a read in the same run gets the earlier result back without calling the service again.
 const readCache = new Map<string, string>();
 // At most this many tool calls in one turn; after that only slack_post runs (NIGHT_PLAN_NOV9 §1).
-const TURN_CALLS = 16;
+// Peeblo's chat turns stay short; a teammate working a job on its computer gets room for real work (its spend cap
+// is the real limit). Both get a heads-up when 3 calls are left.
+const TURN_CALLS_CHAT = 12, TURN_CALLS_WORK = 80;
 const turnCalls = new Map<string, number>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
@@ -167,6 +169,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     return json(res, 200, { text: `Stopped: this exact ${name} call has been made ${repeats} times in this run. Tell the person what you were trying and what kept happening.`, isError: true });
   }
   const turnKey = `${b.runId}:${b.turn}`;
+  const TURN_CALLS = tm.slug === "peeblo" ? TURN_CALLS_CHAT : TURN_CALLS_WORK;
   const used = (turnCalls.get(turnKey) ?? 0) + 1;
   turnCalls.set(turnKey, used);
   if (used > TURN_CALLS && name !== "slack_post") {
