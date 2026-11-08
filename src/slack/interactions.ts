@@ -33,6 +33,13 @@ async function feedbackNote(sessionId: string, runId: string, vote: string, by: 
   await writeNote(tm.slug, placeOfSession(s), { path: `feedback/${runId}`, title: `${by} marked a reply ${vote === "up" ? "helpful" : "not helpful"}`, body: `Asked: ${asked}\n\nReply: ${answer}`, source: `${by}, Slack feedback`, runId, tainted: true });
 }
 
+// Replaces a card (wherever it was posted) with its outcome line.
+async function updateCard(approvalId: string, text: string | null): Promise<void> {
+  if (!text) return;
+  const c = (await pool.query("SELECT data FROM events WHERE type = 'approval.card' AND data->>'approval_id' = $1 LIMIT 1", [approvalId])).rows[0]?.data;
+  if (c) await slack(c.app_id, "chat.update", { channel: c.channel, ts: c.ts, text, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text }] }] }).catch(() => null);
+}
+
 // Who may answer an approval, for the "only X can answer" reply.
 async function namesFor(approvalId: string): Promise<string> {
   const { approverNames } = await import("../approvers.ts");
@@ -42,11 +49,49 @@ async function namesFor(approvalId: string): Promise<string> {
 
 export function installSlackInteractions(): void {
   onSlackInteraction(async ({ appId, payload }) => {
+    // The Edit form on an approval card: the approver's edited call is what runs.
+    if (payload.type === "view_submission" && payload.view?.callback_id === "edit_approval") {
+      const id = String(payload.view.private_metadata);
+      const team = payload.team?.id ?? payload.user?.team_id;
+      const who = await personForSlack(team, payload.user.id);
+      const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [id])).rows[0];
+      if (!row) return;
+      const { editedArgs } = await import("./approval-card.ts");
+      const args = editedArgs(row.action.arguments ?? {}, payload.view.state?.values ?? {});
+      const r = await answerApproval(id, { decision: "approved", scope: "once", personId: who.id, arguments: args });
+      await updateCard(id, r.ok ? `✓ Approved with edits by ${who.display_name ?? `<@${payload.user.id}>`}` : r.status === "not_allowed" ? null : `This request is ${r.status.replace("_", " ")}; nothing changed.`);
+      return;
+    }
     if (payload.type !== "block_actions") return;
     const a = payload.actions?.[0];
     if (!a) return;
     const team = payload.team?.id ?? payload.user?.team_id;
     const who = await personForSlack(team, payload.user.id, { displayName: (await displayName(appId, payload.user.id)) ?? undefined });
+    // Settings (App Home, the hire card): the settings modal, for the owner or an admin.
+    if (a.action_id === "open_settings") {
+      const tm = await getTeammate(String(a.value));
+      const { mayManageTeammate } = await import("../authority.ts");
+      if (!tm || !mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${tm?.config.name ?? "its"} owner or an admin can change its settings.` }).catch(() => {}));
+      const { settingsModal } = await import("./commands.ts");
+      await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: await settingsModal(tm) });
+      return;
+    }
+    // Edit: the form with the call's arguments (only someone who may answer the card can open it).
+    if (a.action_id === "edit_approval") {
+      const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
+      if (!row || row.status !== "pending") return;
+      if (!(row.action.approvers ?? []).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
+      const tm = await getTeammate(row.action.teammate);
+      const { editModal } = await import("./approval-card.ts");
+      await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: editModal(row.action, String(a.value), tm?.config.name ?? "the teammate") });
+      return;
+    }
+    // The menu: approve for this job, or always.
+    if (a.action_id === "approve_more") {
+      const [scope, id] = String(a.selected_option?.value ?? "").split(":");
+      a.action_id = scope === "always" ? "approve_always" : "approve_job";
+      a.value = id;
+    }
     if (a.action_id in SCOPES) {
       const { decision, scope } = SCOPES[a.action_id];
       const r = await answerApproval(String(a.value), { decision, scope, personId: who.id });
@@ -59,6 +104,77 @@ export function installSlackInteractions(): void {
         await respond(payload.response_url, { replace_original: true, text, blocks: [...(header ? [header] : []), { type: "context", elements: [{ type: "mrkdwn", text }] }] });
       } else await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text });
       return;
+    }
+    // App Home controls. Stop: anyone who may see the job. Schedules and pausing: the owner or an admin.
+    if (["stop_run", "pause_schedule", "resume_schedule", "pause_teammate", "resume_teammate"].includes(a.action_id)) {
+      const { mayManageTeammate } = await import("../authority.ts");
+      let tmId: string | null = null;
+      if (a.action_id === "stop_run") {
+        const r = (await pool.query("SELECT r.session_id, s.teammate_id FROM runs r JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.value])).rows[0];
+        if (r) { tmId = r.teammate_id; const { stopSession } = await import("../pi/supervisor.ts"); await stopSession(r.session_id); await appendEvent({ sessionId: r.session_id, type: "slack.stop", data: { user: payload.user.id, from: "home" } }); }
+      } else if (a.action_id.endsWith("_schedule")) {
+        const sc = (await pool.query("SELECT teammate_id, created_by FROM schedules WHERE id = $1", [a.value])).rows[0];
+        const tm = sc ? await getTeammate(sc.teammate_id) : null;
+        if (!tm || !(sc.created_by === who.id || mayManageTeammate(tm, who))) return void (await respond(payload.response_url, { response_type: "ephemeral", text: "Only the person who set it up, the owner or an admin can change this schedule." }).catch(() => {}));
+        await pool.query("UPDATE schedules SET enabled = $2 WHERE id = $1", [a.value, a.action_id === "resume_schedule"]);
+        const { syncSchedules } = await import("../durable/schedules.ts"); await syncSchedules();
+        tmId = tm.id;
+      } else {
+        const tm = await getTeammate(String(a.value));
+        if (!tm || !mayManageTeammate(tm, who)) return;
+        await pool.query("UPDATE teammates SET paused_at = $2 WHERE id = $1", [tm.id, a.action_id === "pause_teammate" ? new Date() : null]);
+        await appendEvent({ type: "teammate.paused", data: { teammate_id: tm.id, paused: a.action_id === "pause_teammate", by: who.id } });
+        tmId = tm.id;
+      }
+      if (tmId && payload.view?.type === "home") { const { publishHome } = await import("./home.ts"); await publishHome(appId, tmId, payload.user.id, await homeExtra(appId, tmId, payload.user.id)).catch(() => {}); }
+      return;
+    }
+    // Recovering from a failed run (SLACK_UX_SPEC §3.6): retry, retry on the fallback model, or ask the owner.
+    if (["retry_run", "retry_fallback", "ask_owner"].includes(a.action_id)) {
+      const r = (await pool.query("SELECT r.session_id, sub.text, sub.person_id, s.teammate_id, s.place FROM runs r JOIN submissions sub ON sub.id = r.submission_id JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.value])).rows[0];
+      const tm = r ? await getTeammate(r.teammate_id) : null;
+      if (!r || !tm) return;
+      if (a.action_id === "ask_owner") {
+        const owner = tm.owner_person ? (await pool.query("SELECT slack_user FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.slack_user : null;
+        if (!owner) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `${tm.config.name} has no owner yet; an admin can help.` }).catch(() => {}));
+        const dm: any = await slack(appId, "conversations.open", { users: owner }).catch(() => null);
+        const link: any = r.place?.slack ? await slack(appId, "chat.getPermalink", { channel: r.place.slack.channel, message_ts: r.place.slack.thread_ts }).catch(() => null) : null;
+        if (dm?.channel?.id) await slack(appId, "chat.postMessage", { channel: dm.channel.id, text: `<@${payload.user.id}> asked you to look at a job ${tm.config.name} couldn't finish${link?.permalink ? `: ${link.permalink}` : "."}` }).catch(() => null);
+        return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Asked <@${owner}> to take a look.` }).catch(() => {}));
+      }
+      const { submit } = await import("../store/sessions.ts");
+      const { startRun } = await import("../durable/runs.ts");
+      if (a.action_id === "retry_fallback" && tm.config.model.fallback) await pool.query("UPDATE sessions SET place = jsonb_set(place, '{model}', to_jsonb($2::text)) WHERE id = $1", [r.session_id, tm.config.model.fallback]);
+      const { run, created } = await submit({ sessionId: r.session_id, personId: who.id, requestId: `${a.action_id}:${a.value}:${payload.action_ts ?? Date.now()}`, text: r.text, source: "slack" });
+      if (created) await startRun(run.id);
+      return;
+    }
+    // Out of budget: ask the owner for more, and the owner's raise.
+    if (a.action_id === "ask_budget" || a.action_id === "raise_budget") {
+      const [slug, amount] = String(a.value).split(":");
+      const tm = await getTeammate(slug);
+      if (!tm) return;
+      const { mayManageTeammate } = await import("../authority.ts");
+      if (a.action_id === "raise_budget") {
+        if (!mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${tm.config.name}'s owner or an admin can raise its budget.` }).catch(() => {}));
+        const { configProblems } = await import("../hire-rules.ts");
+        const bad = await configProblems(who, { budget_usd: Number(amount) });
+        if (bad) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: bad }).catch(() => {}));
+        const { updateTeammate } = await import("../store/teammates.ts");
+        await updateTeammate(tm.slug, { budget: { monthly_usd: Number(amount) } } as any, { label: `${who.display_name ?? "the owner"} from Slack` }, "budget raised from the budget card");
+        return void (await respond(payload.response_url, { replace_original: true, text: `✓ ${tm.config.name}'s budget is now $${amount} a month (raised by ${who.display_name ?? "the owner"}).` }).catch(() => {}));
+      }
+      const owner = tm.owner_person ? (await pool.query("SELECT slack_user FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.slack_user : null;
+      if (!owner) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `${tm.config.name} has no owner yet; ask an admin.` }).catch(() => {}));
+      const dm: any = await slack(appId, "conversations.open", { users: owner }).catch(() => null);
+      const now = tm.config.budget.monthly_usd;
+      const up = [Math.ceil(now * 1.5), now * 2].map((x) => Math.max(x, now + 1));
+      if (dm?.channel?.id) await slack(appId, "chat.postMessage", { channel: dm.channel.id, text: `${tm.config.name} has used its $${now} for this month.`, blocks: [
+        { type: "section", text: { type: "mrkdwn", text: `<@${payload.user.id}> asked for more budget: *${tm.config.name}* has used its $${now} for this month.` } },
+        { type: "actions", elements: up.map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: "raise_budget", value: `${tm.slug}:${x}` })) },
+        { type: "context", elements: [{ type: "mrkdwn", text: "Only the owner or an admin can raise it." }] },
+      ] }).catch(() => null);
+      return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Asked <@${owner}> for more budget.` }).catch(() => {}));
     }
     if (a.action_id === "verify_note") {
       const [slug, bank, ...rest] = String(a.value).split("|");
@@ -76,51 +192,58 @@ export function installSlackInteractions(): void {
       await appendEvent({ sessionId: run?.session_id ?? null, runId, type: "slack.feedback", data: { vote, by: who.id } });
       if (vote === "down" && run) await pool.query("UPDATE sessions SET place = jsonb_set(place, '{muted}', 'true'::jsonb) WHERE id = $1", [run.session_id]);
       // 👍/👎 become memory candidates (unverified until the owner verifies them).
-      if (run) await feedbackNote(run.session_id, runId, vote, who.display_name ?? payload.user.id).catch(() => null);
+      // The teammate sees it as a fact on its next turn and decides what to remember (the tidying-memory skill).
       await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: vote === "up" ? "Thanks, noted." : "Thanks, noted. I'll stay quiet in this thread unless someone asks me." });
     }
   });
 
   onSlackEvent(async ({ appId, teammateId, event }) => {
-    if (event.type !== "app_home_opened" || event.tab !== "home" || !teammateId) return;
-    const tm = await getTeammate(teammateId);
-    if (!tm) return;
-    const spend = await teammateSpend(tm).catch(() => null);
-    const jobs = (await pool.query(
-      `SELECT r.id, r.status, r.created_at, left(s2.text, 80) AS asked FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions s2 ON s2.id = r.submission_id
-        WHERE s.teammate_id = $1 ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
-    const c = tm.config;
-    // On Peeblo's home: the viewer's hires still waiting for "Add to Slack" (an admin sees every one).
-    let waiting: any[] = [];
-    if (tm.slug === "peeblo") {
-      const viewer = await personForSlack(String((await getApp(appId))?.team_id ?? ""), event.user);
-      const { isOtariAdmin } = await import("../authority.ts");
-      const { waitingInstalls } = await import("./install.ts");
-      waiting = await waitingInstalls(viewer.id, isOtariAdmin(viewer)).catch(() => []);
+    // Slack's native Stop on a working agent session: stop the run(s) in that thread, then mark it active.
+    if (event.type === "agent_session_stopped" && teammateId) {
+      const channel = event.channel_id ?? event.channel ?? event.session?.channel_id;
+      const thread = event.thread_ts ?? event.session?.thread_ts;
+      const s = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND place_key = $2 ORDER BY last_active_at DESC NULLS LAST LIMIT 1", [teammateId, `${channel}:${thread}`])).rows[0];
+      if (s) {
+        const { stopSession } = await import("../pi/supervisor.ts");
+        const stopped = await stopSession(s.id);
+        await appendEvent({ sessionId: s.id, type: "slack.stop", data: { user: event.user ?? null, from: "agent_session_stopped", stopped } });
+      }
+      await slack(appId, "agents.sessions.setStatus", { channel_id: channel, thread_ts: thread, status: "active" }).catch(() => null);
+      return;
     }
-    const blocks: any[] = [
-      ...waiting, ...(waiting.length ? [{ type: "divider" }] : []),
-      { type: "header", text: { type: "plain_text", text: `${c.name} · ${c.role}`.slice(0, 150) } },
-      { type: "section", fields: [
-        { type: "mrkdwn", text: `*Model*\n${c.model.default}${c.model.fallback ? `\nfallback ${c.model.fallback}` : ""}` },
-        { type: "mrkdwn", text: `*Budget*\n${spend ? `${usd(spend.spent)} of ${usd(spend.cap)} this month` : `${usd(c.budget.monthly_usd)} a month`}` },
-        { type: "mrkdwn", text: `*Approvals*\n${c.mode} mode` },
-        { type: "mrkdwn", text: `*Tools*\n${[...c.tools, ...c.connectors].join(", ") || "none"}` },
-        { type: "mrkdwn", text: `*Computer*\n${c.computer?.size ?? "small"}` },
-        { type: "mrkdwn", text: `*Owner*\n${tm.owner_person ? "set" : "none yet"}` },
-      ] },
-      ...(c.instructions ? [{ type: "section", text: { type: "mrkdwn", text: `*Standing instructions*\n${c.instructions.slice(0, 1500)}` } }] : []),
-      { type: "divider" },
-      { type: "section", text: { type: "mrkdwn", text: `*Recent jobs*\n${jobs.map((j) => `• ${j.status === "done" ? "✅" : j.status === "failed" ? "⚠️" : "⏳"} ${String(j.asked).replace(/\n/g, " ")}`).join("\n") || "none yet"}` } },
-      ...(await memoryBlocks(tm, event.user)),
-      { type: "context", elements: [{ type: "mrkdwn", text: `Version ${tm.version} · every reply is signed with its model, cost and receipt` }] },
-    ];
-    await slack(appId, "views.publish", { user_id: event.user, view: { type: "home", blocks } });
+    // The Messages tab: a first-time visitor gets the teammate's welcome; everyone sees its starter prompts.
+    if (event.type === "app_home_opened" && event.tab === "messages" && teammateId) {
+      const team = String((await getApp(appId))?.team_id ?? "");
+      const { welcomeOnce, setPrompts } = await import("./welcome.ts");
+      if (!(await welcomeOnce(appId, teammateId, team, event.user, "opened"))) {
+        const tm = await getTeammate(teammateId);
+        if (tm && event.channel) await setPrompts(tm, appId, event.channel);
+      }
+      return;
+    }
+    if (event.type !== "app_home_opened" || event.tab !== "home" || !teammateId) return;
+    const { publishHome } = await import("./home.ts");
+    await publishHome(appId, teammateId, event.user, await homeExtra(appId, teammateId, event.user));
   });
+  void import("./home.ts").then(({ installLiveHome, homeBlocks }) => installLiveHome(async (appId, teammateId, user) => {
+    const tm = await getTeammate(teammateId);
+    return tm ? [...(await homeExtra(appId, teammateId, user)), ...(await homeBlocks(appId, tm, user))].slice(0, 100) : [];
+  }));
+}
+
+// On Peeblo's home: the viewer's hires still waiting for "Add to Slack" (an admin sees every one).
+async function homeExtra(appId: string, teammateId: string, user: string): Promise<any[]> {
+  const tm = await getTeammate(teammateId);
+  if (tm?.slug !== "peeblo") return [];
+  const viewer = await personForSlack(String((await getApp(appId))?.team_id ?? ""), user);
+  const { isOtariAdmin } = await import("../authority.ts");
+  const { waitingInstalls } = await import("./install.ts");
+  const w = await waitingInstalls(viewer.id, isOtariAdmin(viewer)).catch(() => []);
+  return w.length ? [...w, { type: "divider" }] : [];
 }
 
 // Memory on the profile page: counts, and unverified notes the owner can verify with one click.
-async function memoryBlocks(tm: any, viewer: string): Promise<any[]> {
+export async function memoryBlocks(tm: any, viewer: string): Promise<any[]> {
   const { notesIn } = await import("../memory/store.ts");
   const { readdirSync, existsSync } = await import("node:fs");
   const { join } = await import("node:path");

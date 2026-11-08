@@ -1,0 +1,108 @@
+// A teammate's Slack profile (SLACK_UX_SPEC §3.1): its app manifest, built from its config. Code draws the frame and
+// checks the limits; the words (bio, agent description, starter prompts) are the agent's, written at hire and
+// approved on the ID card. After any config change the manifest is updated (Slack allows about one update a
+// minute, so updates queue). agent_view is Slack's agent messaging model; moving an app to it is one-way.
+import { config } from "../config.ts";
+import { pool } from "../db.ts";
+import { appendEvent, onEvent } from "../store/events.ts";
+import { getTeammate, type Teammate } from "../store/teammates.ts";
+
+export const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "commands", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write"];
+const EVENTS = ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim", "app_home_opened", "member_joined_channel", "agent_session_stopped", "agent_session_title_changed", "app_context_changed"];
+
+const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
+
+async function ownerName(tm: Teammate): Promise<string> {
+  if (!tm.owner_person) return "no owner yet";
+  const p = (await pool.query("SELECT display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0];
+  return p?.display_name ?? "a person";
+}
+
+// The facts footer under the agent's bio (code fills it; the model never writes these numbers).
+async function facts(tm: Teammate): Promise<string> {
+  const c = tm.config;
+  return [
+    `Owner: ${await ownerName(tm)}`,
+    `Model: ${c.model.default}${c.model.fallback ? `, falls back to ${c.model.fallback}` : ""}`,
+    `Budget: $${c.budget.monthly_usd} a month`,
+    `Approvals: ${c.mode} mode`,
+    `Tools: ${[...c.tools, ...c.connectors].join(", ") || "none"}`,
+    "Every reply ends with a receipt: the model, what it cost, and a link to the full trace.",
+  ].join("\n");
+}
+
+export async function manifestFor(tm: Teammate, color: string): Promise<Record<string, any>> {
+  const c = tm.config;
+  const base = config.publicUrl;
+  const peeblo = tm.slug === "peeblo";
+  const bio = c.profile?.bio?.trim() || `${c.name} is ${c.role.replace(/^./, (x) => x.toLowerCase())}.`;
+  let long = `${bio}\n\n${await facts(tm)}`;
+  if (long.length < 175) long = `${long}\nIt works on its own computer and asks a person before it acts on anything that matters.`;
+  const short = cut(c.name, 18);
+  return {
+    display_information: { name: cut(c.name, 35), description: cut(c.role, 140), long_description: cut(long, 4000), background_color: color },
+    features: {
+      app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+      bot_user: { display_name: cut(tm.slug, 80), always_online: true },
+      agent_view: { agent_description: cut(c.profile?.agent_description?.trim() || c.role, 300), suggested_prompts: (c.profile?.starter_prompts ?? []).slice(0, 4) },
+      shortcuts: [
+        { name: cut(`Ask ${short} about this`, 24), type: "message", callback_id: "ask_about", description: cut(`Ask ${c.name} about this message, in a thread`, 150) },
+        { name: cut(`Hand this to ${short}`, 24), type: "message", callback_id: "hand_to", description: cut(`Give ${c.name} this message as a job`, 150) },
+        { name: cut(`New job for ${short}`, 24), type: "global", callback_id: "new_job", description: cut(`Describe a job for ${c.name}`, 150) },
+      ],
+      // Slash commands only on Peeblo's own app, so many teammate apps never clash.
+      ...(peeblo ? { slash_commands: [{ command: "/peeblo", url: `${base}/slack/commands`, description: "Your AI crew: crew, hire, budget, settings @teammate", usage_hint: "crew | hire | budget | settings @name", should_escape: true }] } : {}),
+    },
+    oauth_config: { redirect_urls: [`${base}/slack/oauth/callback`], scopes: { bot: BOT_SCOPES } },
+    settings: {
+      event_subscriptions: { request_url: `${base}/slack/events`, bot_events: EVENTS },
+      interactivity: { is_enabled: true, request_url: `${base}/slack/interactions` },
+      org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false,
+    },
+  };
+}
+
+async function faceColor(tm: Teammate): Promise<string> {
+  const h = (await pool.query("SELECT avatar FROM hires WHERE teammate_id = $1", [tm.id])).rows[0];
+  if (h?.avatar?.color) return h.avatar.color;
+  const { pickFace } = await import("./idcard.ts");
+  return pickFace(tm.slug).color;
+}
+
+// One manifest update at a time, a minute apart (apps.manifest.update is rate limited).
+let chain: Promise<unknown> = Promise.resolve();
+let last = 0;
+export function syncManifest(teammateId: string): Promise<{ ok: boolean; error?: string }> {
+  const job = chain.then(async () => {
+    const wait = last + 61_000 - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+    return updateNow(teammateId);
+  });
+  chain = job.catch(() => {});
+  return job;
+}
+
+export async function updateNow(teammateId: string): Promise<{ ok: boolean; error?: string }> {
+  const tm = await getTeammate(teammateId);
+  if (!tm) return { ok: false, error: "no teammate" };
+  const apps = (await pool.query("SELECT app_id FROM slack_apps WHERE teammate_id = $1", [tm.id])).rows;
+  if (!apps.length) return { ok: false, error: "no Slack app" };
+  const { configToken } = await import("./admin.ts");
+  const token = await configToken();
+  const manifest = await manifestFor(tm, await faceColor(tm));
+  for (const a of apps) {
+    const r: any = await (await fetch("https://slack.com/api/apps.manifest.update", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: new URLSearchParams({ app_id: a.app_id, manifest: JSON.stringify(manifest) }) })).json();
+    await appendEvent({ type: "slack.manifest_updated", data: { teammate_id: tm.id, app_id: a.app_id, ok: r.ok, error: r.error ?? null, errors: r.errors ?? null, needs_reinstall: r.permissions_updated ?? null } });
+    if (!r.ok) return { ok: false, error: `${r.error}${r.errors ? ` ${JSON.stringify(r.errors).slice(0, 400)}` : ""}` };
+  }
+  return { ok: true };
+}
+
+export function installProfileSync(): void {
+  onEvent(async (e) => {
+    if (e.type !== "teammate.updated") return;
+    const id = String((e.data as any).teammate_id);
+    void syncManifest(id).catch((err) => console.error("manifest sync:", (err as Error).message));
+  });
+}

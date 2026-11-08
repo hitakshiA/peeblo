@@ -197,7 +197,11 @@ export function startProxy(): Promise<Server> {
     if (isInference) {
       if (b.modelCalls?.runId !== b.runId) b.modelCalls = { runId: b.runId, n: 0 };
       b.modelCalls.n++;
-      const why = b.stuck?.runId === b.runId ? b.stuck.reason : b.modelCalls.n > MAX_MODEL_CALLS ? `more than ${MAX_MODEL_CALLS} model calls` : null;
+      // K14: three model turns in a row with nothing visible in between (no tool ran, nothing posted) stop the run.
+      const silent = b.runId ? Number((await pool.query(
+        `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
+           AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
+      const why = b.stuck?.runId === b.runId ? b.stuck.reason : b.modelCalls.n > MAX_MODEL_CALLS ? `more than ${MAX_MODEL_CALLS} model calls` : silent >= 3 ? "3 turns in a row with no visible output" : null;
       if (why) {
         if (b.stuck?.runId !== b.runId) { b.stuck = { runId: b.runId, reason: why }; await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: why } }).catch(() => {}); }
         return void res.writeHead(429, { "content-type": "application/json", "otari-error-code": "loop_limit", "peeblo-refused": "loop_limit" }).end(JSON.stringify({ detail: `Peeblo stopped this run: ${why}.`, code: "loop_limit" }));

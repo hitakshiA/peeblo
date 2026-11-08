@@ -31,6 +31,9 @@ async function checkout(ctx: ToolContext): Promise<string | null> {
 // A path the model gave: on the host mount (/workspace, or relative to the session folder), or in the VM
 // (/work/<session>/…, or relative to the open checkout). Anything else is refused.
 type Target = { where: "host"; rel: string; host: string } | { where: "vm"; rel: string; guest: string };
+// Commands whose output comes from the network (a fetch, a clone, a package registry, an API call).
+const NETWORK = /\b(curl|wget|http|https|git\s+(clone|pull|fetch)|gh\s|npx|pip3?\s+download|npm\s+view|xh\s|nc\s|ssh\s|scp\s)\b/i;
+
 async function target(ctx: ToolContext, p: string): Promise<Target | null> {
   const own = `/work/${ctx.sessionId}/`;
   const co = p.startsWith("/") ? null : await checkout(ctx);
@@ -106,7 +109,10 @@ export const computerTools: AgentTool[] = [
       const install = /\b(apk add|npm (i|install)\b.*(-g|--global)|pip3? install|uv pip install|uv tool install|apt(-get)? install)\b/.test(a.command);
       const note = install && r.exitCode === 0 ? "\n[peeblo: this install is lost at the next computer reset unless it's in your recipe.]" : "";
       const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${tail(r.stdout)}${r.stderr ? `\n[stderr]\n${tail(r.stderr)}` : ""}${note}`;
-      return { text, isError: r.exitCode !== 0, untrusted: "computer:bash", data: { exit_code: r.exitCode, ms: r.ms } };
+      // Untrusted only when it really came from outside (K13, K22): a repo checkout (other people's code) or the
+      // network. The teammate's own files and commands in its workspace are its own work.
+      const outside = Boolean(await checkout(ctx)) || NETWORK.test(a.command);
+      return { text, isError: r.exitCode !== 0, ...(outside ? { untrusted: "computer:bash" } : {}), data: { exit_code: r.exitCode, ms: r.ms } };
     },
   },
   {
@@ -128,7 +134,7 @@ export const computerTools: AgentTool[] = [
       const lines = body.split("\n");
       const from = (a.offset ?? 1) - 1;
       const part = lines.slice(from, from + (a.limit ?? 2000));
-      return { text: `${part.map((l, i) => `${from + i + 1}\t${l}`).join("\n")}${from + part.length < lines.length ? `\n[${lines.length - from - part.length} more lines]` : ""}`, untrusted: `computer:${p.rel}` };
+      return { text: `${part.map((l, i) => `${from + i + 1}\t${l}`).join("\n")}${from + part.length < lines.length ? `\n[${lines.length - from - part.length} more lines]` : ""}`, ...(p.where === "vm" ? { untrusted: `computer:${p.rel}` } : {}) };
     },
   },
   {

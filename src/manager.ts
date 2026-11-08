@@ -17,7 +17,12 @@ export async function ensureManager(): Promise<void> {
   }
   let tm = (await getTeammate(MANAGER))!;
   // Peeblo reads the team's sources for company setup (reads are free; writes go through the gate like anyone's).
-  if (!tm.config.connectors.length) tm = await updateTeammate(MANAGER, { connectors: ["linear", "github", "posthog"] } as any, { label: "Peeblo: read sources for company setup" }, "company setup reads the connected sources");
+  // Seeded once, on the first start; after that the owner's choice stands, even an empty list.
+  const seeded = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.seed_connectors' LIMIT 1")).rows.length > 0;
+  if (!seeded) {
+    if (!tm.config.connectors.length) tm = await updateTeammate(MANAGER, { connectors: ["linear", "github", "posthog"] } as any, { label: "Peeblo: read sources for company setup" }, "company setup reads the connected sources");
+    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.seed_connectors', $1, '{}')", [tm.id]);
+  }
   // Teammates work only through their own apps (Nov 8): an older Peeblo gets the rule once, as a new version.
   if (!tm.config.instructions.includes("never do a teammate's job")) tm = await updateTeammate(MANAGER, { instructions: `${tm.config.instructions.trim()} ${INSTALL_RULE}` } as any, { label: "Peeblo: teammates work only through their own apps" }, "Peeblo never works or speaks for a teammate");
   if (config.managerAppId) await pool.query("UPDATE slack_apps SET teammate_id = $2 WHERE app_id = $1 AND teammate_id IS DISTINCT FROM $2", [config.managerAppId, tm.id]);

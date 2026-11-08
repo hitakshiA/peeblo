@@ -28,8 +28,11 @@ export const router = new Router()
   .add("GET", "/healthz", async () => ({ ok: true }))
   .add("GET", "/v1/teammates", async () => ({ teammates: await listTeammates() }))
   .add("POST", "/v1/teammates", async ({ body }) => {
-    const { slug, ...config } = body ?? {};
-    return createTeammate(String(slug ?? ""), config, { personId: body?.owner_person ?? null, label: "api" });
+    const { slug, hidden, ...config } = body ?? {};
+    const t = await createTeammate(String(slug ?? ""), config, { personId: body?.owner_person ?? null, label: "api" });
+    // Test and check teammates are flagged hidden, so crew lists leave them out.
+    if (hidden) await pool.query("UPDATE teammates SET hidden = true WHERE id = $1", [t.id]);
+    return t;
   })
   .add("GET", "/v1/teammates/:slug", async ({ params }) => (await getTeammate(params.slug)) ?? Promise.reject(notFound("teammate")))
   .add("PATCH", "/v1/teammates/:slug", async ({ params, body }) => {

@@ -37,30 +37,15 @@ export async function configToken(): Promise<string> {
   return r.token;
 }
 
-const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write"];
-export function manifest(name: string, display: string, description: string, color: string) {
-  const base = config.publicUrl;
-  return {
-    display_information: { name: display, description: description.slice(0, 139), background_color: color, long_description: `${display} is an AI teammate on Peeblo (${description.slice(0, 120)}). It works on its own computer, asks a person before it acts on anything that matters, and signs every reply with a receipt: the open model it used, what it cost, and a link to the full trace in Otari.` },
-    features: {
-      app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
-      bot_user: { display_name: name, always_online: true },
-      assistant_view: { assistant_description: `${display}, your AI teammate`, suggested_prompts: [] },
-    },
-    oauth_config: { redirect_urls: [`${base}/slack/oauth/callback`], scopes: { bot: BOT_SCOPES } },
-    settings: {
-      event_subscriptions: { request_url: `${base}/slack/events`, bot_events: ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim", "app_home_opened", "assistant_thread_started", "member_joined_channel"] },
-      interactivity: { is_enabled: true, request_url: `${base}/slack/interactions` },
-      org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false,
-    },
-  };
-}
+// The manifest and scopes live in profile.ts (built from the teammate's config and its agent-written profile).
+import { BOT_SCOPES, manifestFor } from "./profile.ts";
 
 // Creates the teammate's app and sets its face. Returns the app id and its one-click install link.
 export async function createTeammateApp(tm: Teammate, color: string, png: Buffer): Promise<{ appId: string; installUrl: string }> {
   const token = await configToken();
   const display = tm.config.name;
-  const r = await call("apps.manifest.create", form({ manifest: JSON.stringify(manifest(tm.slug, display, `${display}: ${tm.config.role}`, color)) }), token);
+  void display;
+  const r = await call("apps.manifest.create", form({ manifest: JSON.stringify(await manifestFor(tm, color)) }), token);
   if (!r.ok) throw new Error(`Slack wouldn't create the app: ${r.error}${r.errors ? ` ${JSON.stringify(r.errors).slice(0, 300)}` : ""}`);
   await saveApp({ app_id: r.app_id, teammate_id: tm.id, secrets: { signing_secret: r.credentials.signing_secret, client_id: r.credentials.client_id, client_secret: r.credentials.client_secret } });
   const fd = new FormData();

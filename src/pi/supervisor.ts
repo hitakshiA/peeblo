@@ -201,7 +201,32 @@ async function liveThreadsNote(sessionId: string, teammateId: string): Promise<s
 }
 
 // One turn: send the wrapped submission, wait for agent_settled, return the answer.
-async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; stopReason: string | null }> {
+// 👍/👎 on this teammate's replies since it last heard about them, as a fact (it decides what to remember).
+async function feedbackNote(sessionId: string, runId: string, teammateId: string): Promise<string> {
+  const { rows } = await pool.query(
+    `SELECT f.id, f.data->>'vote' AS vote, left(sub.text, 120) AS asked FROM events f JOIN runs r ON r.id = f.run_id JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
+      WHERE f.type = 'slack.feedback' AND s.teammate_id = $1
+        AND f.id > coalesce((SELECT max((data->>'upto')::bigint) FROM events WHERE type = 'feedback.noted' AND data->>'teammate_id' = $1), 0)
+      ORDER BY f.id LIMIT 5`, [teammateId]);
+  if (!rows.length) return "";
+  await appendEvent({ sessionId, runId, type: "feedback.noted", data: { teammate_id: teammateId, upto: rows.at(-1).id } });
+  return `<peeblo_event kind="feedback">People rated your recent replies: ${rows.map((r) => `${r.vote === "up" ? "👍" : "👎"} on "${String(r.asked).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()}"`).join("; ")}. Decide whether anything is worth remembering about how they want answers.</peeblo_event>\n`;
+}
+
+// Who of the crew is in this channel, for a channel session (who to hand work to, K18).
+const rosters = new Map<string, { at: number; text: string }>();
+async function rosterNote(place: { app_id: string; channel: string }): Promise<string> {
+  const hit = rosters.get(place.channel);
+  if (hit && Date.now() - hit.at < 600_000) return hit.text;
+  const { slack } = await import("../slack/api.ts");
+  const members: string[] = (await slack(place.app_id, "conversations.members", { channel: place.channel, limit: 500 }).catch(() => null))?.members ?? [];
+  const { rows } = await pool.query("SELECT a.bot_user_id, t.slug, v.config->>'name' AS name, v.config->>'role' AS role FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id JOIN teammate_versions v ON v.teammate_id = t.id AND v.version = t.version WHERE t.slug <> 'peeblo' AND NOT t.hidden AND a.bot_user_id = ANY($1)", [members]);
+  const text = rows.length ? `<peeblo_event kind="roster">Teammates in this channel: ${rows.map((r) => `${r.name} (<@${r.bot_user_id}>, ${r.role})`).join("; ")}.</peeblo_event>\n` : "";
+  rosters.set(place.channel, { at: Date.now(), text });
+  return text;
+}
+
+async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise<{ text: string; stopReason: string | null }> {
   const current = await getTeammate(ctx.session.teammate_id);
   if (!current) throw new Error("teammate is gone");
   const { tm, note: changeNote } = await sessionConfig(ctx.session.id, ctx.run.id, current);
@@ -212,7 +237,7 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
   // Receipts say whether Otari's org guardrail screened the turn; read its state fresh for each turn.
   if (guardMode() === "lakera") await freshLakeraState(0);
   // The open guard screens the person's message before the teammate sees it (Lakera runs inside Otari instead).
-  if (guardMode() === "open") {
+  if (guardMode() === "open" && !internal) {
     // The guard fails closed: one retry, then the message is not acted on (and the person is told why).
     const screenOnce = () => screenOpen(ctx.session.id, ctx.run.id, person?.end_user_id ?? null, tm.slug, ctx.text);
     const g = await screenOnce().catch(() => screenOnce()).catch(async (e) => {
@@ -235,9 +260,11 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
     // A fact for channel sessions (K2, K10): this message wasn't addressed to the teammate.
     const slackPlace = (ctx.session.place as any)?.slack;
     const channelNote = slackPlace && !slackPlace.direct ? `<peeblo_event kind="reading_along">This is a message in a channel you're reading along in. No one tagged or DMed you; it is addressed to the channel${/<@U[A-Z0-9]+>/.test(ctx.text) ? " (and to the people it tags, who aren't you)" : ""}.</peeblo_event>\n` : "";
-    const note = (tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "") + (await liveThreadsNote(ctx.session.id, tm.id)) + repoNote + channelNote;
+    const note = (tm.config.tools.some((t) => t === "web" || t === "code") ? await otariToolNote(ctx.session.id, ctx.run.id) : "") + (await liveThreadsNote(ctx.session.id, tm.id)) + repoNote + channelNote
+      + (await feedbackNote(ctx.session.id, ctx.run.id, tm.id)) + (slackPlace && !slackPlace.direct ? await rosterNote(slackPlace) : "");
     snapshotAfter = () => snapshotWip(tm.id, ctx.session.id).catch(() => 0);
-    await l.rpc.send("prompt", { message: `${changeNote}${note}<message from="${from.replace(/"/g, "'")}">${ctx.text}</message>` });
+    // A continuation from the Stop check is Peeblo's own note, not a person's message.
+    await l.rpc.send("prompt", { message: internal ?? `${changeNote}${note}<message from="${from.replace(/"/g, "'")}">${ctx.text}</message>` });
     await settled;
     // Uncommitted work in the session's checkouts is saved after every turn (refs/peeblo/wip/<session>).
     await snapshotAfter?.();
@@ -259,7 +286,11 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
   l.queue = job.catch(() => {});
   const r = await job;
   if (r.blocked) return { text: blockedReply("Lakera, Otari's org guardrail"), stopReason: "guard_blocked" };
-  if (r.stuck) return { text: `${r.text ? `${r.text}\n\n` : ""}I stopped here: ${r.stuck.reason}. Tell me how you'd like to go on.`, stopReason: "stuck" };
+  if (r.stuck) {
+    // The tool result already told the teammate it was stopped; the fixed sentence is only a fallback.
+    const said = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [ctx.run.id])).rows[0].n);
+    return { text: said || r.text ? r.text : `I stopped here: ${r.stuck.reason}. Tell me how you'd like to go on.`, stopReason: "stuck" };
+  }
   // Peeblo's own refusal (before Otari) carries its sentence; Otari's carries its numbers.
   if (r.money) return { text: r.money.by === "peeblo" ? `I can't run this: ${r.money.message} An admin can raise the budget, or it resets next month.` : budgetReply(r.money, tm.config.name), stopReason: "budget_blocked" };
   if (r.stopReason === "error") {
@@ -268,13 +299,51 @@ async function turn(ctx: RunContext, turnNo: number): Promise<{ text: string; st
   return r;
 }
 
+// K9: "was the request answered?" is a Stop check in a fresh context (a typed judge from another model family
+// than the worker), and a job with a spec (a delegated objective) gets an outcome grader against that spec. Either
+// may send the teammate back once, with the reason; never more than one continuation.
+async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string | null }): Promise<{ again: string | null }> {
+  if (r.stopReason !== "stop") return { again: null };
+  const src = (await pool.query("SELECT source FROM submissions WHERE id = $1", [ctx.run.submission_id])).rows[0]?.source;
+  const place = (ctx.session.place as any)?.slack;
+  // Only direct asks and delegated jobs: a channel it reads along in, a welcome or an unattended run may end quietly.
+  if (!["slack", "api", "teammate"].includes(src) || (place && !place.direct)) return { again: null };
+  const posted = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' ORDER BY id", [ctx.run.id])).rows.map((x) => String(x.t));
+  const tools = (await pool.query("SELECT data->>'tool' AS t, data->>'status' AS s FROM events WHERE run_id = $1 AND type = 'tool.call' ORDER BY id", [ctx.run.id])).rows.map((x) => `${x.t} (${x.s})`);
+  const state = [
+    `The request${src === "teammate" ? " (a job with a spec from another teammate)" : ""}:\n${ctx.text.slice(0, 3000)}`,
+    `What the teammate posted for the person:\n${posted.join("\n---\n").slice(0, 4000) || "(nothing posted)"}`,
+    `Its final words: ${r.text.slice(0, 1500) || "(none)"}`,
+    `Tools it used: ${tools.join(", ").slice(0, 1500) || "none"}`,
+  ].join("\n\n");
+  const { decide } = await import("../otari/decisions.ts");
+  if (src === "teammate") {
+    const g = await decide(state, { meets: { type: "noul", instructions: "Does the posted result meet the spec: the Objective is done and what it says to hand back is there, in that shape? A clear, honest explanation of why it can't be done also counts as meeting it." } }, { safeDefault: { meets: true } });
+    await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "outcome.graded", data: { meets: g.answers.meets.value, reason: g.answers.meets.reason, via: g.via, model: g.model, request_ids: g.requestIds } });
+    return { again: g.answers.meets.value === false ? `<peeblo_event kind="outcome_grader">A grader checked your result against the job's spec and found it short: ${g.answers.meets.reason ?? "it doesn't meet the spec"}. Fix that once and post the result with slack_post; if it can't be done, say exactly what's missing.</peeblo_event>` : null };
+  }
+  const d = await decide(state, { verdict: { type: "choice", instructions: "Did the teammate finish what the person asked?", criteria: {
+    done: "it answered or did what was asked, or clearly explained why it can't",
+    continue: "it stopped early: work it promised isn't done, it hit an error it could fix, or nothing was posted for the person",
+    waiting: "it is rightly waiting on the person (it asked them a question, or needs an approval)",
+  } } }, { safeDefault: { verdict: "done" } });
+  await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "stop_check.decided", data: { verdict: d.answers.verdict.value, reason: d.answers.verdict.reason, via: d.via, model: d.model, request_ids: d.requestIds } });
+  return { again: d.answers.verdict.value === "continue" ? `<peeblo_event kind="stop_check">A check found the request isn't finished yet: ${d.answers.verdict.reason ?? "the answer is incomplete"}. Continue once and finish it, posting the result with slack_post. If you can't, say exactly what's missing.</peeblo_event>` : null };
+}
+
 export function installPiExecutor(): void {
   setRunExecutor(async (ctx) => {
-    const turnNo = 1;
-    await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: turnNo } }), { name: "turn-start" });
+    await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 1 } }), { name: "turn-start" });
     // A turn is one step: if core dies mid-turn, the step runs again on the same Pi session after restart.
-    const r = await DBOS.runStep(() => turn(ctx, turnNo), { name: "turn" });
-    await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: turnNo, text: r.text, stop_reason: r.stopReason } }), { name: "turn-finish" });
+    let r = await DBOS.runStep(() => turn(ctx, 1), { name: "turn" });
+    await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 1, text: r.text, stop_reason: r.stopReason } }), { name: "turn-finish" });
+    // At most one continuation, if the Stop check or the outcome grader says the job isn't done.
+    const check = await DBOS.runStep(() => stopCheck(ctx, r).catch(() => ({ again: null })), { name: "stop-check" });
+    if (check.again) {
+      await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 2, continuation: true } }), { name: "turn-start-2" });
+      r = await DBOS.runStep(() => turn(ctx, 2, check.again!), { name: "turn-2" });
+      await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 2, text: r.text, stop_reason: r.stopReason } }), { name: "turn-finish-2" });
+    }
     return { summary: r.text.slice(0, 500) };
   });
 }

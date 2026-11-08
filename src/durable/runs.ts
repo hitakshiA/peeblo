@@ -27,12 +27,15 @@ async function runWorkflowFn(runId: string): Promise<string> {
   // A teammate whose Slack app isn't installed doesn't work at all (src/slack/install.ts). Nothing is posted.
   const waiting = await DBOS.runStep(async () => {
     const { installState } = await import("../slack/install.ts");
-    return (await installState(ctx.session.teammate_id)).waiting;
+    if ((await installState(ctx.session.teammate_id)).waiting) return "not_installed";
+    // A teammate its owner paused (App Home) doesn't run either.
+    const { pool } = await import("../db.ts");
+    return (await pool.query("SELECT paused_at FROM teammates WHERE id = $1", [ctx.session.teammate_id])).rows[0]?.paused_at ? "paused" : null;
   }, { name: "installed" });
   if (waiting) {
     await DBOS.runStep(async () => {
-      await setRunStatus(runId, "failed", "not_installed");
-      await appendEvent({ sessionId: ctx.session.id, runId, type: "run.refused", data: { reason: "not_installed", teammate_id: ctx.session.teammate_id } });
+      await setRunStatus(runId, "failed", waiting);
+      await appendEvent({ sessionId: ctx.session.id, runId, type: "run.refused", data: { reason: waiting, teammate_id: ctx.session.teammate_id } });
     }, { name: "refused" });
     return "refused";
   }

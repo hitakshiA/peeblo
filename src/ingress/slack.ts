@@ -72,11 +72,38 @@ async function handleEvents(body: string, req: IncomingMessage): Promise<[number
 async function handleInteraction(body: string, req: IncomingMessage): Promise<[number, string]> {
   let payload: any;
   try { payload = JSON.parse(new URLSearchParams(body).get("payload") ?? ""); } catch { return [400, "bad body"]; }
-  const app = await getApp(String(payload.api_app_id ?? payload.view?.app_id ?? ""));
-  if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) return [401, "bad signature"];
+  let app = await getApp(String(payload.api_app_id ?? payload.view?.app_id ?? ""));
+  // Some payloads (message shortcuts) can arrive without the app id: the app is the one whose secret signed it.
+  if (!app) {
+    const { listApps } = await import("./apps.ts");
+    for (const a of await listApps()) {
+      const full = await getApp(a.app_id);
+      if (full && verifySlack(full.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) { app = full; break; }
+    }
+  }
+  if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) { console.error(`slack interaction refused: type ${payload.type}, app ${payload.api_app_id ?? "none"}`); return [401, "bad signature"]; }
   await appendEvent({ type: "slack.interaction", data: { app_id: app.app_id, type: payload.type, user: payload.user?.id, action: payload.actions?.[0]?.action_id, value: payload.actions?.[0]?.value, callback: payload.view?.callback_id } });
+  const { handleShortcut, handleSubmission } = await import("../slack/commands.ts");
+  // Shortcuts (on a message, or anywhere): answered at once, the work happens after.
+  if (payload.type === "message_action" || payload.type === "shortcut") { void handleShortcut(app.app_id, payload).catch((e) => console.error("slack shortcut:", e)); return [200, ""]; }
+  // Forms: a settings save answers with field errors, so it's checked before replying.
+  if (payload.type === "view_submission" && ["teammate_settings", "new_job", "hire_form"].includes(payload.view?.callback_id)) {
+    const errors = await handleSubmission(app.app_id, payload).catch((e) => ({ instructions: String((e as Error).message).slice(0, 150) }));
+    return [200, errors ? JSON.stringify({ response_action: "errors", errors }) : ""];
+  }
   // Answered at once (Slack wants a reply within 3 s); the work happens after.
   for (const h of interactionHandlers) void h({ appId: app.app_id, teammateId: app.teammate_id, payload }).catch((e) => console.error("slack interaction:", e));
+  return [200, ""];
+}
+
+// /peeblo on Peeblo's own app: verified with its signing secret, acknowledged at once, answered through response_url.
+async function handleCommand(body: string, req: IncomingMessage): Promise<[number, string]> {
+  const f = new URLSearchParams(body);
+  const app = await getApp(String(f.get("api_app_id") ?? ""));
+  if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) return [401, "bad signature"];
+  await appendEvent({ type: "slack.command", data: { app_id: app.app_id, user: f.get("user_id"), command: f.get("command"), text: f.get("text") } });
+  const { handleCommand: run } = await import("../slack/commands.ts");
+  void run(f).catch((e) => console.error("slack command:", e));
   return [200, ""];
 }
 
@@ -94,7 +121,8 @@ async function handleOAuth(url: URL): Promise<[number, string]> {
   if (!r.ok) return [400, page(`Slack said: ${r.error}. Try the link again.`)];
   await saveApp({ app_id: app.app_id, teammate_id: app.teammate_id, team_id: r.team?.id, bot_user_id: r.bot_user_id, secrets: { ...app.secrets, bot_token: r.access_token } });
   await appendEvent({ type: "slack.installed", data: { app_id: app.app_id, team_id: r.team?.id, bot_user_id: r.bot_user_id, installed_by: r.authed_user?.id } });
-  return [200, page("Added to Slack. You can close this tab.")];
+  // Straight into Slack, on the new teammate's own Messages tab (its welcome is there).
+  return [302, `https://slack.com/app_redirect?app=${encodeURIComponent(app.app_id)}&team=${encodeURIComponent(r.team?.id ?? "")}`];
 }
 
 async function facePngFor(slug: string): Promise<Buffer | null> {
@@ -112,7 +140,8 @@ export function startIngress(): Promise<Server> {
       let out: [number, string] = [404, "not found"];
       let type = "text/plain";
       if (req.method === "POST" && url.pathname === "/slack/events") out = await handleEvents(await rawBody(req), req);
-      else if (req.method === "POST" && url.pathname === "/slack/interactions") out = await handleInteraction(await rawBody(req), req);
+      else if (req.method === "POST" && url.pathname === "/slack/interactions") { out = await handleInteraction(await rawBody(req), req); if (out[1].startsWith("{")) type = "application/json"; }
+      else if (req.method === "POST" && url.pathname === "/slack/commands") out = await handleCommand(await rawBody(req), req);
       else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") { out = await handleOAuth(url); type = "text/html"; }
       else if (req.method === "POST" && /^\/hooks\/[a-z0-9-]{2,31}\/sc_[a-z0-9]+$/.test(url.pathname)) {
         const [, , slug, id] = url.pathname.split("/");
@@ -129,6 +158,7 @@ export function startIngress(): Promise<Server> {
         const png = await facePngFor(url.pathname.slice(7, -4));
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
       }
+      if (out[0] === 302) return void res.writeHead(302, { location: out[1] }).end();
       res.writeHead(out[0], { "content-type": type }).end(out[1]);
     } catch (error) {
       console.error("ingress error:", error);

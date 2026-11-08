@@ -14,13 +14,14 @@ export const askTeammateTool: AgentTool = {
     question: { type: "string", description: "What you need and why." },
     answer_shape: { type: ["string", "null"], description: "e.g. 'one number with its source'." },
     wait: { type: "boolean" },
+    announce: { type: "string", description: "The one line you post in this thread so people see you asked, in your words, e.g. 'Asked Warden to check the numbers with a second model.'" },
   }),
   kind: "local",
   async authorize(_ctx, a) { return (await findTeammate(a.teammate)) ? null : `There's no teammate called ${a.teammate}.`; },
   async run(ctx, a) {
     const callee = (await findTeammate(a.teammate))!;
     const text = [`${ctx.teammate.config.name} asks (for ${ctx.person?.display_name ?? "the person in this thread"}):`, a.question, a.answer_shape ? `Answer as: ${a.answer_shape}` : "", "Reply with slack_post in this thread."].filter(Boolean).join("\n");
-    const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, callee, text, "ask");
+    const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, callee, text, "ask", a.announce);
     if ("refused" in r) return { text: r.refused, isError: true };
     if (!a.wait) return { text: `Asked ${callee.config.name}; it will answer ${r.inDm ? "in its own DM with the person" : "in this thread"}.`, data: r };
     const ans = await answerOf(r.runId, 6 * 60_000);

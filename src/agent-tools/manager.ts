@@ -25,7 +25,7 @@ const MODES = ["ask", "auto", "trusted", "yolo"] as const;
 // A teammate by slug or by name (people and models say "Moss", not "moss").
 export async function findTeammate(nameOrSlug: string): Promise<Teammate | null> {
   // The slug exactly, else the (unique) name.
-  const direct = await getTeammate(nameOrSlug.trim());
+  const direct = await getTeammate(nameOrSlug.trim()) ?? await getTeammate(nameOrSlug.trim().toLowerCase());
   if (direct) return direct;
   // Two teammates can share a name; the newest is the one people mean.
   const all = (await listTeammates()).filter((t) => t.config.name.toLowerCase() === nameOrSlug.toLowerCase().trim());
@@ -51,6 +51,7 @@ const hireSpec = {
   computer_size: { type: ["string", "null"], enum: ["small", "large", null], description: "large only for teammates that browse websites." },
   face: { type: ["string", "null"], enum: [...SHAPES, null] },
   color: { type: ["string", "null"], enum: [...COLORS, null] },
+  profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
 };
 function configFrom(a: any): Partial<TeammateConfig> {
   return {
@@ -58,28 +59,12 @@ function configFrom(a: any): Partial<TeammateConfig> {
     name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || ROLES["peeblo-worker"].default, fallback: ROLES["peeblo-worker"].fallback[0] },
     budget: { monthly_usd: a.budget_usd }, tools: a.tools ?? [], connectors: a.connectors ?? [], mode: a.mode ?? "auto",
     computer: { size: a.computer_size ?? "small", allowed_hosts: [] } as any,
+    ...(a.profile ? { profile: a.profile } : {}),
   };
 }
 
-export const managerTools: AgentTool[] = [
-  {
-    name: "crew_status",
-    description: "The crew right now: each teammate's role, model, budget used, approval mode, Slack app, and its latest job.",
-    input_schema: object({}),
-    kind: "read",
-    async run() {
-      const tms = (await listTeammates()).filter((t) => t.slug !== "peeblo" && !t.slug.startsWith("eval-") && !t.slug.startsWith("vm-") && !t.slug.endsWith("-check"));
-      const lines: string[] = [];
-      for (const t of tms) {
-        const s = await teammateSpend(t).catch(() => null);
-        const app = { installed: Boolean(await ownApp(t.id)) };
-        const last = (await pool.query("SELECT r.status, r.created_at FROM runs r JOIN sessions s ON s.id = r.session_id WHERE s.teammate_id = $1 ORDER BY r.created_at DESC LIMIT 1", [t.id])).rows[0];
-        lines.push(`- ${t.config.name} (${t.slug}): ${t.config.role}. ${t.config.model.default}. ${s ? `${usd(s.spent)} of ${usd(s.cap)}` : `$${t.config.budget.monthly_usd}/mo`}. ${t.config.mode} mode. ${app?.installed ? "In Slack" : "No Slack app yet"}. Last job: ${last ? `${last.status} ${new Date(last.created_at).toISOString().slice(0, 16)}` : "none"}.`);
-      }
-      return { text: lines.join("\n") || "No teammates yet." };
-    },
-  },
-  {
+// Asking the person a question (K15): every teammate has it.
+export const askHumanTool: AgentTool = {
     name: "ask_human",
     description: "Ask the person a clarifying question you need answered before you can do the work (at most 2 at once). Their reply arrives as their next message; end your turn after asking.",
     input_schema: object({ questions: { type: "array", items: { type: "string" }, maxItems: 2 } }),
@@ -88,6 +73,27 @@ export const managerTools: AgentTool[] = [
       const text = a.questions.length === 1 ? a.questions[0] : a.questions.map((q: string, i: number) => `${i + 1}. ${q}`).join("\n");
       await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post", data: { text } });
       return { text: "Asked. End your turn now; their answer comes as the next message." };
+    },
+  };
+
+export const managerTools: AgentTool[] = [
+  askHumanTool,
+  {
+    name: "crew_status",
+    description: "The crew right now: each teammate's role, model, budget used, approval mode, Slack app, and its latest job.",
+    input_schema: object({}),
+    kind: "read",
+    async run() {
+      const hidden = new Set((await pool.query("SELECT id FROM teammates WHERE hidden")).rows.map((r) => r.id));
+      const tms = (await listTeammates()).filter((t) => t.slug !== "peeblo" && !hidden.has(t.id));
+      const lines: string[] = [];
+      for (const t of tms) {
+        const s = await teammateSpend(t).catch(() => null);
+        const app = { installed: Boolean(await ownApp(t.id)) };
+        const last = (await pool.query("SELECT r.status, r.created_at FROM runs r JOIN sessions s ON s.id = r.session_id WHERE s.teammate_id = $1 ORDER BY r.created_at DESC LIMIT 1", [t.id])).rows[0];
+        lines.push(`- ${t.config.name} (${t.slug}): ${t.config.role}. ${t.config.model.default}. ${s ? `${usd(s.spent)} of ${usd(s.cap)}` : `$${t.config.budget.monthly_usd}/mo`}. ${t.config.mode} mode. ${app?.installed ? "In Slack" : "No Slack app yet"}. Last job: ${last ? `${last.status} ${new Date(last.created_at).toISOString().slice(0, 16)}` : "none"}.`);
+      }
+      return { text: lines.join("\n") || "No teammates yet." };
     },
   },
   {
@@ -153,8 +159,9 @@ export const managerTools: AgentTool[] = [
     description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it.",
     input_schema: object({
       teammate: { type: "string" },
-      field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "budget_usd", "computer_size"] },
-      value: { type: "string", description: "The new value; lists comma-separated." },
+      field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "budget_usd", "computer_size", "profile"] },
+      value: { type: "string", description: "The new value; lists comma-separated. For profile, a short summary of the change." },
+      profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
       reason: { type: "string" },
     }),
     kind: "local",
@@ -193,11 +200,50 @@ export const managerTools: AgentTool[] = [
           return { text: `${t.config.name} is now at version ${r.teammate.version}: model = ${a.value} (fallback ${t.config.model.fallback ?? "none"}). New conversations use it.` };
         } catch (e) { return { text: `Can't change the model: ${(e as Error).message}.`, isError: true }; }
       }
+      if (a.field === "profile") {
+        if (!a.profile) return { text: "Give the profile (bio, agent_description, starter_prompts).", isError: true };
+        const next = await updateTeammate(t.slug, { profile: a.profile } as any, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
+        return { text: `${t.config.name}'s Slack profile is updated (version ${next.version}); Slack shows it within a minute or two.` };
+      }
       const patch: any = a.field === "instructions" ? { instructions: a.value }
         : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) }
         : a.field === "budget_usd" ? { budget: { monthly_usd: Number(a.value) } } : { computer: { ...t.config.computer, size: a.value } };
       const next = await updateTeammate(t.slug, patch, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
       return { text: `${t.config.name} is now at version ${next.version}: ${a.field} = ${a.value}. Running conversations keep their setup; new ones use it (a lower mode applies at once).` };
+    },
+  },
+  {
+    name: "job",
+    description: "See and steer the crew's jobs: status (what's running, waiting or just finished, optionally for one teammate), stop a job, or reassign it to another teammate (it stops there and starts with the new one, same request).",
+    input_schema: object({
+      action: { type: "string", enum: ["status", "stop", "reassign"] },
+      job: { type: ["string", "null"], description: "The job id from status (ru_…)." },
+      teammate: { type: ["string", "null"], description: "For status: only this teammate. For reassign: who takes it over." },
+    }),
+    kind: "local",
+    async run(ctx, a) {
+      if (a.action === "status") {
+        const t = a.teammate ? await findTeammate(a.teammate) : null;
+        const { rows } = await pool.query(
+          `SELECT r.id, r.status, r.created_at, tm.slug, left(sub.text, 100) AS asked FROM runs r JOIN sessions s ON s.id = r.session_id JOIN teammates tm ON tm.id = s.teammate_id JOIN submissions sub ON sub.id = r.submission_id
+            WHERE ($1::text IS NULL OR tm.id = $1) AND tm.slug <> 'peeblo' AND sub.source <> 'welcome' AND (r.status IN ('queued', 'running', 'waiting') OR r.created_at > now() - interval '2 hours')
+            ORDER BY r.created_at DESC LIMIT 15`, [t?.id ?? null]);
+        return { text: rows.map((r) => `- ${r.id} · ${r.slug} · ${r.status} · ${new Date(r.created_at).toISOString().slice(11, 16)} UTC · ${String(r.asked).replace(/\n/g, " ").replace(/<[^>]+>/g, "")}`).join("\n") || "No jobs running or in the last two hours." };
+      }
+      if (!a.job) return { text: "Which job? status lists them.", isError: true };
+      const r = (await pool.query("SELECT r.session_id, r.status, sub.text, sub.person_id, s.teammate_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.job])).rows[0];
+      if (!r) return { text: `No job ${a.job}.`, isError: true };
+      const owner = await getTeammate(r.teammate_id);
+      // Stopping or moving someone's job: the person who asked for it, the teammate's owner, or an admin.
+      if (!(ctx.person && (ctx.person.id === r.person_id || (owner && mayManageTeammate(owner, ctx.person))))) return { text: "Only the person who asked for that job, the teammate's owner or an admin can stop or move it.", isError: true };
+      const { stopSession } = await import("../pi/supervisor.ts");
+      if (["queued", "running", "waiting"].includes(r.status)) await stopSession(r.session_id);
+      if (a.action === "stop") return { text: `Stopped ${a.job}.` };
+      const to = a.teammate ? await findTeammate(a.teammate) : null;
+      if (!to) return { text: "Reassign to whom? Name a teammate.", isError: true };
+      const c = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: r.person_id ?? ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, to, `Job moved to you from ${owner?.config.name ?? "another teammate"}:\n${r.text}`, "delegate", `Moved this job from ${owner?.config.name ?? "another teammate"} to ${to.config.name}.`);
+      if ("refused" in c) return { text: c.refused, isError: true };
+      return { text: `Stopped ${a.job} and handed it to ${to.config.name}.`, data: c };
     },
   },
   {
@@ -209,6 +255,7 @@ export const managerTools: AgentTool[] = [
       context: { type: ["string", "null"], description: "Links and facts it needs." },
       constraints: { type: ["string", "null"] },
       output_shape: { type: ["string", "null"], description: "What to hand back, e.g. 'a 3-line summary with a table'." },
+      announce: { type: "string", description: "The one line you post in this thread so people see the hand-off, in your words, e.g. 'Asked Grove to pull this week's GRO issues for standup.'" },
     }),
     kind: "local",
     // Handing a job on acts through another teammate: the mode rule and the reviewer apply (Ask mode cards it).
@@ -217,7 +264,7 @@ export const managerTools: AgentTool[] = [
     async run(ctx, a) {
       const t = (await findTeammate(a.teammate))!;
       const spec = [`Job from ${ctx.teammate.config.name}, for ${ctx.person?.display_name ?? "the person in this thread"}:`, `Objective: ${a.objective}`, a.context ? `Context: ${a.context}` : "", a.constraints ? `Constraints: ${a.constraints}` : "", a.output_shape ? `Hand back: ${a.output_shape}` : "", "Post your result with slack_post in this thread."].filter(Boolean).join("\n");
-      const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, t, spec, "delegate");
+      const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, t, spec, "delegate", a.announce);
       if ("refused" in r) return { text: r.refused, isError: true };
       return { text: r.inDm ? `Handed to ${t.config.name}; it's working in its own DM with the person (it can't post in this conversation). Tell them to look there.` : `Handed to ${t.config.name}; it's working in this thread now.`, data: r };
     },

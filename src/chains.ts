@@ -40,7 +40,7 @@ async function ownApp(teammateId: string, team: string): Promise<string | null> 
 }
 
 // Calls a teammate from a run. Returns the callee's run, or a refusal sentence when a guard says no.
-export async function callTeammate(from: { runId: string | null; sessionId: string; caller: Teammate; personId: string | null; toolCallId: string }, callee: Teammate, text: string, kind: "ask" | "delegate"): Promise<{ runId: string; sessionId: string; inDm?: boolean } | { refused: string }> {
+export async function callTeammate(from: { runId: string | null; sessionId: string; caller: Teammate; personId: string | null; toolCallId: string }, callee: Teammate, text: string, kind: "ask" | "delegate", announce?: string | null): Promise<{ runId: string; sessionId: string; inDm?: boolean } | { refused: string }> {
   if (callee.id === from.caller.id) return { refused: "You can't call yourself; do it here." };
   const { root, depth } = await chainOf(from.runId);
   if (depth + 1 > MAX_DEPTH) return { refused: `This chain is already ${depth} hand-offs deep (the limit is ${MAX_DEPTH}). Finish with what you have and tell the person.` };
@@ -79,6 +79,17 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
       const top: any = await slack(own, "chat.postMessage", { channel: dm.channel.id, text: `${from.caller.config.name} handed me this: ${text.split("\n").find((l) => l.startsWith("Objective:") || l.length > 20)?.slice(0, 280) ?? "a job"}` });
       place = { app_id: own, team: here.team, channel: dm.channel.id, channel_type: "im", thread_ts: top.ts, trigger_ts: top.ts, user: who!.slack_user!, direct: true };
     }
+  }
+  // The hand-off is visible (SLACK_UX_SPEC §3.5): the caller's line in its thread, with a real mention of the callee.
+  if (here && place) {
+    const { slack } = await import("./slack/api.ts");
+    const bot = (await pool.query("SELECT bot_user_id FROM slack_apps WHERE app_id = $1", [place.app_id])).rows[0]?.bot_user_id;
+    const mention = bot ? `<@${bot}>` : callee.config.name;
+    let line = String(announce ?? "").trim() || `Asked ${callee.config.name} to help.`;
+    line = line.includes(mention) ? line : line.replace(new RegExp(`\\b${callee.config.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), mention);
+    if (!line.includes(mention)) line = `${mention} ${line}`;
+    if (place.channel !== here.channel) line += " (in your DM with it)";
+    await slack(here.app_id, "chat.postMessage", { channel: here.channel, thread_ts: here.thread_ts, text: line.slice(0, 3000) }).catch(() => null);
   }
   const placeKey = place ? `${place.channel}:${place.thread_ts}` : `api:${from.sessionId}`;
   const where = place ? { slack: place, called_by: from.caller.slug } : { called_by: from.caller.slug };

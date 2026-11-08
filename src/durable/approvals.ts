@@ -8,8 +8,8 @@ import { pool } from "../db.ts";
 import { newId } from "../ids.ts";
 import { appendEvent } from "../store/events.ts";
 
-export type Decision = { decision: "approved" | "denied"; scope?: "once" | "job" | "always"; personId: string | null };
-export type ApprovalResult = { approvalId: string; status: "approved" | "denied" | "expired"; scope: Decision["scope"] | null };
+export type Decision = { decision: "approved" | "denied"; scope?: "once" | "job" | "always"; personId: string | null; arguments?: Record<string, unknown> };
+export type ApprovalResult = { approvalId: string; status: "approved" | "denied" | "expired"; scope: Decision["scope"] | null; arguments?: Record<string, unknown> | null };
 
 export function fingerprint(action: Record<string, unknown>): string {
   const canonical = JSON.stringify(action, Object.keys(action).sort());
@@ -25,8 +25,9 @@ async function approvalWorkflowFn(approvalId: string, runId: string, sessionId: 
       [approvalId, status, answer?.scope ?? null, answer?.personId ?? null],
     );
     await pool.query("UPDATE runs SET status = 'running' WHERE id = $1 AND status = 'waiting'", [runId]);
-    await appendEvent({ sessionId, runId, type: "approval.resolved", data: { approval_id: approvalId, status, scope: answer?.scope ?? null, by: answer?.personId ?? null } });
-    return { approvalId, status, scope: answer?.scope ?? null };
+    await appendEvent({ sessionId, runId, type: "approval.resolved", data: { approval_id: approvalId, status, scope: answer?.scope ?? null, by: answer?.personId ?? null, edited: Boolean(answer?.arguments) } });
+    // Edit on the card: the person approved a changed call, which is what runs.
+    return { approvalId, status, scope: answer?.scope ?? null, arguments: answer?.decision === "approved" ? answer?.arguments ?? null : null };
   }, { name: "approval-resolve" });
 }
 const approvalWorkflow = DBOS.registerWorkflow(approvalWorkflowFn, { name: "approval" });

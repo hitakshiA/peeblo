@@ -35,6 +35,27 @@ import type { Binding } from "./relay.ts";
 const json = (res: ServerResponse, status: number, body: unknown) => void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 
 // An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule).
+// What a task card shows under a finished tool (SLACK_UX_SPEC §3.3): a short result, from the tool's own output.
+export function summarize(text: string): string {
+  const t = text.trim();
+  try {
+    const j = JSON.parse(t);
+    const list = Array.isArray(j) ? j : Array.isArray(j?.results) ? j.results : Array.isArray(j?.items) ? j.items : Array.isArray(j?.issues) ? j.issues : Array.isArray(j?.data) ? j.data : Array.isArray(j?.nodes) ? j.nodes : null;
+    if (list) return `${list.length} result${list.length === 1 ? "" : "s"}`;
+    // One record: its id and title, the way a person would name it ("GRO-331 · Pricing page footer…").
+    if (j && typeof j === "object") {
+      const name = [j.identifier ?? j.id ?? j.number ?? j.key, j.title ?? j.name ?? j.subject ?? j.summary].filter((x) => typeof x === "string" || typeof x === "number").join(" · ");
+      if (name) return name.length > 80 ? `${name.slice(0, 79)}…` : name;
+    }
+  } catch { /* not JSON */ }
+  const first = t.split(/\n/).find((l) => l.trim()) ?? "";
+  return first.length > 80 ? `${first.slice(0, 79)}…` : first;
+}
+// Web addresses in a result, for the card's sources (at most 5).
+export function urlsIn(text: string): string[] {
+  return [...new Set((text.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []).map((u) => u.replace(/[.,;]+$/, "")))].slice(0, 5);
+}
+
 export async function approvalTtl(runId: string): Promise<number> {
   // Unattended (a schedule or trigger, or a teammate it called): 12 hours, then no.
   const { isUnattended } = await import("../approvers.ts");
@@ -139,7 +160,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
       screened = await screen(text, b.endUser).catch(() => null);
       text = wrapUntrusted(text, source, screened);
     }
-    await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : {}), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
+    await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : { summary: summarize(r.text), sources: urlsIn(r.text) }), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
     return reply({ ...r, text });
   };
 
@@ -151,6 +172,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   base.via = "peeblo";
   base.kind = t.kind;
   if (t.name === "computer_bash") base.command = String(args.command ?? "").slice(0, 500); // the audit keeps what ran
+  if (t.name === "delegate" || t.name === "ask_teammate") base.callee = String(args.teammate ?? "").toLowerCase(); // its face on the caller's task card
   if (t.name === "read_skill") base.skill = String(args.skill ?? ""); // which skill was read (the skills eval reads it)
   const streakKey = `${ctx.sessionId}:${t.name}`;
   const problem = validate(t.input_schema as Schema, args);
@@ -196,6 +218,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
         return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : "A person said no, so nothing changed. Don't ask again in this conversation.", isError: true });
       }
       base.approval_id = a.approvalId;
+      if (a.arguments) { args = a.arguments; base.edited = true; }
     }
     const t0 = Date.now();
     try {
@@ -271,6 +294,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
           await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);
         }
         base.approval_id = a.approvalId;
+        if (a.arguments) { args = a.arguments; base.edited = true; }
       }
     }
     const t0 = Date.now();

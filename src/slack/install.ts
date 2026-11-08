@@ -69,6 +69,27 @@ export async function waitingInstalls(personId: string | null, all: boolean): Pr
   return out.length ? [{ type: "header", text: { type: "plain_text", text: "Waiting for install" } }, ...out] : [];
 }
 
+// The hire card once installed (SLACK_UX_SPEC §3.2): the ID card as the hero, the face, name, role and the agent's
+// bio, with Message · Home · Edit.
+export async function hireCard(tm: Teammate, appId: string, team: string, image: string | null): Promise<any> {
+  const { config } = await import("../config.ts");
+  const go = (extra = "") => `https://slack.com/app_redirect?app=${appId}&team=${team}${extra}`;
+  const bio = tm.config.profile?.agent_description || tm.config.role;
+  return {
+    type: "card", block_id: `hired:${tm.slug}`,
+    ...(image ? { hero_image: { type: "image", image_url: image, alt_text: `${tm.config.name} ID card` } } : {}),
+    ...(config.publicUrl ? { icon: { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png`, alt_text: tm.config.name } } : {}),
+    title: { type: "plain_text", text: tm.config.name.slice(0, 150) },
+    subtitle: { type: "plain_text", text: tm.config.role.slice(0, 150) },
+    body: { type: "mrkdwn", text: `${bio.length > 196 ? `${bio.slice(0, 195)}…` : bio}` },
+    actions: [
+      { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "open_settings", value: tm.slug },
+      { type: "button", text: { type: "plain_text", text: "Home" }, url: go("&tab=home"), action_id: "open_home" },
+      { type: "button", style: "primary", text: { type: "plain_text", text: "Message" }, url: go(), action_id: "open_dm" },
+    ],
+  };
+}
+
 const done = (name: string) => [{ type: "context", elements: [{ type: "mrkdwn", text: `✅ ${name} is in Slack and posts as itself.` }] }];
 
 // Slack sent the install back: the teammate posts as its own app from now on, and says so where it was hired.
@@ -87,27 +108,20 @@ export async function switchToOwnApp(appId: string): Promise<void> {
   await pool.query("UPDATE hires SET installed_at = now() WHERE teammate_id = $1", [tm.id]);
   // The ID card and Peeblo's "is ready" message lose their button (both are thread replies, rebuilt from what we keep).
   const card = hire.card as (Msg & { image?: string | null }) | null;
-  if (card) await slack(card.app_id, "chat.update", { channel: card.channel, ts: card.ts, text: `${tm.config.name} is in Slack.`, blocks: [
-    ...(card.image ? [{ type: "image", image_url: card.image, alt_text: `${tm.config.name} ID card` }] : []),
-    ...done(tm.config.name),
-  ] }).catch(() => null);
+  if (card) await slack(card.app_id, "chat.update", { channel: card.channel, ts: card.ts, text: `${tm.config.name} is in Slack.`, blocks: [await hireCard(tm, appId, app.team_id ?? "", card.image ?? null)] }).catch(() => null);
   const hello = hire.hello as Msg | null;
   if (hello) await slack(hello.app_id, "chat.update", { channel: hello.channel, ts: hello.ts, text: `${tm.config.name} is installed.`, blocks: done(tm.config.name) }).catch(() => null);
   const place = hire.place?.slack;
   const hirer = hire.hired_by ? await getPerson(hire.hired_by) : null;
-  const say = `I'm installed, I'll post as myself from now on. DM me, or tag me in any channel I'm in.`;
+  // It introduces itself in its own words (a first-contact run, src/slack/welcome.ts): in the hire thread when it
+  // was hired in a channel it can join, else in its own DM with the person who hired it.
+  const { welcomeOnce } = await import("./welcome.ts");
   let posted = false;
   if (place && !["im", "mpim"].includes(place.channel_type)) {
-    // In a channel: join it (public channels) and answer in the hire thread as itself.
-    await slack(appId, "conversations.join", { channel: place.channel }).catch(() => null);
-    posted = Boolean(await slack(appId, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text: say }).catch(() => null));
+    const joined: any = await slack(appId, "conversations.join", { channel: place.channel }).catch(() => null);
+    if (joined?.ok && hirer?.slack_user) posted = await welcomeOnce(appId, tm.id, app.team_id ?? "", hirer.slack_user, "installed", { channel: place.channel, thread_ts: place.thread_ts, channel_type: place.channel_type });
   }
-  if (!posted && hirer?.slack_user) {
-    // Hired in a DM with Peeblo (or a private channel it isn't in): it opens its own DM with the person. Peeblo's
-    // message in the hire thread already shows it's installed.
-    const dm: any = await slack(appId, "conversations.open", { users: hirer.slack_user }).catch(() => null);
-    if (dm?.channel?.id) posted = Boolean(await slack(appId, "chat.postMessage", { channel: dm.channel.id, text: `I'm installed, I'll post as myself from now on. I'm ${tm.config.name}, ${tm.config.role}: ask me anything here, or tag me in any channel I'm in.` }).catch(() => null));
-  }
+  if (!posted && hirer?.slack_user) posted = await welcomeOnce(appId, tm.id, app.team_id ?? "", hirer.slack_user, "installed");
   await appendEvent({ type: "slack.switched", data: { teammate_id: tm.id, app_id: appId, posted_as_self: posted } });
 }
 

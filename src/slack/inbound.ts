@@ -48,7 +48,9 @@ export function installSlackInbound(): void {
     if (!text) return;
     const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned) };
     const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
-    if (/^(stop|cancel|stop please)[.!]?$/i.test(text)) {
+    // The kill switch works where the teammate was asked directly or is in the thread; a "stop" said in a channel
+    // Peeblo only reads along in is for the people there.
+    if (kindNow !== "channel" && /^(stop|cancel|stop please)[.!]?$/i.test(text)) {
       const stopped = stopHandler ? await stopHandler(session.id) : false;
       await appendEvent({ sessionId: session.id, type: "slack.stop", data: { user: ev.user, stopped } });
       return;

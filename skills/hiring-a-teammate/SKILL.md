@@ -26,6 +26,13 @@ fewest questions. The ID card is the only approval: do the thinking first, then 
 - **budget**: start small (5–20 USD a month) unless the job is heavy; `price_estimate` helps.
 - **mode**: `auto` (asks before outward writes) unless they asked for more caution (`ask`).
 - **instructions**: their words, plus the never-do rules.
+- **profile** (what people see on its Slack profile; write it yourself, plainly):
+  - `bio`: 2–4 sentences on what it does, for whom, and how (its tools, that it asks before acting on anything
+    that matters). No hype.
+  - `agent_description`: one function-first line under 300 characters ("Reconciles Stripe charges against Xero and
+    flags mismatches for Priya").
+  - `starter_prompts`: 4 things a person would really ask it on day one, each `{title, message}`; the title is a
+    few words, the message the full ask.
 
 ## 3. One card
 Call `teammate_hire` with the spec. The person sees the ID card and approves once. Don't describe the card first,

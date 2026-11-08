@@ -66,7 +66,7 @@ export async function buildReceipt(runId: string): Promise<Receipt> {
 export function receiptLine(r: Receipt): string {
   if (!r.models.length && r.guard.blocked) return `blocked by the guardrail (${r.guard.checked_by}) before the teammate ran · ${money(r.cost_usd)}`;
   const via = r.providers.length ? ` via ${r.providers.join(", ")}` : "";
-  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${Object.entries(r.otari_tools).map(([t, n]) => ` · ${n} ${t.replace("_", " ")}`).join("")}${Object.entries(r.connector_calls).map(([s, n]) => ` · ${n} ${s}`).join("")}${r.approvals.approved ? ` · ${r.approvals.approved} approved` : ""}${r.approvals.denied ? ` · ${r.approvals.denied} declined` : ""}${r.fallbacks ? ` · ${r.fallbacks} fallback` : ""}${r.interrupted.length ? ` · ${r.interrupted.length} interrupted` : ""} · guard: ${r.guard.checked_by ?? "none"}${r.guard.blocked ? " (blocked)" : ""}`;
+  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${Object.entries(r.otari_tools).map(([t, n]) => ` · ${n} ${t.replace("_", " ")}`).join("")}${Object.entries(r.connector_calls).map(([s, n]) => ` · ${n} ${s}`).join("")}${r.approvals.approved ? ` · ${r.approvals.approved} approved` : ""}${r.approvals.denied ? ` · ${r.approvals.denied} declined` : ""}${r.fallbacks ? ` · ${r.fallbacks} fallback` : " · no fallback"}${r.interrupted.length ? ` · ${r.interrupted.length} interrupted` : ""}${r.guard.checked_by ? ` · guard: ${r.guard.checked_by}${r.guard.blocked ? " (blocked)" : ""}` : ""}`;
 }
 
 // Small runs cost fractions of a cent; show enough digits that a real cost never reads as $0.

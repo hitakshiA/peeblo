@@ -17,6 +17,9 @@ export type TeammateConfig = {
   computer: { size: "small" | "large"; allowed_hosts: string[]; recipe: Recipe; repos?: unknown[] };
   git?: { branch_prefix: string; publish: "off" | "own-branches" }; // hosts beyond the defaults; setup commands run once into the disk
   mode: "ask" | "auto" | "trusted" | "yolo";
+  // What its Slack profile says, written by the agent at hire (Peeblo drafts it; the owner approves it on the ID
+  // card): a bio for the long description, the one line under its name in agent view, and up to 4 starter prompts.
+  profile?: { bio: string; agent_description: string; starter_prompts: { title: string; message: string }[] };
 };
 
 export type Teammate = { id: string; slug: string; owner_person: string | null; version: number; config: TeammateConfig; created_at: Date };
@@ -56,8 +59,15 @@ export function validateConfig(c: Partial<TeammateConfig>): TeammateConfig {
   if (!/^[A-Za-z0-9._\/{}-]{1,60}\/$/.test(prefix) || /\.\.|\/\//.test(prefix)) problems.push("git.branch_prefix must be a branch path ending in /");
   const publish = String(g.publish ?? "own-branches");
   if (!["off", "own-branches"].includes(publish)) problems.push("git.publish must be off or own-branches");
+  const pr = (c as { profile?: any }).profile;
+  let profile: TeammateConfig["profile"] | undefined;
+  if (pr) {
+    const prompts = Array.isArray(pr.starter_prompts) ? pr.starter_prompts.slice(0, 4).map((x: any) => ({ title: String(x?.title ?? "").slice(0, 75), message: String(x?.message ?? "").slice(0, 2000) })).filter((x: any) => x.title && x.message) : [];
+    profile = { bio: String(pr.bio ?? "").slice(0, 3000), agent_description: String(pr.agent_description ?? "").slice(0, 300), starter_prompts: prompts };
+  }
   if (problems.length) throw Object.assign(new Error(problems.join("; ")), { status: 400 });
   return {
+    ...(profile ? { profile } : {}),
     name: c.name!.trim(), role: c.role!.trim(), instructions: c.instructions?.trim() ?? "",
     model: { default: c.model!.default.trim(), ...(c.model!.fallback ? { fallback: c.model!.fallback.trim() } : {}) },
     budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, computer: { size, allowed_hosts: computerHosts, recipe, repos }, git: { branch_prefix: prefix, publish: publish as "off" | "own-branches" }, mode: mode as TeammateConfig["mode"],
@@ -159,6 +169,9 @@ export async function updateTeammate(idOrSlug: string, patch: Partial<TeammateCo
     await client.query("UPDATE teammates SET version = $2 WHERE id = $1", [cur.id, version]);
     await client.query("INSERT INTO audit (actor, action, target, data) VALUES ($1, 'teammate.update', $2, $3)", [by.label, cur.id, { version, note }]);
     await client.query("COMMIT");
+    // Its Slack profile follows its config (src/slack/profile.ts listens).
+    const { appendEvent } = await import("./events.ts");
+    await appendEvent({ type: "teammate.updated", data: { teammate_id: cur.id, version } }).catch(() => {});
     return (await getTeammate(cur.id))!;
   } catch (error) {
     await client.query("ROLLBACK");
