@@ -31,6 +31,11 @@ fewest questions. The ID card is the only approval: do the thinking first, then 
 Call `teammate_hire` with the spec. The person sees the ID card and approves once. Don't describe the card first,
 and don't ask "shall I hire it?" in text: the card is the question.
 
-## 4. First job
-After the hire, if they described work to do now, `delegate` it to the new teammate in the same thread. Then say
-in one line what happens next.
+## 4. Install, then work
+A new teammate works only through its own Slack app, so it does nothing until the person clicks its install
+button (it's on the ID card and in the thread). Say in one line: "<Name> is ready. Install it to start working with
+it." Don't delegate to it before that, and never do its job yourself or speak for it. Once it's installed it says
+so in the thread, and the person can ask it directly.
+
+If someone later asks for, or mentions, a teammate that isn't installed, `delegate` tells you so and puts its
+install button in the thread again. Tell them it isn't installed yet; don't do the work yourself.

@@ -37,7 +37,7 @@ export async function configToken(): Promise<string> {
   return r.token;
 }
 
-const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "chat:write.customize", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write"];
+const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write"];
 export function manifest(name: string, display: string, description: string, color: string) {
   const base = config.publicUrl;
   return {

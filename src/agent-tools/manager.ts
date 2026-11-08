@@ -12,6 +12,7 @@ import { createTeammate, getTeammate, listTeammates, updateTeammate, validateCon
 import { slack } from "../slack/api.ts";
 import { getApp } from "../ingress/apps.ts";
 import { createTeammateApp } from "../slack/admin.ts";
+import { installBlocks, offerOnCard } from "../slack/install.ts";
 import { COLORS, facePng, idCardPng, pickFace, publishCard, SHAPES } from "../slack/idcard.ts";
 import type { SlackPlace } from "../slack/inbound.ts";
 import { object } from "./schema.ts";
@@ -54,12 +55,6 @@ function configFrom(a: any): Partial<TeammateConfig> {
     budget: { monthly_usd: a.budget_usd }, tools: a.tools ?? [], connectors: a.connectors ?? [], mode: a.mode ?? "auto",
     computer: { size: a.computer_size ?? "small", allowed_hosts: [] } as any,
   };
-}
-
-// Posts as a teammate that has no app of its own yet, through Peeblo's app with its name and face.
-export async function postAs(place: SlackPlace, tm: Teammate, text: string, blocks?: any[]): Promise<void> {
-  const face = config.publicUrl ? `${config.publicUrl}/faces/${tm.slug}.png` : undefined;
-  await slack(place.app_id, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text, ...(blocks ? { blocks } : {}), username: tm.config.name, ...(face ? { icon_url: face } : {}) });
 }
 
 export const managerTools: AgentTool[] = [
@@ -130,16 +125,20 @@ export const managerTools: AgentTool[] = [
         const app = await createTeammateApp(tm, face.color, await facePng(face));
         install = app.installUrl;
         await pool.query("UPDATE hires SET app_id = $2, install_url = $3 WHERE teammate_id = $1", [tm.id, app.appId, install]);
-      } catch (e) { appNote = ` Its own Slack app couldn't be made yet (${(e as Error).message.slice(0, 120)}); it works through Peeblo meanwhile.`; }
+      } catch (e) { appNote = ` Its Slack app couldn't be made yet (${(e as Error).message.slice(0, 120)}), so it can't work until its app is set up.`; }
       await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "teammate.hired", data: { teammate_id: tm.id, slug, by: ctx.person?.id ?? null, app: Boolean(install) } });
       if (place) {
-        await postAs(place, tm, `Hi! I'm ${tm.config.name}, ${tm.config.role}. I start now and work right here; ask me anything in this thread.`, [
-          { type: "section", text: { type: "mrkdwn", text: `*Hi! I'm ${tm.config.name}*, ${tm.config.role}.\nI run on ${tm.config.model.default}, with a budget of $${tm.config.budget.monthly_usd} a month, in ${tm.config.mode} mode. Every reply I give is signed with what it cost.` } },
-          ...(install ? [{ type: "actions", elements: [{ type: "button", style: "primary", text: { type: "plain_text", text: `Add ${tm.config.name} to Slack` }, url: install, action_id: "install" }] }] : []),
-          { type: "context", elements: [{ type: "mrkdwn", text: install ? "Adding me gives me my own name in the sidebar and my own DMs. Until then I answer here, through Peeblo." : "I answer here, through Peeblo." }] },
-        ]).catch(() => null);
+        // The install button goes on the ID card it was approved on and on its hello in the thread.
+        const slackUser = ctx.person?.slack_user ?? null;
+        if (install) await offerOnCard(tm, ctx.runId, install, slackUser).catch((e) => console.error("install card:", e));
+        // Peeblo only hands over the button: the teammate works, and speaks, once its own app is installed.
+        const hello: any = await slack(place.app_id, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text: `${tm.config.name} is ready. Install it to start working with it.`, blocks: [
+          { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is ready.* Install it to start working with it.\n${tm.config.role} · ${tm.config.model.default} · $${tm.config.budget.monthly_usd} a month · ${tm.config.mode} mode.` } },
+          ...(install ? await installBlocks(tm, install, place.app_id, slackUser) : []),
+        ] }).catch(() => null);
+        if (hello?.ts) await pool.query("UPDATE hires SET hello = $2 WHERE teammate_id = $1", [tm.id, { app_id: place.app_id, channel: hello.channel ?? place.channel, ts: hello.ts }]);
       }
-      return { text: `Hired ${tm.config.name} (${slug}).${install ? " Its Add to Slack button is in the thread." : ""}${appNote} To give it its first job, use delegate.`, data: { teammate: slug, install_url: install, app_error: appNote || null } };
+      return { text: `Hired ${tm.config.name} (${slug}).${install ? " Its install button is in the thread. It starts working only once it's installed: until then don't delegate to it, and don't do its job yourself." : ""}${appNote}`, data: { teammate: slug, install_url: install, app_error: appNote || null } };
     },
   },
   {
@@ -198,7 +197,7 @@ export const managerTools: AgentTool[] = [
       const spec = [`Job from ${ctx.teammate.config.name}, for ${ctx.person?.display_name ?? "the person in this thread"}:`, `Objective: ${a.objective}`, a.context ? `Context: ${a.context}` : "", a.constraints ? `Constraints: ${a.constraints}` : "", a.output_shape ? `Hand back: ${a.output_shape}` : "", "Post your result with slack_post in this thread."].filter(Boolean).join("\n");
       const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, t, spec, "delegate");
       if ("refused" in r) return { text: r.refused, isError: true };
-      return { text: `Handed to ${t.config.name}; it's working in this thread now.`, data: r };
+      return { text: r.inDm ? `Handed to ${t.config.name}; it's working in its own DM with the person (it can't post in this conversation). Tell them to look there.` : `Handed to ${t.config.name}; it's working in this thread now.`, data: r };
     },
   },
 ];

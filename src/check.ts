@@ -35,6 +35,15 @@ export async function runChecks(): Promise<Result[]> {
     await access(join(p, "manifest.json"), constants.R_OK).catch(() => { throw new Error(`no VM image at ${p}; run: ./peeblo image`); });
     return `${config.vmArch} image at ${p}`;
   });
+  await check("teammates waiting for install", async () => {
+    // A teammate works only through its own Slack app; these won't run until someone clicks "Add to Slack".
+    const { waitingTeammates } = await import("./slack/install.ts");
+    const w = await waitingTeammates();
+    if (!w.length) return "none; every hired teammate is installed";
+    const list = (xs: typeof w) => xs.map((t) => `${t.name} (${t.slug})`).join(", ");
+    const ready = w.filter((t) => t.hasApp), noApp = w.filter((t) => !t.hasApp);
+    return `${w.length} not installed, so they don't work.${ready.length ? ` Install button in Peeblo's App Home: ${list(ready)}.` : ""}${noApp.length ? ` No Slack app (never made, or removed from Slack; rehire or remove): ${list(noApp)}.` : ""}`;
+  });
   await check("large computer image", async () => {
     const id = currentBuild("large");
     if (!id) throw new Error("the large computer image isn't built yet; run: ./peeblo image large");

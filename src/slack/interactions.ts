@@ -11,6 +11,7 @@ import { appendEvent } from "../store/events.ts";
 import { personForSlack } from "../store/people.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { displayName, slack } from "./api.ts";
+import { getApp } from "../ingress/apps.ts";
 
 const SCOPES: Record<string, { decision: "approved" | "denied"; scope: "once" | "job" | "always" }> = {
   approve_once: { decision: "approved", scope: "once" }, approve_job: { decision: "approved", scope: "job" },
@@ -82,7 +83,16 @@ export function installSlackInteractions(): void {
       `SELECT r.id, r.status, r.created_at, left(s2.text, 80) AS asked FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions s2 ON s2.id = r.submission_id
         WHERE s.teammate_id = $1 ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
     const c = tm.config;
+    // On Peeblo's home: the viewer's hires still waiting for "Add to Slack" (an admin sees every one).
+    let waiting: any[] = [];
+    if (tm.slug === "peeblo") {
+      const viewer = await personForSlack(String((await getApp(appId))?.team_id ?? ""), event.user);
+      const { isOtariAdmin } = await import("../authority.ts");
+      const { waitingInstalls } = await import("./install.ts");
+      waiting = await waitingInstalls(viewer.id, isOtariAdmin(viewer)).catch(() => []);
+    }
     const blocks: any[] = [
+      ...waiting, ...(waiting.length ? [{ type: "divider" }] : []),
       { type: "header", text: { type: "plain_text", text: `${c.name} · ${c.role}`.slice(0, 150) } },
       { type: "section", fields: [
         { type: "mrkdwn", text: `*Model*\n${c.model.default}${c.model.fallback ? `\nfallback ${c.model.fallback}` : ""}` },

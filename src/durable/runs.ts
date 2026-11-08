@@ -24,6 +24,18 @@ async function loadContext(runId: string): Promise<RunContext> {
 
 async function runWorkflowFn(runId: string): Promise<string> {
   const ctx = await DBOS.runStep(() => loadContext(runId), { name: "load" });
+  // A teammate whose Slack app isn't installed doesn't work at all (src/slack/install.ts). Nothing is posted.
+  const waiting = await DBOS.runStep(async () => {
+    const { installState } = await import("../slack/install.ts");
+    return (await installState(ctx.session.teammate_id)).waiting;
+  }, { name: "installed" });
+  if (waiting) {
+    await DBOS.runStep(async () => {
+      await setRunStatus(runId, "failed", "not_installed");
+      await appendEvent({ sessionId: ctx.session.id, runId, type: "run.refused", data: { reason: "not_installed", teammate_id: ctx.session.teammate_id } });
+    }, { name: "refused" });
+    return "refused";
+  }
   await DBOS.runStep(async () => {
     await setRunStatus(runId, "running");
     await appendEvent({ sessionId: ctx.session.id, runId, type: "run.started", data: { workflow_id: DBOS.workflowID } });

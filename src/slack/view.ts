@@ -8,13 +8,13 @@
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt, receiptLine } from "../receipts.ts";
-import { onEvent, type EventRow } from "../store/events.ts";
+import { appendEvent, onEvent, type EventRow } from "../store/events.ts";
 import { getSession } from "../store/sessions.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { react, slack, unreact } from "./api.ts";
 import type { SlackPlace } from "./inbound.ts";
 
-type View = { place: SlackPlace; teammate: string; slug: string; borrowed: boolean; streamTs: string | null; startedAt: number; posted: number; tasks: Map<string, { title: string; status: string }>; queue: Promise<unknown>; failedStream: boolean };
+type View = { place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number; tasks: Map<string, { title: string; status: string }>; queue: Promise<unknown>; failedStream: boolean };
 const views = new Map<string, View>();
 const HANDOVER_MS = 9 * 60_000;
 
@@ -41,23 +41,22 @@ async function placeOf(sessionId: string | null): Promise<SlackPlace | null> {
 
 const enqueue = (v: View, f: () => Promise<unknown>) => { v.queue = v.queue.then(f).catch((e) => console.error("slack view:", (e as Error).message)); return v.queue; };
 
-async function start(runId: string, place: SlackPlace, teammateId: string, borrowed: boolean): Promise<View> {
+async function start(runId: string, place: SlackPlace, teammateId: string): Promise<View> {
   const tm = await getTeammate(teammateId);
-  // A teammate without its own app yet speaks through Peeblo's with its own name and face; Slack ignores those on
-  // streams, so it posts plain messages. A run nobody asked for (Peeblo reading along) shows nothing unless it posts.
+  // A teammate always speaks through its own app (the install rail stops one without it). A run nobody asked for
+  // (Peeblo reading along) shows nothing unless it posts.
   const quiet = !place.direct;
-  const v: View = { place, teammate: tm?.config.name ?? "teammate", slug: tm?.slug ?? "", borrowed, streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: borrowed || quiet };
+  const v: View = { place, teammate: tm?.config.name ?? "teammate", slug: tm?.slug ?? "", streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: quiet };
   views.set(runId, v);
   if (!quiet) await enqueue(v, async () => {
     await react(place.app_id, place.channel, place.trigger_ts, "eyes");
-    if (!borrowed) await openStream(v);
+    await openStream(v);
   });
   return v;
 }
-// A plain message in the thread, as the teammate (its own app, or Peeblo's with its name and face).
+// A plain message in the thread, from the teammate's own app.
 async function post(v: View, text: string, blocks?: any[]): Promise<void> {
-  const as = v.borrowed && config.publicUrl ? { username: v.teammate, icon_url: `${config.publicUrl}/faces/${v.slug}.png` } : v.borrowed ? { username: v.teammate } : {};
-  await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text, ...(blocks ? { blocks } : {}), mrkdwn: true, ...as });
+  await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text, ...(blocks ? { blocks } : {}), mrkdwn: true });
 }
 
 async function openStream(v: View): Promise<void> {
@@ -130,7 +129,7 @@ async function approvalCard(v: View, e: EventRow): Promise<void> {
   const detail = a.rule ?? (a.arguments ? "```" + JSON.stringify(a.arguments).slice(0, 600) + "```" : "");
   const price = a.price_usd ? ` · about $${Number(a.price_usd).toFixed(4)}` : "";
   const only = a.kind === "hire" ? " · only the person who asked can answer" : a.approvers?.length ? " · only the owner can answer" : "";
-  await slack(v.place.app_id, "chat.postMessage", {
+  const posted: any = await slack(v.place.app_id, "chat.postMessage", {
     channel: v.place.channel, thread_ts: v.place.thread_ts, text: `${v.teammate} wants to ${what}. Approve?`,
     blocks: [
       ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${a.summary ?? "teammate"} ID card`.slice(0, 2000) }] : []),
@@ -147,6 +146,8 @@ async function approvalCard(v: View, e: EventRow): Promise<void> {
       ] },
     ],
   });
+  // Where the card is, so a hire can add its install button to it later.
+  if (posted?.ts) await appendEvent({ sessionId: e.session_id, runId: e.run_id, type: "approval.card", data: { approval_id: id, app_id: v.place.app_id, channel: posted.channel ?? v.place.channel, ts: posted.ts, image: a.id_card_url ?? null } });
 }
 
 export function installSlackView(): void {
@@ -160,7 +161,7 @@ export function installSlackView(): void {
       const place = await placeOf(e.session_id);
       if (!place) return;
       const s = await getSession(e.session_id!);
-      await start(e.run_id, place, s!.teammate_id, Boolean((s!.place as any)?.borrowed));
+      await start(e.run_id, place, s!.teammate_id);
       return;
     }
     if (!v && (e.type === "run.finished" || e.type === "run.failed")) {
@@ -169,7 +170,7 @@ export function installSlackView(): void {
       if (!place) return;
       const s = await getSession(e.session_id!);
       const tm = await getTeammate(s!.teammate_id);
-      v = { place, teammate: tm?.config.name ?? "teammate", slug: tm?.slug ?? "", borrowed: Boolean((s!.place as any)?.borrowed), streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: true };
+      v = { place, teammate: tm?.config.name ?? "teammate", slug: tm?.slug ?? "", streamTs: null, startedAt: Date.now(), posted: 0, tasks: new Map(), queue: Promise.resolve(), failedStream: true };
       views.set(e.run_id, v);
       v.posted = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [e.run_id])).rows[0].n);
     }

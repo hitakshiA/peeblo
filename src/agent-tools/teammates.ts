@@ -22,7 +22,7 @@ export const askTeammateTool: AgentTool = {
     const text = [`${ctx.teammate.config.name} asks (for ${ctx.person?.display_name ?? "the person in this thread"}):`, a.question, a.answer_shape ? `Answer as: ${a.answer_shape}` : "", "Reply with slack_post in this thread."].filter(Boolean).join("\n");
     const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, callee, text, "ask");
     if ("refused" in r) return { text: r.refused, isError: true };
-    if (!a.wait) return { text: `Asked ${callee.config.name}; it will answer in this thread.`, data: r };
+    if (!a.wait) return { text: `Asked ${callee.config.name}; it will answer ${r.inDm ? "in its own DM with the person" : "in this thread"}.`, data: r };
     const ans = await answerOf(r.runId, 6 * 60_000);
     if (ans.status === "running") return { text: `${callee.config.name} is still working; its answer will appear in the thread.`, data: r };
     return { text: ans.status === "done" ? `${callee.config.name} answered:\n${ans.text}` : `${callee.config.name} couldn't finish (${ans.status}).`, untrusted: `teammate:${callee.slug}`, data: r };

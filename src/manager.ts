@@ -5,7 +5,8 @@ import { pool } from "./db.ts";
 import { createTeammate, getTeammate, updateTeammate } from "./store/teammates.ts";
 
 export const MANAGER = "peeblo";
-const INSTRUCTIONS = `You are Peeblo, the manager of this team's AI crew in Slack. You hire teammates when someone asks (the hiring-a-teammate skill), change them when their owner asks (teammate_update), hand jobs to the right teammate (delegate, with the writing-job-specs skill), and report on the crew (crew_status). You don't do the specialist work yourself when a teammate fits. In a channel you're only reading along: most messages aren't for you, and the right move is usually to do nothing (the channel-etiquette skill). When someone talks to you directly, answer with slack_post.`;
+const INSTRUCTIONS = `You are Peeblo, the manager of this team's AI crew in Slack. You hire teammates when someone asks (the hiring-a-teammate skill), change them when their owner asks (teammate_update), hand jobs to the right teammate (delegate, with the writing-job-specs skill), and report on the crew (crew_status). You don't do the specialist work yourself when a teammate fits. In a channel you're only reading along: most messages aren't for you, and the right move is usually to do nothing (the channel-etiquette skill). When someone talks to you directly, answer with slack_post. You never do a teammate's job or speak for it: a teammate works only through its own Slack app, and one that isn't installed doesn't work until the person installs it (delegate tells you, and re-posts its install button).`;
+const INSTALL_RULE = `You never do a teammate's job or speak for it: a teammate works only through its own Slack app, and one that isn't installed doesn't work until the person installs it (delegate tells you, and re-posts its install button).`;
 
 export async function ensureManager(): Promise<void> {
   if (!(await getTeammate(MANAGER))) {
@@ -17,22 +18,17 @@ export async function ensureManager(): Promise<void> {
   let tm = (await getTeammate(MANAGER))!;
   // Peeblo reads the team's sources for company setup (reads are free; writes go through the gate like anyone's).
   if (!tm.config.connectors.length) tm = await updateTeammate(MANAGER, { connectors: ["linear", "github", "posthog"] } as any, { label: "Peeblo: read sources for company setup" }, "company setup reads the connected sources");
+  // Teammates work only through their own apps (Nov 8): an older Peeblo gets the rule once, as a new version.
+  if (!tm.config.instructions.includes("never do a teammate's job")) tm = await updateTeammate(MANAGER, { instructions: `${tm.config.instructions.trim()} ${INSTALL_RULE}` } as any, { label: "Peeblo: teammates work only through their own apps" }, "Peeblo never works or speaks for a teammate");
   if (config.managerAppId) await pool.query("UPDATE slack_apps SET teammate_id = $2 WHERE app_id = $1 AND teammate_id IS DISTINCT FROM $2", [config.managerAppId, tm.id]);
 }
 
-// Once a hired teammate's own app is installed, it says hello from it, in the thread it was hired in.
+// Once a hired teammate's own app is installed, it posts as itself at once and says so where it was hired.
 export function installHireWelcome(): void {
   void import("./store/events.ts").then(({ onEvent }) => onEvent(async (e) => {
     if (e.type !== "slack.installed") return;
-    const appId = String((e.data as any).app_id);
-    const { rows } = await pool.query("SELECT h.*, t.slug FROM hires h JOIN teammates t ON t.id = h.teammate_id WHERE h.app_id = $1 AND h.installed_at IS NULL", [appId]);
-    if (!rows[0]) return;
-    await pool.query("UPDATE hires SET installed_at = now() WHERE teammate_id = $1", [rows[0].teammate_id]);
-    const place = rows[0].place?.slack;
-    const tm = await getTeammate(rows[0].teammate_id);
-    if (!place || !tm) return;
-    const { slack } = await import("./slack/api.ts");
-    await slack(appId, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text: `I'm in Slack now as ${tm.config.name}: DM me, or tag me in any channel I'm in.` }).catch(() => null);
+    const { switchToOwnApp } = await import("./slack/install.ts");
+    await switchToOwnApp(String((e.data as any).app_id)).catch((err) => console.error("install switch:", err));
   }));
 }
 

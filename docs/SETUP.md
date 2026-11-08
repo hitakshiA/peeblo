@@ -55,7 +55,9 @@ stays on the machine.
    ```
 
 Each teammate you hire later gets its own app the same way: Peeblo makes it, gives it a face, and posts an
-**Add to Slack** button. Until someone clicks it, the teammate works through Peeblo's app.
+**Add to Slack** button (on its ID card, in the hire thread, and in Peeblo's App Home). A teammate works only
+through its own app: until someone clicks it, it doesn't work at all, and Peeblo won't do its job for it.
+`./peeblo check` lists who is still waiting. On a free Slack workspace you can have 10 apps in all, Peeblo included.
 
 ## 4. Start
 
