@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[];
+  held?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u.slice(0, 40); } };
@@ -195,6 +195,9 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async () => {
         await post(v, fallbackText ?? summary, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
       });
+    } else if (v.privateOnly && !v.posted) {
+      // Answered privately: the receipt goes to the asker privately too.
+      await slack(v.place.app_id, "chat.postEphemeral", { channel: v.place.channel, user: v.place.user, thread_ts: v.place.channel_type === "im" ? undefined : v.place.thread_ts, text: "Receipt", blocks: blocks.filter((b) => b.type !== "context_actions") }).catch(() => null);
     } else if (v.place.direct || v.posted || fallbackText) {
       await post(v, fallbackText ?? v.teammate, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
     }
@@ -380,6 +383,8 @@ export function installSlackView(): void {
       const output = d.status === "waiting_approval" ? "waiting for approval" : d.status === "denied" ? "not now" : st === "complete" ? stepOutput(d.tool, d.summary, Number(d.lines ?? 0)) : undefined;
       const sources = [...(d.sources ?? []), ...(d.url ? [d.url] : [])].filter((u: any) => typeof u === "string" && /^https?:/.test(u));
       void enqueue(v, () => step(v!, String(d.id ?? e.id), title, st, output, sources, d.kind === "read"));
+    } else if (e.type === "slack.post" && d.private) {
+      v.privateOnly = true; // the reply went to the asker alone; nothing public follows for it
     } else if (e.type === "slack.post") {
       v.posted++;
       const text = `${v.posted > 1 ? "\n\n" : ""}${d.text}`;
@@ -397,7 +402,7 @@ export function installSlackView(): void {
       // The reply is what the teammate posted. If a person asked it directly and it posted nothing, its final text
       // is the reply (a direct ask always gets an answer).
       let fallback: string | null = null;
-      if (!v.posted && v.place.direct) {
+      if (!v.posted && !v.privateOnly && v.place.direct) {
         const { rows } = await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [e.run_id]);
         // Clean final text: no thinking tags, and no "Peeblo:" style name prefix.
         const name = v.teammate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

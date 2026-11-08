@@ -22,7 +22,7 @@ async function respond(url: string | undefined, body: Record<string, unknown>): 
   if (url) await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
 }
 
-async function feedbackNote(sessionId: string, runId: string, vote: string, by: string): Promise<void> {
+async function feedbackNote(sessionId: string, runId: string, vote: string, by: string, what?: string): Promise<void> {
   const { getSession } = await import("../store/sessions.ts");
   const { placeOfSession, writeNote } = await import("../memory/store.ts");
   const s = await getSession(sessionId);
@@ -30,7 +30,7 @@ async function feedbackNote(sessionId: string, runId: string, vote: string, by: 
   if (!s || !tm) return;
   const asked = (await pool.query("SELECT left(sub.text, 300) AS t FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [runId])).rows[0]?.t ?? "";
   const answer = (await pool.query("SELECT left(data->>'text', 500) AS t FROM events WHERE run_id = $1 AND type IN ('slack.post', 'turn.finished') ORDER BY id DESC LIMIT 1", [runId])).rows[0]?.t ?? "";
-  await writeNote(tm.slug, placeOfSession(s), { path: `feedback/${runId}`, title: `${by} marked a reply ${vote === "up" ? "helpful" : "not helpful"}`, body: `Asked: ${asked}\n\nReply: ${answer}`, source: `${by}, Slack feedback`, runId, tainted: true });
+  await writeNote(tm.slug, placeOfSession(s), { path: `feedback/${runId}`, title: `${by} marked a reply ${vote === "up" ? "helpful" : "not helpful"}`, body: `${what ? `What was off: ${what}\n\n` : ""}Asked: ${asked}\n\nReply: ${answer}`, source: `${by}, Slack feedback`, runId, tainted: true });
 }
 
 // Replaces a card (wherever it was posted) with its outcome line.
@@ -51,6 +51,20 @@ async function namesFor(approvalId: string): Promise<string> {
 
 export function installSlackInteractions(): void {
   onSlackInteraction(async ({ appId, payload }) => {
+    // 👎's "What was off?": the choices and the line become the note the teammate learns from.
+    if (payload.type === "view_submission" && payload.view?.callback_id === "feedback_down") {
+      const runId = String(payload.view.private_metadata);
+      const values = payload.view.state?.values ?? {};
+      const picked = (values.why?.v?.selected_options ?? []).map((o: any) => o.text?.text).filter(Boolean);
+      const more = String(values.more?.v?.value ?? "").trim();
+      const what = [picked.join(", "), more].filter(Boolean).join(". ");
+      const run = (await pool.query("SELECT session_id FROM runs WHERE id = $1", [runId])).rows[0];
+      const team = payload.team?.id ?? payload.user?.team_id;
+      const who = await personForSlack(team, payload.user.id);
+      await appendEvent({ sessionId: run?.session_id ?? null, runId, type: "slack.feedback_detail", data: { what, by: who.id } });
+      if (run) await feedbackNote(run.session_id, runId, "down", who.display_name ?? payload.user.id, what || undefined).catch(() => null);
+      return;
+    }
     // The "Not now" form: a no, with the reason if one was given (Send), or without one (Skip closes the form).
     if ((payload.type === "view_submission" || payload.type === "view_closed") && payload.view?.callback_id === "not_now") {
       const id = String(payload.view.private_metadata);
@@ -232,9 +246,20 @@ export function installSlackInteractions(): void {
       const run = (await pool.query("SELECT session_id FROM runs WHERE id = $1", [runId])).rows[0];
       await appendEvent({ sessionId: run?.session_id ?? null, runId, type: "slack.feedback", data: { vote, by: who.id } });
       if (vote === "down" && run) await pool.query("UPDATE sessions SET place = jsonb_set(place, '{muted}', 'true'::jsonb) WHERE id = $1", [run.session_id]);
-      // 👍/👎 become memory candidates (unverified until the owner verifies them).
-      // The teammate sees it as a fact on its next turn and decides what to remember (the tidying-memory skill).
-      await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: vote === "up" ? "Thanks, noted." : "Thanks, noted. I'll stay quiet in this thread unless someone asks me." });
+      // 👎 asks what was off (a few choices and a line); the answer becomes a note the teammate learns from.
+      if (vote === "down" && run && payload.trigger_id) {
+        const opt = (v: string, t: string) => ({ value: v, text: { type: "plain_text", text: t } });
+        await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: {
+          type: "modal", callback_id: "feedback_down", private_metadata: runId,
+          title: { type: "plain_text", text: "What was off?" }, submit: { type: "plain_text", text: "Send" }, close: { type: "plain_text", text: "Skip" },
+          blocks: [
+            { type: "input", block_id: "why", optional: true, label: { type: "plain_text", text: "Pick any" }, element: { type: "checkboxes", action_id: "v", options: [opt("wrong", "It was wrong"), opt("long", "Too long"), opt("missed", "It missed something"), opt("acted", "It shouldn't have done that"), opt("slow", "Too slow")] } },
+            { type: "input", block_id: "more", optional: true, label: { type: "plain_text", text: "Anything else" }, element: { type: "plain_text_input", action_id: "v", max_length: 500 } },
+          ] } }).catch(() => null);
+        return;
+      }
+      await feedbackNote(run?.session_id, runId, vote, who.display_name ?? payload.user.id).catch(() => null);
+      await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: "Thanks, noted." });
     }
   });
 

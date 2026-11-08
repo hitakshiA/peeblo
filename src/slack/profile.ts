@@ -7,7 +7,7 @@ import { pool } from "../db.ts";
 import { appendEvent, onEvent } from "../store/events.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 
-export const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "commands", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write"];
+export const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "chat:write", "commands", "files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write", "canvases:read", "canvases:write"];
 const EVENTS = ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim", "app_home_opened", "member_joined_channel", "agent_session_stopped", "agent_session_title_changed", "app_context_changed"];
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);

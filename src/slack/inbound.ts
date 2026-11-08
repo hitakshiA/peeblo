@@ -47,10 +47,12 @@ export function installSlackInbound(): void {
         kindNow = "channel"; keyNow = ev.channel;
       }
     }
-    const text = clean(String(ev.text ?? ""), app?.bot_user_id ?? null);
-    if (!text) return;
+    let text = clean(String(ev.text ?? ""), app?.bot_user_id ?? null);
+    if (!text && !ev.files?.length) return;
     const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned) };
     const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
+    // Files dropped in the message go onto the teammate's computer (its session folder), and the message says where.
+    if (ev.files?.length) text = `${text}\n${await saveFiles(appId, teammateId, session.id, ev.files).catch((e) => `[files: couldn't save them (${(e as Error).message.slice(0, 120)})]`)}`.trim();
     // The kill switch works where the teammate was asked directly or is in the thread; a "stop" said in a channel
     // Peeblo only reads along in is for the people there.
     if (kindNow !== "channel" && /^(stop|cancel|stop please)[.!]?$/i.test(text)) {
@@ -81,4 +83,33 @@ async function flush(key: string): Promise<void> {
   // Per app: the same message can be for Peeblo (reading along) and for the teammate it mentions; each is its own job.
   const { run, created } = await submit({ sessionId: session.id, personId: person.id, requestId: `slack:${teamId}:${appId}:${place.channel}:${last.ts}`, text: p.parts.map((x) => x.text).join("\n"), source: "slack" });
   if (created) await startRun(run.id);
+}
+
+// Downloads a message's files (Slack's private URLs, with the app's bot token) into the teammate's workspace for this
+// session; a teammate without a computer is told it can't open them. At most 5 files of 25 MB each.
+async function saveFiles(appId: string, teammateId: string, sessionId: string, files: any[]): Promise<string> {
+  const { getApp } = await import("../ingress/apps.ts");
+  const { getTeammate } = await import("../store/teammates.ts");
+  const { workspaceOf } = await import("../environment/controller.ts");
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join, basename } = await import("node:path");
+  const tm = await getTeammate(teammateId);
+  const names = files.map((f) => String(f.name ?? f.title ?? "file"));
+  if (!tm?.config.tools.includes("computer")) return `[files shared: ${names.join(", ")}; you have no computer to open them, so say so if they matter]`;
+  const token = (await getApp(appId))?.secrets.bot_token;
+  if (!token) return `[files shared: ${names.join(", ")}; they couldn't be downloaded]`;
+  const dir = join(workspaceOf(tm.slug), "sessions", sessionId, "files");
+  await mkdir(dir, { recursive: true });
+  const saved: string[] = [];
+  for (const f of files.slice(0, 5)) {
+    const url = f.url_private_download ?? f.url_private;
+    if (!url || Number(f.size ?? 0) > 25 * 1024 * 1024) { saved.push(`${f.name} (too large or no link)`); continue; }
+    const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    if (!r.ok) { saved.push(`${f.name} (download failed: ${r.status})`); continue; }
+    const name = basename(String(f.name ?? `file-${f.id}`)).replace(/[^\w.\- ]/g, "_").slice(0, 120) || `file-${f.id}`;
+    await writeFile(join(dir, name), Buffer.from(await r.arrayBuffer()));
+    saved.push(`/workspace/sessions/${sessionId}/files/${name} (${f.filetype ?? "file"}, ${Math.max(1, Math.round(Number(f.size ?? 0) / 1024))} KB)`);
+  }
+  await appendEvent({ sessionId, type: "slack.files_saved", data: { files: saved } });
+  return `[files from the person, saved on your computer: ${saved.join("; ")}]`;
 }
