@@ -16,6 +16,43 @@ const UNPROMPTED_PER_HOUR = Number(process.env.PEEBLO_UNPROMPTED_PER_HOUR ?? 3);
 
 export const slackTools: AgentTool[] = [
   {
+    name: "channel_watch",
+    description: "Start or stop keeping an eye on a Slack channel: while watching, you read every message there and step in only when it helps. Only when a person asks (\"keep an eye on #support\", \"stop watching\"); by default you answer only when tagged.",
+    input_schema: object({
+      channel: { type: ["string", "null"], description: "The channel's name (#support) or id; leave out for this conversation's channel." },
+      watch: { type: "boolean", description: "true to start watching, false to stop." },
+    }),
+    kind: "local",
+    async authorize(ctx) { return ctx.teammate.slug === "peeblo" ? null : "Only Peeblo watches channels; teammates answer when tagged."; },
+    async run(ctx, a) {
+      const place = await placeOf(ctx);
+      if (!place) return { text: "This conversation isn't in Slack, so there's no channel to watch.", isError: true };
+      let channel = place.channel;
+      const want = String(a.channel ?? "").trim().replace(/^#/, "");
+      if (want) {
+        if (/^[CG][A-Z0-9]{6,}$/.test(want)) channel = want;
+        else {
+          let cursor: string | undefined;
+          let found: string | null = null;
+          for (let i = 0; i < 10 && !found; i++) {
+            const r: any = await slack(place.app_id, "conversations.list", { types: "public_channel,private_channel", limit: 200, exclude_archived: true, ...(cursor ? { cursor } : {}) }).catch(() => null);
+            found = r?.channels?.find((c: any) => c.name === want.toLowerCase())?.id ?? null;
+            cursor = r?.response_metadata?.next_cursor || undefined;
+            if (!cursor) break;
+          }
+          if (!found) return { text: `There's no channel called #${want} that Peeblo can see. Invite Peeblo to it first (/invite @Peeblo).`, isError: true };
+          channel = found;
+        }
+      }
+      if (place.channel_type === "im" && !want) return { text: "Name the channel to watch, e.g. #support.", isError: true };
+      await pool.query(
+        `INSERT INTO channel_settings (team_id, channel, attention) VALUES ($1, $2, $3)
+         ON CONFLICT (team_id, channel) DO UPDATE SET attention = EXCLUDED.attention, updated_at = now()`, [place.team, channel, a.watch ? "listen" : "mentions"]);
+      await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "channel.attention", data: { channel, attention: a.watch ? "listen" : "mentions", by: ctx.person?.id ?? null } });
+      return { text: a.watch ? `Watching <#${channel}> now: you'll read every message there and step in only when it helps.` : `Stopped watching <#${channel}>: you'll answer there only when tagged.` };
+    },
+  },
+  {
     name: "slack_post",
     description: "Reply in this Slack conversation (your thread or DM); your final text is not shown to anyone. Posting your answer ends your turn. Set more: true only for a progress note when you will keep working. Slack markdown; for a table or other layout, pass Block Kit blocks.",
     input_schema: object({

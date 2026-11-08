@@ -31,15 +31,15 @@ export function installSlackInbound(): void {
     const threadTs = ev.thread_ts ?? ev.ts;
     const placeKey = dm ? `${ev.channel}:${threadTs}` : `${ev.channel}:${threadTs}`;
     const kind: SessionKind = dm ? "dm" : "thread";
-    // In a channel, a message counts only with a mention, or in a thread this teammate is already in. Peeblo's
-    // own app also reads along in channels set to listen: its channel session decides whether to do anything (K2).
+    // In a channel, a message counts only with a mention, or in a thread this teammate is already in. Peeblo reads
+    // along only in a channel someone asked it to keep an eye on (channel_watch); the default is mentions only (R1′).
     let kindNow: SessionKind = kind;
     let keyNow = placeKey;
     if (!dm && !mentioned) {
       const known = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND kind = 'thread' AND place_key = $2", [teammateId, placeKey])).rows[0];
       if (!known) {
         const isManager = (await pool.query("SELECT slug FROM teammates WHERE id = $1", [teammateId])).rows[0]?.slug === "peeblo";
-        const attention = (await pool.query("SELECT attention FROM channel_settings WHERE team_id = $1 AND channel = $2", [teamId, ev.channel])).rows[0]?.attention ?? "listen";
+        const attention = (await pool.query("SELECT attention FROM channel_settings WHERE team_id = $1 AND channel = $2", [teamId, ev.channel])).rows[0]?.attention ?? "mentions";
         if (!isManager || attention !== "listen" || ev.thread_ts) return;
         // One listener: a message tagging another teammate is that teammate's to answer, so Peeblo doesn't read it.
         const tagged = [...String(ev.text ?? "").matchAll(/<@([A-Z0-9]+)>/g)].map((m) => m[1]);

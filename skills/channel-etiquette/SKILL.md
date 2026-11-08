@@ -1,6 +1,6 @@
 ---
 name: channel-etiquette
-description: Decide what to do with a channel message you're only reading along (no one tagged you). Use for every message in a channel session.
+description: Decide what to do with a message in a channel someone asked you to keep an eye on (no one tagged you). Use for every message in a channel session.
 ---
 
 # Channel etiquette

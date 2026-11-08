@@ -28,8 +28,9 @@ Delegate (`delegate`, with the writing-job-specs skill) when the work needs:
 - more than a few minutes, or a schedule that should belong to someone;
 - a write the person wants done by the teammate that owns that area.
 
-Pick the teammate from `crew_status` (and the roster fact in a channel). If nobody fits and it will keep coming,
-say so and offer a hire (the hiring-a-teammate skill), as a suggestion, not a done deal.
+Pick the teammate from `crew_status` (and the roster fact in a channel). If nobody fits, say so plainly and do
+what you can yourself. Talk about hiring only when the person asks who could do it or asks for a hire (then the
+hiring-a-teammate skill); never offer hires, routines or changes nobody asked for.
 
 ## 3. Always say who has it
 When you hand off, tell the person in one line who has it and where they'll answer ("Grove has it; it'll reply
