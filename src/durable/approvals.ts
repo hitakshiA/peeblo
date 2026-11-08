@@ -88,6 +88,15 @@ export async function askApproval(runId: string, sessionId: string, action: Reco
   return handle.getResult();
 }
 
+// Ends a waiting approval as expired (nothing runs; the card says so), e.g. after a rule change made it moot.
+export async function expireApproval(approvalId: string): Promise<{ ok: boolean; status: string }> {
+  const row = (await pool.query("SELECT status FROM approvals WHERE id = $1", [approvalId])).rows[0];
+  if (!row) return { ok: false, status: "not_found" };
+  if (row.status !== "pending") return { ok: false, status: row.status };
+  await DBOS.send(approvalId, null as any, "approval", `expire:${approvalId}`);
+  return { ok: true, status: "expiring" };
+}
+
 // Delivers an answer to the waiting approval. Refuses answers to approvals that are no longer pending,
 // so a late click on an expired card changes nothing and can be shown as "expired".
 export async function answerApproval(approvalId: string, d: Decision): Promise<{ ok: boolean; status: string }> {

@@ -59,7 +59,8 @@ function what(a: any): string | null {
   if (a.risk === "shipping") return "Ships a change";
   const tool = String(a.tool ?? "").replace(/^[a-z]+__/, "");
   const m = /^(save|create|add|update|edit|post|send|write|set|delete|remove|archive|close)_(.+)$/.exec(tool);
-  if (!m) return a.risk ? RISK[a.risk] ?? null : null;
+  // No write verb in the name: say what the tool is, never a bare "writes".
+  if (!m) return tool ? `Uses ${tool.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}${a.server ? ` in ${serviceName(a.server)}` : ""}` : a.risk ? RISK[a.risk] ?? null : null;
   const noun = m[2].replace(/_/g, " ").replace(/s$/, "");
   const verb = /delete|remove|archive/.test(m[1]) ? "Removes" : /update|edit|set|close/.test(m[1]) ? "Changes" : "Writes";
   return `${verb} 1 ${noun}`;

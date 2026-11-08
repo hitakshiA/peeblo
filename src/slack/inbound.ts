@@ -11,7 +11,8 @@ import { startRun } from "../durable/runs.ts";
 import { displayName, isBotUser } from "./api.ts";
 
 export type SlackPlace = { app_id: string; team: string; channel: string; channel_type: string; thread_ts: string; trigger_ts: string; user: string; direct: boolean };
-const BATCH_MS = Number(process.env.PEEBLO_SLACK_BATCH_MS ?? 1500);
+// Quick follow-ups from the same person are batched; short, so a single message isn't kept waiting.
+const BATCH_MS = Number(process.env.PEEBLO_SLACK_BATCH_MS ?? 500);
 const pending = new Map<string, { timer: NodeJS.Timeout; parts: { text: string; ts: string }[]; ctx: any }>();
 
 // Mentions of the app's own bot user are stripped; other mentions stay (as <@U…>, which the model can read).
@@ -51,6 +52,8 @@ export function installSlackInbound(): void {
     if (!text && !ev.files?.length) return;
     const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned) };
     const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
+    // Start the teammate's Pi now, in parallel with the batching wait below.
+    void import("../pi/supervisor.ts").then((m) => m.prewarm(session.id, teammateId)).catch(() => null);
     // Files dropped in the message go onto the teammate's computer (its session folder), and the message says where.
     if (ev.files?.length) text = `${text}\n${await saveFiles(appId, teammateId, session.id, ev.files).catch((e) => `[files: couldn't save them (${(e as Error).message.slice(0, 120)})]`)}`.trim();
     // The kill switch works where the teammate was asked directly or is in the thread; a "stop" said in a channel

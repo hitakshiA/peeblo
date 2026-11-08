@@ -322,7 +322,10 @@ export function startProxy(): Promise<Server> {
       }
       const usage = watch.usage();
       await record(b, path, a, usage, { firstChunkMs, peebloFallback: Boolean((a as any).peebloFallback) });
-      if (usage?.cost_usd !== undefined) noteSpend(b.teammateId, b.endUser, Number(usage.cost_usd) || 0);
+      if (usage?.cost_usd !== undefined) {
+        noteSpend(b.teammateId, b.endUser, Number(usage.cost_usd) || 0);
+        void import("../otari/night-cap.ts").then((m) => m.noteNightSpend(Number(usage.cost_usd) || 0));
+      }
     }
   });
   return new Promise((resolve) => server.listen(config.proxyPort, "127.0.0.1", () => resolve(server)));

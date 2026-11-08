@@ -11,7 +11,7 @@ import { computerTools } from "../agent-tools/computer.ts";
 import { validate, type Schema } from "../agent-tools/schema.ts";
 import type { AgentTool, ToolContext, ToolResult } from "../agent-tools/types.ts";
 import { config } from "../config.ts";
-import { catalogFor, classify, executeTool, forgetServer, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
+import { ALWAYS_REFUSES, catalogFor, classify, executeTool, forgetServer, markUnavailable, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
 import { pool } from "../db.ts";
 import { askApproval, fingerprint } from "../durable/approvals.ts";
 import { argClass, modeRule, NEVER_WITHOUT_ASKING, review, riskOf } from "../reviewer.ts";
@@ -128,6 +128,8 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const own = peebloTools(tm, { subagent });
 
   if (req.method === "GET" && path === "/tools") {
+    const tt = Date.now();
+    res.on("finish", () => { if (process.env.PEEBLO_TIMING) console.error(`timing: GET /tools ${Date.now() - tt} ms`); });
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     // A scoped GitHub connector names its repos, so the model never guesses an owner.
@@ -270,6 +272,14 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
   Object.assign(base, { via: "otari_mcp", server: t.server, server_id: t.serverId, server_revision: t.revision });
   const kind = classify(t, args);
   base.kind = kind;
+  // Internal pages go through their own connector, never a web scraper (that dodges access rules and fails anyway).
+  if (["apify", "exa", "context7", "deepwiki"].includes(t.server)) {
+    const internal = JSON.stringify(args).match(/https?:\/\/[^"\s]*(notion\.so|notion\.site|atlassian\.net|linear\.app|slack\.com|docs\.google\.com|drive\.google\.com|sanity\.io|hubspot\.com|airtable\.com|monday\.com)[^"\s]*/i);
+    if (internal) {
+      await event({ status: "refused", reason: "internal page through a web scraper" });
+      return reply({ text: `That's an internal page (${internal[1]}); open it with its own connector (find_tools), or say which page and who can share it with Peeblo. Web scrapers aren't for internal docs.`, isError: true });
+    }
+  }
   const scope = outOfScope(t, args, tm.config.connector_scopes);
   if (scope) {
     await event({ status: "refused", reason: scope });
@@ -332,6 +342,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     try {
       const { data, requestId } = await executeTool(t, args);
       const r = await capResult(ctx, t, mcpText(data), toolCallIdOf(base));
+      if (r.isError && ALWAYS_REFUSES.test(r.text)) markUnavailable(t.server, t.tool); // the server refuses this tool for good
       return finish(r, `mcp:${t.server}.${t.tool}`, { request_id: requestId, ms: Date.now() - t0, result_chars: r.chars, ...(r.saved ? { saved_to: r.saved } : {}) });
     } catch (error) {
       const e = error as Error & { status?: number; requestId?: string | null; code?: string | null };
@@ -386,7 +397,8 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
 }
 
 // The repos an unscoped GitHub connection can see, read once every 30 minutes (get_me, then one search), so agents
-// use exact owner/repo names instead of guessing. The first read waits at most 6 s; after that it never blocks.
+// use exact owner/repo names instead of guessing. It never blocks a session start: until the first read lands (it's
+// warmed when core starts), the tools carry the "find the owner first" line instead.
 let ghSeen: { at: number; text: string } | null = null;
 let ghLoading: Promise<string> | null = null;
 async function githubVisible(tools: ConnectorTool[]): Promise<string> {
@@ -403,6 +415,9 @@ async function githubVisible(tools: ConnectorTool[]): Promise<string> {
     ghSeen = { at: Date.now(), text: names.slice(0, 30).join(", ") };
     return ghSeen.text;
   })().catch(() => ghSeen?.text ?? "").finally(() => { ghLoading = null; });
-  if (ghSeen) return ghSeen.text;
-  return Promise.race([ghLoading, new Promise<string>((r) => setTimeout(() => r(""), 6000))]);
+  return ghSeen?.text ?? "";
+}
+export async function warmGithubVisible(): Promise<void> {
+  const peeblo = await getTeammate("peeblo");
+  if (peeblo) await githubVisible((await catalogFor(peeblo.config)).tools).catch(() => "");
 }

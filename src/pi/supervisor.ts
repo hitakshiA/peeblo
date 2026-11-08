@@ -96,6 +96,7 @@ async function dropRefusedTurn(l: Live, sessionId: string, runId: string): Promi
 
 
 async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
+  const t0 = Date.now(); const lap = (what: string) => { if (process.env.PEEBLO_TIMING) console.error(`timing: ${what} ${Date.now() - t0} ms`); };
   const dir = join(config.dataDir, "teammates", tm.slug);
   await mkdir(join(dir, "sessions"), { recursive: true });
   await mkdir(join(dir, "pi-agent"), { recursive: true });
@@ -115,7 +116,9 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const model = place.model || tm.config.model.default;
   const models = [model, tm.config.model.fallback].filter(Boolean).join(",");
   const web = tm.config.tools.includes("web");
+  lap("prompt written");
   const key = await teammateKey(tm);
+  lap("key");
   const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: tm.config.tools.includes("code") && config.otariCode, otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
   const child = spawn(process.execPath, [PI_CLI, "--mode", "rpc",
     "--no-extensions", "-e", PI_OTARI, "-e", PEEBLO_TOOLS,
@@ -137,16 +140,30 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const l: Live = { child, rpc, token, teammateVersion: tm.version, queue: Promise.resolve() };
   child.on("exit", () => { live.delete(sessionId); revokeToken(token); });
   live.set(sessionId, l);
+  lap("spawned");
   await rpc.send("get_state");
+  lap("pi ready");
   return l;
 }
 
+const spawning = new Map<string, Promise<Live>>();
 async function piFor(sessionId: string, tm: Teammate): Promise<Live> {
   const cur = live.get(sessionId);
   // A new config version (new instructions or model) starts a fresh process on the same session file.
   if (cur && cur.teammateVersion === tm.version) return cur;
+  const pending = spawning.get(sessionId);
+  if (pending) { const l = await pending; if (l.teammateVersion === tm.version) return l; }
   if (cur) cur.child.kill();
-  return spawnPi(sessionId, tm);
+  const p = spawnPi(sessionId, tm).finally(() => spawning.delete(sessionId));
+  spawning.set(sessionId, p);
+  return p;
+}
+
+// Starts a session's Pi as soon as a message arrives (Slack batches quick follow-ups for ~1.5 s first), so the
+// turn doesn't wait ~4 s for Pi to start.
+export async function prewarm(sessionId: string, teammateId: string): Promise<void> {
+  const tm = await getTeammate(teammateId);
+  if (tm && !live.has(sessionId)) await piFor(sessionId, tm).catch(() => null);
 }
 
 function touch(sessionId: string, l: Live): void {

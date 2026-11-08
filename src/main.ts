@@ -31,6 +31,10 @@ installPiExecutor();
   await ensureManager().catch((e) => console.error("peeblo manager:", (e as Error).message)); installHireWelcome();
   (await import("./slack/profile.ts")).installProfileSync();
   (await import("./connectors/mcp.ts")).warmCatalog();
+  // Warm what the first model call would otherwise wait for: catalog prices and the night cap's first read.
+  void import("./otari/catalog.ts").then((c) => c.estimateCost("deepseek/deepseek-v4.1-flash-1017", 1000, 100)).catch(() => null);
+  void import("./otari/night-cap.ts").then((n) => n.nightSpend()).catch(() => null);
+  void import("./proxy/tools.ts").then((t) => t.warmGithubVisible()).catch(() => null);
 }
 // Receipts need to know whether Otari's org guardrail is on (Otari doesn't report it on streams).
 const readGuard = () => import("./guard.ts").then(async (g) => {

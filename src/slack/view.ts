@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
+  held?: string; heldTs?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u.slice(0, 40); } };
@@ -111,6 +111,7 @@ async function redraw(v: View, title: string, tail: any[] = []): Promise<void> {
 
 // Text posted before any tool runs waits here, so a plain reply goes out once, with its receipt.
 async function flushHeld(v: View): Promise<void> {
+  if (v.heldTs) { v.held = undefined; return; } // already on screen
   if (!v.held) return;
   const text = v.held; v.held = undefined;
   await post(v, text, [{ type: "markdown", text }]);
@@ -119,9 +120,19 @@ async function flushHeld(v: View): Promise<void> {
 async function chunks(v: View, c: any[]): Promise<void> {
   if (v.frozen) return redraw(v, planTitle(v));
   if (!v.streamTs && !v.failedStream) {
-    if (c.every((x) => x.type === "markdown_text")) { v.held = `${v.held ?? ""}${c.map((x) => x.text).join("")}`; return; }
+    if (c.every((x) => x.type === "markdown_text")) {
+      v.held = `${v.held ?? ""}${c.map((x) => x.text).join("")}`;
+      // Shown at once; the receipt joins this message at the end (or it becomes the stream's opening text).
+      const r: any = v.heldTs
+        ? await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text: v.held, blocks: [{ type: "markdown", text: v.held }] }).catch(() => null)
+        : await post(v, v.held, [{ type: "markdown", text: v.held }]).catch(() => null);
+      if (r?.ts && !v.heldTs) v.heldTs = r.ts;
+      return;
+    }
     await openStream(v);
-    if (v.held && v.streamTs && !v.failedStream) { const text = v.held; v.held = undefined; c = [{ type: "markdown_text", text }, ...c]; }
+    // Text already shown on its own stays there; the stream carries on below it.
+    if (v.heldTs) v.held = undefined;
+    else if (v.held && v.streamTs && !v.failedStream) { const text = v.held; v.held = undefined; c = [{ type: "markdown_text", text }, ...c]; }
     else await flushHeld(v);
   }
   if (v.failedStream || !v.streamTs) {
@@ -162,7 +173,7 @@ function step(v: View, callId: string, title: string, status: Task["status"], ou
 // The end of the message: the receipt chip, the Receipt button, then 👍 👎 (Slack's icon_button takes only a trash
 // icon, so the Receipt button is a small button on its own row, just above the feedback row).
 async function ending(runId: string, ok: boolean): Promise<any[]> {
-  const r = await buildReceipt(runId).catch(() => null);
+  const r = await buildReceipt(runId, { links: false }).catch(() => null);
   return [
     ...(ok ? [] : [{ type: "actions", block_id: `recover:${runId}`, elements: [
       { type: "button", style: "primary", text: { type: "plain_text", text: "Try again" }, action_id: "retry_run", value: runId },
@@ -186,6 +197,12 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     const declined = v.approvals.some((x) => x.done && JSON.stringify(x.done).includes("Not now"));
     const summary = summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
     if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }
+    // The reply is already on screen: add the receipt to that message instead of posting a second one.
+    if (v.heldTs && !v.frozen && !(v.streamTs && !v.failedStream)) {
+      await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text: fallbackText ?? summary, blocks: [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks] }).catch(() => null);
+      if (v.place.direct) { await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes"); await react(v.place.app_id, v.place.channel, v.place.trigger_ts, ok ? "white_check_mark" : "warning"); await sessionStatus(v, "active"); }
+      return;
+    }
     if (v.frozen) {
       if (fallbackText) v.text = `${v.text}${v.text ? "\n\n" : ""}${fallbackText}`;
       await redraw(v, summary, blocks);

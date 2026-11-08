@@ -110,6 +110,10 @@ export const router = new Router()
     const r = await buildReceipt(params.id);
     return { ...r, line: receiptLine(r) };
   })
+  .add("POST", "/v1/approvals/:id/expire", async ({ params }) => {
+    const { expireApproval } = await import("../durable/approvals.ts");
+    return expireApproval(params.id);
+  })
   .add("POST", "/v1/approvals/:id", async ({ params, body }) => {
     if (!["approved", "denied"].includes(body?.decision)) throw bad("decision must be approved or denied");
     return answerApproval(params.id, { decision: body.decision, scope: body.scope ?? "once", personId: body.person_id ?? null });

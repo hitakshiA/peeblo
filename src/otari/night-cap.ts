@@ -18,6 +18,8 @@ type Baseline = { at: string; cap_usd?: number };
 let base: Baseline | null | undefined;
 let last: { at: number; spent: number; byKey: Record<string, number> } | null = null;
 let reading: Promise<void> | null = null;
+let noted = 0; // spend this core saw since the last Otari read
+export function noteNightSpend(usd: number): void { noted += usd; }
 
 function baseline(): Baseline | null {
   if (base !== undefined) return base;
@@ -42,6 +44,7 @@ async function refresh(b: Baseline): Promise<void> {
   const vals = await Promise.all(ks.map((k) => usageSummary({ start, auth: k.auth }).then((u) => Number(u.totals.cost ?? 0)).catch(() => last?.byKey[k.name] ?? 0)));
   ks.forEach((k, i) => { byKey[k.name] = vals[i]; spent += vals[i]; });
   last = { at: Date.now(), spent, byKey };
+  noted = 0;
 }
 
 // Spend since the baseline: Otari's figure (≤ 30 s old) plus what Peeblo logged since that read.
@@ -52,9 +55,7 @@ export async function nightSpend(): Promise<{ spent: number; cap: number; at: st
     reading ??= refresh(b).finally(() => { reading = null; });
     if (!last) await reading; // the first read is awaited; later ones refresh in the background
   }
-  const since = new Date(last?.at ?? Date.now());
-  const logged = Number((await pool.query("SELECT coalesce(sum((data->>'cost_usd')::numeric), 0) AS c FROM events WHERE type = 'model.call' AND at > $1", [since])).rows[0].c);
-  return { spent: (last?.spent ?? 0) + logged, cap: b.cap_usd ?? CAP, at: b.at };
+  return { spent: (last?.spent ?? 0) + noted, cap: b.cap_usd ?? CAP, at: b.at };
 }
 
 // The proxy's check: a refusal sentence at the cap, else null.

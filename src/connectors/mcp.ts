@@ -56,6 +56,15 @@ async function serverTools(id: string, fresh = false) {
 
 const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
 
+// Tools a server always refuses ("not available due to compliance requirements"): noted once, then not offered.
+const UNAVAILABLE_FILE = join(config.dataDir, "unavailable-tools.json");
+const unavailable = new Set<string>((() => { try { return JSON.parse(readFileSync(UNAVAILABLE_FILE, "utf8")) as string[]; } catch { return []; } })());
+export function markUnavailable(server: string, tool: string): void {
+  unavailable.add(`${server}.${tool}`);
+  try { writeFileSync(UNAVAILABLE_FILE, JSON.stringify([...unavailable])); } catch { /* best effort */ }
+}
+export const ALWAYS_REFUSES = /not available due to compliance|this tool is (disabled|not enabled)|tool is not available (for|on) (this|your) (plan|account|workspace)/i;
+
 // The tools of every connector the teammate has, as Otari authorizes them for Peeblo's key.
 export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorTool[]; missing: string[]; failed: string[] }> {
   if (!c.connectors.length) return { tools: [], missing: [], failed: [] };
@@ -74,6 +83,7 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
     const s = f.s!;
     if (!t) { failed.push(f.name); continue; }
     for (const tool of t.tools) {
+      if (unavailable.has(`${s.name}.${tool.name}`)) continue;
       tools.push({
         name: `${safe(s.name)}__${safe(tool.name)}`.slice(0, 64), server: s.name, serverId: s.id, revision: t.revision,
         tool: tool.name, description: `[${s.name}] ${tool.description ?? tool.name}`.slice(0, 1024),
@@ -87,15 +97,27 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
 // Whether a call runs at once or waits for a person. A server's own annotations are untrusted (Otari says
 // so too), so "auto" only runs tools that both look like reads by name and say they are read-only.
 export type CallKind = "read" | "write" | "destructive";
-const READ_WORDS = new Set(["get", "list", "search", "read", "fetch", "query", "describe", "retrieve", "find", "lookup", "count", "show", "view", "help", "tools", "info", "schema", "learn", "all"]);
-const WRITE_WORDS = /(create|update|write|save|set|add|post|send|push|merge|edit|upsert|insert|run_sql|execute|trigger|publish|invite|assign)/i;
-const DESTRUCTIVE_WORDS = /(delete|remove|drop|destroy|refund|cancel|archive|revoke|purge|truncate|reset)/i;
+const READ_WORDS = new Set(["get", "list", "search", "read", "fetch", "query", "describe", "retrieve", "find", "lookup", "count", "show", "view", "help", "tools", "info", "schema", "learn", "all",
+  "chart", "charts", "render", "metrics", "stats", "logs", "availability", "insights", "report", "reports", "analytics", "inspect", "whoami", "ping", "discover", "analyze", "history", "timeline", "status"]);
+// Words that make a call a write even when the server calls it read-only (a server's hint never makes a call safer
+// on its own; it can only confirm a name that says nothing about writing).
+const NEVER_READ = /(submit|invoke|feedback|trigger|run_|execute(?!read)|send|pay|charge)/i;
+// Word lists, matched against whole words of the tool's name (snake, kebab or camel case), never substrings:
+// "list_postgres_roles" is a read, not a "post".
+const WRITE = new Set(["create", "update", "updates", "write", "save", "set", "add", "post", "send", "push", "merge", "edit", "upsert", "insert", "execute", "trigger", "publish", "invite", "assign", "upload", "submit", "invoke", "run", "pay", "charge", "move", "rename", "enable", "disable", "toggle", "import", "sync", "comment", "reply", "close", "resolve", "acknowledge", "snooze", "transfer", "duplicate", "copy", "generate"]);
+const DESTRUCTIVE = new Set(["delete", "remove", "drop", "destroy", "refund", "cancel", "archive", "revoke", "purge", "truncate", "reset", "void", "unpublish", "disconnect"]);
+const READ_VERBS = new Set(["get", "list", "search", "read", "fetch", "query", "describe", "retrieve", "find", "lookup", "count", "show", "view", "chart", "render", "inspect", "analyze", "discover", "whoami", "ping"]);
+const wordsOf = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[_\-\s.]+/).filter(Boolean);
+const WRITE_WORDS = { test: (name: string) => wordsOf(name).some((w) => WRITE.has(w)) };
+const DESTRUCTIVE_WORDS = { test: (name: string) => wordsOf(name).some((w) => DESTRUCTIVE.has(w)) };
 
-// What a tool name suggests, from its words (snake, kebab or camel case). Unknown counts as a write.
+// What a tool name suggests. A destructive word anywhere wins; a name that starts with a read verb is a read
+// ("get_status_updates", "list_alert_grouping_settings"); otherwise a write word makes it a write; unknown counts as a write.
 function kindOfName(name: string): CallKind {
-  if (DESTRUCTIVE_WORDS.test(name)) return "destructive";
-  if (WRITE_WORDS.test(name)) return "write";
-  const words = name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[_\-\s.]+/);
+  const words = wordsOf(name);
+  if (words.some((w) => DESTRUCTIVE.has(w))) return "destructive";
+  if (READ_VERBS.has(words[0])) return "read";
+  if (words.some((w) => WRITE.has(w))) return "write";
   return words.some((w) => READ_WORDS.has(w)) ? "read" : "write";
 }
 
@@ -112,7 +134,11 @@ function posthogExecKind(command: string): CallKind {
 export function classify(t: ConnectorTool, args: Record<string, unknown>): CallKind {
   if (t.server === "posthog" && t.tool === "exec" && typeof args.command === "string") return posthogExecKind(args.command);
   const k = kindOfName(t.tool);
-  return k === "read" && t.readOnlyHint === false ? "write" : k;
+  if (k === "read" && t.readOnlyHint === false) return "write";
+  // A tool whose name has no write words (it was "write" only because no read word matched) and that its server
+  // marks read-only is a read: Better Stack's incidents and monitors, Neon's list_*, Stripe's reports.
+  if (k === "write" && t.readOnlyHint === true && !WRITE_WORDS.test(t.tool) && !DESTRUCTIVE_WORDS.test(t.tool) && !NEVER_READ.test(t.tool)) return "read";
+  return k;
 }
 
 // Repositories, projects and the like a teammate may touch, per connector (connector_scopes in its config).

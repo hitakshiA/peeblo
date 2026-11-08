@@ -15,7 +15,7 @@ export type Receipt = {
   links: { requests: Record<string, string>; session: string; trace_id: string | null } | null; // into the Otari dashboard
 };
 
-export async function buildReceipt(runId: string): Promise<Receipt> {
+export async function buildReceipt(runId: string, opts: { links?: boolean } = {}): Promise<Receipt> {
   const events = await runEvents(runId);
   const calls = events.filter((e) => e.type === "model.call").map((e) => e.data as any);
   // Calls Otari answered but that never finished here (core died mid-stream): take Otari's settled cost.
@@ -27,7 +27,7 @@ export async function buildReceipt(runId: string): Promise<Receipt> {
   }));
   const sessionId = (events[0] as any)?.session_id as string | undefined;
   const requestIds = [...calls.map((c) => c.request_id).filter(Boolean), ...interrupted.map((i) => i.request_id)];
-  const links = sessionId ? await receiptLinks(sessionId, requestIds).catch(() => null) : null;
+  const links = sessionId && opts.links !== false ? await receiptLinks(sessionId, requestIds).catch(() => null) : null;
   const sum = (k: string) => calls.reduce((a, c) => a + (Number(c[k]) || 0), 0);
   const ok = calls.filter((c) => c.status >= 200 && c.status < 300);
   const work = calls.filter((c) => c.role !== "guard");
