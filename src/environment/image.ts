@@ -3,7 +3,7 @@
 // names the newest. Teammates stay pinned to the build their disk was made on (controller.ts), and old folders
 // are removed once nothing is pinned to them. Files Alpine doesn't package (images/vendor.json) are fetched,
 // checked by sha256 and copied in.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -22,6 +22,11 @@ export function currentBuild(size: Tier): string | null {
   return null;
 }
 export const buildPath = (size: Tier, buildId: string) => join(tierDir(size), buildId);
+// Which distro a build is (builds from before this field are Alpine).
+export function distroOf(size: Tier, buildId = currentBuild(size)): "debian" | "alpine" | null {
+  if (!buildId) return null;
+  try { return JSON.parse(readFileSync(join(buildPath(size, buildId), "peeblo-build.json"), "utf8")).distro ?? "alpine"; } catch { return "alpine"; }
+}
 export function buildIdOf(dir: string): string | null {
   try { return JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).buildId ?? null; } catch { return null; }
 }
@@ -61,13 +66,41 @@ async function vendor(size: Tier): Promise<{ src: string; dest: string }[]> {
   return out;
 }
 
+// The large computer runs Debian when Docker or Podman is here (Gondolin's OCI path), and Alpine otherwise.
+// PEEBLO_LARGE_DISTRO=alpine keeps Alpine even with a container runtime.
+export function containerRuntime(): "docker" | "podman" | null {
+  for (const rt of ["docker", "podman"] as const) if (spawnSync(rt, ["info", "--format", "{{.ServerVersion}}"], { stdio: "ignore", timeout: 15_000 }).status === 0) return rt;
+  return null;
+}
+export const distroFor = (size: Tier): "debian" | "alpine" => (size === "large" && process.env.PEEBLO_LARGE_DISTRO !== "alpine" && containerRuntime() ? "debian" : "alpine");
+const DEBIAN = join(REPO, "images", "large-debian");
+const DEBIAN_REPO = "peeblo-large-debian";
+
+// Builds the Debian large image with the container runtime, tagged by the hash of its recipe, and drops older tags.
+async function buildDebianOci(rt: "docker" | "podman"): Promise<string> {
+  const h = createHash("sha256");
+  for (const f of readdirSync(DEBIAN).sort()) h.update(f).update(await readFile(join(DEBIAN, f)));
+  const tag = `${DEBIAN_REPO}:${h.digest("hex").slice(0, 16)}`;
+  const platform = `linux/${config.vmArch === "aarch64" ? "arm64" : "amd64"}`;
+  if (spawnSync(rt, ["image", "inspect", tag], { stdio: "ignore" }).status !== 0) await run(rt, ["build", "--platform", platform, "-t", tag, DEBIAN]);
+  const old = spawnSync(rt, ["images", DEBIAN_REPO, "--format", "{{.Repository}}:{{.Tag}}"], { encoding: "utf8" }).stdout.split("\n").filter((t) => t && t !== tag);
+  if (old.length) spawnSync(rt, ["rmi", ...old], { stdio: "ignore" });
+  return tag;
+}
+
 export async function buildImage(only?: string, opts: { extraPackages?: string[] } = {}): Promise<string[]> {
   const ids: string[] = [];
   for (const size of (only ? [only] : ["small", "large"]) as Tier[]) {
     const tmp = join(tierDir(size), `.building-${Date.now()}`);
     await mkdir(tmp, { recursive: true });
     const cfg = JSON.parse(await readFile(join(REPO, "images", `${size}-${config.vmArch}.json`), "utf8"));
-    cfg.postBuild = { copy: await vendor(size) };
+    const distro = distroFor(size);
+    if (distro === "debian") {
+      // Gondolin keeps its Alpine kernel and init; the Debian image is the root filesystem.
+      const rt = containerRuntime()!;
+      cfg.oci = { image: await buildDebianOci(rt), runtime: rt, pullPolicy: "never" };
+      cfg.postBuild = { copy: [] };
+    } else cfg.postBuild = { copy: await vendor(size) };
     if (opts.extraPackages?.length) cfg.alpine.rootfsPackages.push(...opts.extraPackages);
     const cfgFile = join(tmp, "..", `.config-${size}.json`);
     await writeFile(cfgFile, JSON.stringify(cfg, null, 2));
@@ -81,8 +114,8 @@ export async function buildImage(only?: string, opts: { extraPackages?: string[]
     else await rename(tmp, dest);
     await writeFile(join(tierDir(size), "current"), id);
     const bytes = readdirSync(dest).reduce((a, f) => a + statSync(join(dest, f)).size, 0);
-    await writeFile(join(dest, "peeblo-build.json"), JSON.stringify({ size, buildId: id, built_at: new Date().toISOString(), build_ms: Date.now() - t0, bytes, packages: cfg.alpine.rootfsPackages, vendored: cfg.postBuild.copy.map((c: { dest: string }) => c.dest) }, null, 2));
-    console.log(`${size}: build ${id} (${Math.round(bytes / 1e6)} MB, ${Math.round((Date.now() - t0) / 1000)} s)`);
+    await writeFile(join(dest, "peeblo-build.json"), JSON.stringify({ size, distro, oci_image: cfg.oci?.image ?? null, buildId: id, built_at: new Date().toISOString(), build_ms: Date.now() - t0, bytes, packages: distro === "debian" ? "images/large-debian/Dockerfile" : cfg.alpine.rootfsPackages, vendored: cfg.postBuild.copy.map((c: { dest: string }) => c.dest) }, null, 2));
+    console.log(`${size} (${distro}): build ${id} (${Math.round(bytes / 1e6)} MB, ${Math.round((Date.now() - t0) / 1000)} s)`);
     await pruneImages(size).catch(() => {});
     ids.push(id);
   }

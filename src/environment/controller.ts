@@ -42,7 +42,7 @@ export const TIERS = {
 } as const;
 export const awakeCap = (size: Tier) => Number(process.env[`PEEBLO_AWAKE_CAP_${size.toUpperCase()}`] ?? (size === "small" ? 8 : 2));
 const RESERVE_MB = Number(process.env.PEEBLO_HOST_RESERVE_MB ?? 1024);
-export const DEFAULT_HOSTS = ["dl-cdn.alpinelinux.org", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org"];
+export const DEFAULT_HOSTS = ["dl-cdn.alpinelinux.org", "deb.debian.org", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org"];
 
 export function workspaceOf(slug: string): string {
   return join(config.dataDir, "teammates", slug, "workspace");

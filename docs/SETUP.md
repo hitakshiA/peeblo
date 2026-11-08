@@ -65,7 +65,9 @@ Each teammate you hire later gets its own app the same way: Peeblo makes it, giv
 ```
 
 The first start builds the small computer image (a minute). For teammates that browse websites, build the large one
-once: `./peeblo image large`.
+once: `./peeblo image large`. With Docker or Podman running, the large computer is Debian 13 with Chromium, bun and
+Playwright MCP (about 4.4 GB, a few minutes the first time). Without either, it's Alpine with Chromium and the same
+browser tools. `./peeblo check` says which one you have; `PEEBLO_LARGE_DISTRO=alpine` keeps Alpine anyway.
 
 ## 5. Your first teammate
 
@@ -84,6 +86,9 @@ with the console password, and hire from **Crew**.
 Teammates use tools through MCP servers stored in Otari (Linear, GitHub, PostHog, Stripe, Notion, and others).
 Add a server in Otari's dashboard (**Tools → MCP servers**), then give it to a teammate by name: "Ledger, you can use
 stripe now", or in the console under the teammate's settings.
+
+Stripe: an agent restricted key is subject to Stripe's own approval rules (Settings → Approvals → Rules). If you keep
+the "Refund created" rule on, you approve twice: once on Peeblo's card, then again in Stripe.
 
 ## Day to day
 

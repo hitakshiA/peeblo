@@ -5,7 +5,8 @@ description: Make a computer setup permanent. Use when you installed something a
 
 # Writing recipes
 
-Your computer has layers. What you install with `apk add`, `npm i -g` or `pip install` in a session lands on the
+Your computer has layers. What you install with `apk add` (or `apt-get install` on a Debian computer), `npm i -g` or `pip install` in a
+session lands on the
 working disk, which is thrown away at the next computer reset. A recipe is what survives: your owner approves it
 once, and it is built into your computer.
 
@@ -17,7 +18,9 @@ once, and it is built into your computer.
 ## How to write it
 1. Prefer `packages` over `run`. Packages are declarative and cheap to review:
    `{"packages": {"apk": ["postgresql16-client"], "npm": ["pnpm@9.15.4"], "pip": ["uv==0.9.2"]}}`.
-2. Pin versions (`pkg=1.2.3-r0`, `name@1.2.3`, `name==1.2.3`) so the same recipe builds the same computer.
+   System packages go under `apk` on Alpine and `apt` on Debian (`cat /etc/os-release` tells you which). A
+   large computer is Debian when the host has Docker; list both if you aren't sure.
+2. Pin versions (`pkg=1.2.3-r0` on apk, `pkg=1.2.3-1` on apt, `name@1.2.3`, `name==1.2.3`) so the same recipe builds the same computer.
 3. Use `run` only for what no package manager does. Each step needs a `name`, runs as root in `/root`, and must
    be idempotent: running it twice changes nothing.
 4. Put config files in `files` (`{"path": "/root/.npmrc", "content": "...", "mode": "0600"}`). For a credential,
@@ -27,6 +30,13 @@ once, and it is built into your computer.
    doesn't change.
 6. Add `verify` commands (`jq --version`). They must pass, or the build fails and nothing changes.
 7. Put services that must run on every start in `start` (`{"name": "postgres", "run": "...", "ready": "pg_isready"}`).
+
+## Ready-made recipes
+- **OCR for scanned PDFs (ocrmypdf).** Propose this patch as-is when a job needs text out of scanned pages and
+  `tesseract` alone isn't enough:
+  `{"packages": {"apt": ["ocrmypdf=16.7.0+dfsg1-3"], "apk": ["ocrmypdf"]}, "verify": ["ocrmypdf --version", "gs --version"]}`.
+  In the reason, tell your owner it installs Ghostscript, which is licensed AGPL-3.0; that's why it isn't in the
+  base computer.
 
 ## What doesn't belong in a recipe
 - A repo's own dependencies (`pnpm install`, `uv sync`). Those belong in the repo's worktree setup, which runs per

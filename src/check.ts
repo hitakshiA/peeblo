@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { config } from "./config.ts";
 import { migrate, pool } from "./db.ts";
 import { imagePath } from "./environment/controller.ts";
+import { containerRuntime, currentBuild, distroOf } from "./environment/image.ts";
 
 type Result = { name: string; ok: boolean; detail: string };
 
@@ -33,6 +34,16 @@ export async function runChecks(): Promise<Result[]> {
     const p = imagePath();
     await access(join(p, "manifest.json"), constants.R_OK).catch(() => { throw new Error(`no VM image at ${p}; run: ./peeblo image`); });
     return `${config.vmArch} image at ${p}`;
+  });
+  await check("large computer image", async () => {
+    const id = currentBuild("large");
+    if (!id) throw new Error("the large computer image isn't built yet; run: ./peeblo image large");
+    const d = distroOf("large", id);
+    const rt = containerRuntime();
+    const note = d === "debian" ? "Debian 13 (built with " + (rt ?? "a container runtime, not found now") + ")"
+      : rt && process.env.PEEBLO_LARGE_DISTRO !== "alpine" ? "Alpine; Docker/Podman is here now, so ./peeblo image large would build Debian"
+      : "Alpine (no Docker or Podman, so the Debian image can't be built here)";
+    return `${note}, build ${id}`;
   });
   await check("hypervisor", async () => {
     if (process.platform === "linux") {

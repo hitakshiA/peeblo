@@ -19,10 +19,10 @@ import { rmSync } from "node:fs";
 function applyPatch(cur: Recipe, patch: any): unknown {
   const uniq = (a: string[]) => [...new Set(a)];
   const rm = new Set<string>(Array.isArray(patch?.remove) ? patch.remove.map(String) : []);
-  const pk = (k: "apk" | "npm" | "pip") => uniq([...cur.packages[k], ...(patch?.packages?.[k] ?? [])]).filter((x) => !rm.has(x));
+  const pk = (k: "apk" | "apt" | "npm" | "pip") => uniq([...cur.packages[k], ...(patch?.packages?.[k] ?? [])]).filter((x) => !rm.has(x));
   const files = [...cur.files.filter((f) => !(patch?.files ?? []).some((n: any) => n?.path === f.path)), ...(patch?.files ?? [])];
   return {
-    packages: { apk: pk("apk"), npm: pk("npm"), pip: pk("pip") },
+    packages: { apk: pk("apk"), apt: pk("apt"), npm: pk("npm"), pip: pk("pip") },
     run: [...cur.run, ...(patch?.run ?? [])], files, env: { ...cur.env, ...(patch?.env ?? {}) },
     secrets: uniq([...cur.secrets, ...(patch?.secrets ?? [])]), network: { hosts: uniq([...cur.network.hosts, ...(patch?.network?.hosts ?? [])]) },
     verify: uniq([...cur.verify, ...(patch?.verify ?? [])]), start: [...cur.start, ...(patch?.start ?? [])],

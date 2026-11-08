@@ -20,7 +20,7 @@ import { appendEvent } from "../store/events.ts";
 import { placeholderOf, secretsForVm } from "../store/secrets.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { BARE_ENV, imagePath, PERSIST_HOME, TIERS } from "./controller.ts";
-import { currentBuild, type Tier } from "./image.ts";
+import { currentBuild, distroOf, type Tier } from "./image.ts";
 
 export const RUNNER_VERSION = "2"; // 2: /root and /var/cache on the disk
 const STEP_MS = 10 * 60_000;
@@ -110,7 +110,7 @@ export async function waitForBuild(id: string, timeoutMs = BUILD_MS + 60_000): P
   }
 }
 
-const REGISTRY_HOSTS = { apk: ["dl-cdn.alpinelinux.org"], npm: ["registry.npmjs.org"], pip: ["pypi.org", "files.pythonhosted.org"] };
+const REGISTRY_HOSTS = { apk: ["dl-cdn.alpinelinux.org"], apt: ["deb.debian.org"], npm: ["registry.npmjs.org"], pip: ["pypi.org", "files.pythonhosted.org"] };
 const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 async function runBuild(id: string): Promise<void> {
@@ -134,8 +134,8 @@ async function runBuild(id: string): Promise<void> {
   // placeholders; the real value goes out only to the secret's hosts.
   const secrets = await secretsForVm(tm.id, recipe.secrets);
   const hosts = new Set<string>(recipe.network.hosts);
-  for (const k of ["apk", "npm", "pip"] as const) if (recipe.packages[k].length) for (const h of REGISTRY_HOSTS[k]) hosts.add(h);
-  if (recipe.run.length) for (const h of [...REGISTRY_HOSTS.apk, ...REGISTRY_HOSTS.npm, ...REGISTRY_HOSTS.pip, "github.com", "objects.githubusercontent.com", "codeload.github.com"]) hosts.add(h);
+  for (const k of ["apk", "apt", "npm", "pip"] as const) if (recipe.packages[k].length) for (const h of REGISTRY_HOSTS[k]) hosts.add(h);
+  if (recipe.run.length) for (const h of [...REGISTRY_HOSTS.apk, ...REGISTRY_HOSTS.apt, ...REGISTRY_HOSTS.npm, ...REGISTRY_HOSTS.pip, "github.com", "objects.githubusercontent.com", "codeload.github.com"]) hosts.add(h);
   for (const s of Object.values(secrets)) for (const h of s.hosts) hosts.add(h);
   const { httpHooks, env } = createHttpHooks({ allowedHosts: [...hosts], secrets });
   let vm: VM | null = null;
@@ -144,7 +144,14 @@ async function runBuild(id: string): Promise<void> {
     vm = await VM.create({ sessionLabel: `peeblo build ${tm.slug}`, sandbox: { imagePath: imagePath(size, b.l0_build_id) }, memory: TIERS[size].memory, cpus: TIERS[size].cpus, rootfs: { mode: "cow", size: TIERS[size].disk }, httpHooks, env: { ...env, ...BARE_ENV } });
     await vm.exec(["/bin/sh", "-c", PERSIST_HOME]);
     const steps: { name: string; run: string; timeout_s?: number }[] = [];
-    if (recipe.packages.apk.length) steps.push({ name: "apk packages", run: `apk add --no-cache ${recipe.packages.apk.map(sh).join(" ")}` });
+    // System packages for the computer's distro: apk on Alpine, apt on Debian (the large computer with Docker).
+    const distro = distroOf(size, b.l0_build_id) ?? "alpine";
+    const wrong = distro === "debian" ? recipe.packages.apk : recipe.packages.apt;
+    const right = distro === "debian" ? recipe.packages.apt : recipe.packages.apk;
+    if (wrong.length && !right.length) { await fail(`this computer runs ${distro === "debian" ? "Debian: list system packages under packages.apt" : "Alpine: list system packages under packages.apk"}`, "system packages"); return; }
+    if (right.length) steps.push(distro === "debian"
+      ? { name: "apt packages", run: `apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${right.map(sh).join(" ")}` }
+      : { name: "apk packages", run: `apk add --no-cache ${right.map(sh).join(" ")}` });
     if (recipe.packages.npm.length) steps.push({ name: "npm packages", run: `npm install -g --no-audit --no-fund ${recipe.packages.npm.map(sh).join(" ")}` });
     if (recipe.packages.pip.length) steps.push({ name: "pip packages", run: `uv pip install --system --break-system-packages ${recipe.packages.pip.map(sh).join(" ")}` });
     const files = recipe.files.map((f) => ({ ...f, content: f.content.replace(/\$\{secret:([A-Z][A-Z0-9_]*)\}/g, (_m, n) => placeholderOf(tm.id, n)) }));
@@ -167,7 +174,7 @@ async function runBuild(id: string): Promise<void> {
       if (s.name.startsWith("verify")) verify.push({ command: s.run, output: out.trim().slice(-500) });
       if (r.exitCode !== 0) { await fail(`exit ${r.exitCode}: ${out.trim().slice(-400)}`, s.name); return; }
     }
-    await vm.exec(["/bin/sh", "-c", "rm -rf /var/cache/apk/* /root/.npm/_cacache /root/.cache/uv /var/cache/peeblo/* 2>/dev/null; sync"]);
+    await vm.exec(["/bin/sh", "-c", "rm -rf /var/cache/apk/* /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /root/.npm/_cacache /root/.cache/uv /var/cache/peeblo/* 2>/dev/null; sync"]);
     // Save the build as an immutable L1 disk (this stops the build VM), then promote it with a rename.
     const final = l1Path(tm.slug, size, b.hash);
     const tmp = `${final}.tmp`;
