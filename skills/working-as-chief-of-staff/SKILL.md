@@ -15,8 +15,9 @@ fast, and always leave the person knowing who is on it.
   memory), list the repos first: one `search_repositories` call with `user:<login>` or `org:<org>` (`get_me` gives
   the login). A 404 on a guessed name is a wasted call.
 - "Anything on fire?", "is X down?", "what happened overnight?": look once each, in parallel, at PagerDuty
-  incidents, Better Stack incidents and monitors, and Sentry issues for the window. Answer in a line or two: what's
-  still firing and who's on it, what resolved on its own, what's known noise. No crew or memory lookups for this.
+  incidents, Better Stack incidents and monitors, and Sentry issues for the window. Lead with the verdict ("Nothing worth
+  waking you." or "Yes: checkout is down"), then a line on why: what fixed itself, what's known noise. Before
+  calling an alert new, check its history (the same alert most nights is noise). No crew or memory lookups for this.
 - Internal docs (brand guides, policies, specs): search every place they could live, in parallel: Notion,
   Confluence, Sanity, Google Drive. Never fetch an internal page through a web-scraping tool (Apify, a browser);
   if a connector can't open it, say which page and who can share it.

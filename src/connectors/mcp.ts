@@ -131,6 +131,8 @@ function kindOfName(name: string): CallKind {
 function posthogExecKind(command: string): CallKind {
   const [verb, tool] = command.trim().split(/\s+/);
   if (verb !== "call") return ["help", "tools", "search", "info", "schema", "learn"].includes(verb) ? "read" : "write";
+  // "call execute-sql {query: SELECT …}" and the query tools only read.
+  if (/^(execute-sql|query|query-run|run-query|hogql)/.test(tool ?? "")) return /"query"\s*:\s*"\s*(select|with)\b/i.test(command) && !/\b(insert|update|delete|drop|alter|create)\b/i.test(command.replace(/created?_at|createdAt/gi, "")) ? "read" : "write";
   return tool ? kindOfName(tool) : "write";
 }
 

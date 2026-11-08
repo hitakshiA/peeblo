@@ -25,6 +25,8 @@ type View = {
   held?: string; heldTs?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
+// The model sometimes writes Slack's <url|text> links or code ticks around a site name; markdown blocks want neither.
+const slackLinks = (t: string) => t.replace(/<(https?:[^|>\s]+)\|([^>]+)>/g, "[$2]($1)").replace(/<(https?:[^>\s]+)>/g, "$1").replace(/`([a-z0-9-]+(\.[a-z0-9-]+)+)`/gi, "$1");
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u.slice(0, 40); } };
 // A source's link text names the thing, not the site: "GRO-327 · Eval check", "acme/web#212", else the page.
 export const sourceText = (u: string): string => {
@@ -121,7 +123,7 @@ async function chunks(v: View, c: any[]): Promise<void> {
   if (v.frozen) return redraw(v, planTitle(v));
   if (!v.streamTs && !v.failedStream) {
     if (c.every((x) => x.type === "markdown_text")) {
-      v.held = `${v.held ?? ""}${c.map((x) => x.text).join("")}`;
+      v.held = c.map((x) => x.text).join("");
       // Shown at once; the receipt joins this message at the end (or it becomes the stream's opening text).
       const r: any = v.heldTs
         ? await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text: v.held, blocks: [{ type: "markdown", text: v.held }] }).catch(() => null)
@@ -132,7 +134,7 @@ async function chunks(v: View, c: any[]): Promise<void> {
     await openStream(v);
     // Text already shown on its own stays there; the stream carries on below it.
     if (v.heldTs) v.held = undefined;
-    else if (v.held && v.streamTs && !v.failedStream) { const text = v.held; v.held = undefined; c = [{ type: "markdown_text", text }, ...c]; }
+    else if (v.held && v.streamTs && !v.failedStream) v.held = undefined; // the latest post goes in at the end
     else await flushHeld(v);
   }
   if (v.failedStream || !v.streamTs) {
@@ -192,6 +194,12 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     let charts = 0;
     const shown = v.displays.filter((b) => b.type !== "data_visualization" || ++charts <= 2);
     const blocks = [...shown, ...(await ending(runId, ok))];
+    // A card still waiting when the answer is done isn't needed any more: it collapses and the approval expires.
+    for (const a of v.approvals.filter((x) => !x.done)) {
+      a.done = [{ type: "context", elements: [{ type: "mrkdwn", text: "Not needed" }] }];
+      const { expireApproval } = await import("../durable/approvals.ts");
+      await expireApproval(a.id).catch(() => null);
+    }
     // Open steps close with the run; the plan folds into one line made from the step verbs.
     for (const t of v.tasks.values()) if (t.status === "in_progress" || t.status === "pending") t.status = ok ? "complete" : "error";
     const declined = v.approvals.some((x) => x.done && JSON.stringify(x.done).includes("Not now"));
@@ -208,7 +216,8 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       await redraw(v, summary, blocks);
     } else if (v.streamTs && !v.failedStream) {
       const open = [...v.tasks.entries()].map(([id, t]) => ({ type: "task_update", id, title: t.title.slice(0, 120), status: t.status }));
-      const tail = fallbackText ? [{ type: "markdown_text", text: fallbackText }] : [];
+      const finalText = v.text || fallbackText || "";
+      const tail = finalText ? [{ type: "markdown_text", text: finalText }] : [];
       await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async () => {
         await post(v, fallbackText ?? summary, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
       });
@@ -403,10 +412,12 @@ export function installSlackView(): void {
     } else if (e.type === "slack.post" && d.private) {
       v.privateOnly = true; // the reply went to the asker alone; nothing public follows for it
     } else if (e.type === "slack.post") {
+      // One answer per message: a later post replaces the earlier one (a progress note, or a first try).
       v.posted++;
-      const text = `${v.posted > 1 ? "\n\n" : ""}${d.text}`;
-      if (v.frozen) { v.text += text; void enqueue(v, () => redraw(v!, planTitle(v!))); }
-      else void enqueue(v, () => chunks(v!, [{ type: "markdown_text", text }]));
+      v.text = slackLinks(String(d.text ?? ""));
+      if (v.frozen) void enqueue(v, () => redraw(v!, planTitle(v!)));
+      else if (!v.streamTs && !v.failedStream) void enqueue(v, () => chunks(v!, [{ type: "markdown_text", text: v!.text }]));
+      // In a live stream the text can't be replaced, so it goes in when the run ends.
     } else if (e.type === "slack.display") {
       v.displays.push(...(d.blocks ?? []));
     } else if (e.type === "budget.blocked" && (d.scope === "teammate" || d.scope === "api_token" || d.scope === "key")) {

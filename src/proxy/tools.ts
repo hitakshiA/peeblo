@@ -94,7 +94,7 @@ const identical = new Map<string, number>();
 // A repeat of a read in the same run gets the earlier result back without calling the service again.
 const readCache = new Map<string, string>();
 // At most this many tool calls in one turn; after that only slack_post runs (NIGHT_PLAN_NOV9 §1).
-const TURN_CALLS = 12;
+const TURN_CALLS = 16;
 const turnCalls = new Map<string, number>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
@@ -173,13 +173,16 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     await event({ status: "refused", reason: "turn call limit" });
     return json(res, 200, { text: `That is ${TURN_CALLS} tool calls this turn. Stop looking things up: post what you have with slack_post, and say what you couldn't check.`, isError: true });
   }
+  // A heads-up near the limit, so the agent answers with what it has instead of being cut off.
+  const left = TURN_CALLS - used;
+  const limitNote = left === 3 && name !== "slack_post" ? `\n[peeblo: 3 tool calls left this turn. Answer with what you have; say plainly what you couldn't check.]` : "";
   const cached = repeats >= 2 ? readCache.get(repeatKey) : undefined;
   if (cached !== undefined) {
     await event({ status: "completed", reused: true });
     return json(res, 200, { text: `[peeblo: you made this exact call earlier in this job; here is the same result again.]\n${cached}` });
   }
   const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}${repeats === 3 ? "rd" : "th"} identical ${name} call in this run; the result will not change.]` : "";
-  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError), ...(r.endTurn && !r.isError ? { terminate: true } : {}) });
+  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note + limitNote, isError: Boolean(r.isError), ...(r.endTurn && !r.isError ? { terminate: true } : {}) });
 
   // Untrusted results are labelled with their source and screened; a flag is appended as a warning.
   const finish = async (r: ToolResult, source: string | null, extra: Record<string, unknown>) => {
@@ -290,7 +293,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     const risk = riskOf(t, args, kind);
     base.risk = risk;
     const blocks = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'review.decided' AND data->>'decision' <> 'allow'", [b.runId])).rows[0]?.n ?? 0);
-    let rule = modeRule(blocks >= 3 ? "ask" : mode, risk);
+    let rule = kind === "read" ? "allow" : modeRule(blocks >= 3 ? "ask" : mode, risk);
     const toolFp = fingerprint({ teammate: tm.id, server: t.serverId, tool: t.tool, class: argClass(t, args) });
     // Money, deletions, shipping and posts outside the thread are per action: a grant never covers them.
     const perAction = NEVER_WITHOUT_ASKING.includes(risk);
