@@ -30,8 +30,7 @@ export const canvasTool: AgentTool = {
         // Everyone in the conversation can read it: the channel, or the person in a DM.
         await slack(place.app_id, "canvases.access.set", { canvas_id: id, access_level: "read", ...(place.channel_type === "im" ? { user_ids: [ctx.person?.slack_user ?? place.user] } : { channel_ids: [place.channel] }) }).catch(() => null);
       }
-      const link: any = await slack(place.app_id, "files.info", { file: id }).catch(() => null);
-      const url = link?.file?.permalink ?? `https://slack.com/app_redirect?team=${place.team}&file=${id}`;
+      const url = `https://app.slack.com/docs/${place.team}/${id}`;
       await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.canvas", data: { canvas_id: id, title: a.title, url, updated: Boolean(a.canvas_id) } });
       return { text: `Canvas ${a.canvas_id ? "updated" : "made"}: ${url} (canvas_id ${id}). Link it in a one-line reply: <${url}|${a.title}>.` };
     } catch (e) {
