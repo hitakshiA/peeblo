@@ -11,6 +11,8 @@ import { guardMode, lakeraMandate, setLakera } from "../../src/guard.ts";
 import { pool } from "../../src/db.ts";
 
 const STATE = "local/otari-check/e2e-run.json";
+// A priced model that fails before it answers (Otari lists it; its provider refuses, 502 wrapping a 412, Nov 8).
+const FAILING = process.env.PEEBLO_E2E_FAILING_MODEL ?? "deepseek/deepseek-v4.1-flash-1017-spot";
 const phase = process.argv[2];
 
 if (phase === "start") {
@@ -19,8 +21,9 @@ if (phase === "start") {
   if (guardMode() === "lakera") await setLakera(true);
   await ensureTeammate("e2e", {
     name: "Wren", role: "Growth analyst for the acme team",
-    // The default model no longer exists, so every call falls back to the worker routing policy.
-    model: { default: "acme/retired-model-v1", fallback: "peeblo-worker" },
+    // The default is a priced catalog model that fails before answering (so the budget check passes it and the
+    // call falls back to the worker routing policy). PEEBLO_E2E_FAILING_MODEL picks another one.
+    model: { default: FAILING, fallback: "peeblo-worker" },
     budget: { monthly_usd: 3 }, tools: ["web", "code"], web: { allowed_domains: ["github.com"] },
     connectors: ["linear"], mode: "auto",
   });
@@ -31,6 +34,8 @@ if (phase === "start") {
     "work out the week-over-week change in percent for our signups 412, 398, 455, 301 and 288 with code,",
     "look up the three most recently updated issues in the GRO team in Linear,",
     "and then add a comment to GRO-323 in Linear that sums up what you found.",
+    // Every teammate can ask the person now (ask_human), so the facts it would ask about are given up front.
+    "The signups are weekly, oldest first. GRO-323 is our test ticket for exactly this, so comment there even though it's canceled. Don't ask me anything first.",
   ].join(" ");
   const r = await submit("e2e", `C0CHECK:e2e-${stamp}`, text, `e2e-${stamp}`);
   await writeFile(STATE, JSON.stringify({ ...r, mandateWas: before?.enabled ?? false, startedAt: new Date().toISOString() }));
@@ -78,7 +83,7 @@ try {
     c.note("calls", ok.length);
   });
   await check(S, "the forced fallback happened once per call and is on the receipt", async (c) => {
-    const failed = cs.filter((x) => x.failed && x.requested_model === "acme/retired-model-v1");
+    const failed = cs.filter((x) => x.failed && x.requested_model === FAILING);
     const fell = cs.filter((x) => x.peebloFallback && x.status === 200);
     expect(failed.length >= 1 && fell.length >= 1, `failed ${failed.length}, fell back ${fell.length}`);
     expect(receipt.fallbacks >= 1, "receipt shows no fallback");

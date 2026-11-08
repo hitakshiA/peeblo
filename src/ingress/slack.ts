@@ -126,9 +126,12 @@ async function handleOAuth(url: URL): Promise<[number, string]> {
 }
 
 async function facePngFor(slug: string): Promise<Buffer | null> {
-  const { rows } = await pool.query("SELECT h.avatar FROM hires h JOIN teammates t ON t.id = h.teammate_id WHERE t.slug = $1", [slug]);
+  // The same face as the app icon and the ID card (src/slack/profile.ts faceOf).
+  const { getTeammate } = await import("../store/teammates.ts");
+  const tm = await getTeammate(slug);
   const { facePng, pickFace } = await import("../slack/idcard.ts");
-  return facePng(rows[0]?.avatar?.shape ? rows[0].avatar : pickFace(slug), 256).catch(() => null);
+  const { faceOf } = await import("../slack/profile.ts");
+  return facePng((tm ? await faceOf(tm) : pickFace(slug)) as any, 256).catch(() => null);
 }
 
 const page = (text: string) => `<!doctype html><meta charset="utf-8"><title>Peeblo</title><body style="font:16px system-ui;padding:3rem"><p>${text.replace(/</g, "&lt;")}</p>`;

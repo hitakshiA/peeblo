@@ -62,12 +62,17 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
   };
 }
 
-async function faceColor(tm: Teammate): Promise<string> {
+// A teammate's face: its hire's avatar, else the one picked from its slug. The ID card, App Home, the crew
+// carousel and the app icon all use this one face.
+export async function faceOf(tm: Teammate): Promise<{ shape: string; color: string }> {
   const h = (await pool.query("SELECT avatar FROM hires WHERE teammate_id = $1", [tm.id])).rows[0];
-  if (h?.avatar?.color) return h.avatar.color;
+  if (h?.avatar?.shape && h?.avatar?.color) return h.avatar;
+  // Peeblo has its own face (the one its app is made with, src/manager.ts).
+  if (tm.slug === "peeblo") return { shape: "peeblo", color: "#2E7D5B" };
   const { pickFace } = await import("./idcard.ts");
-  return pickFace(tm.slug).color;
+  return pickFace(tm.slug);
 }
+async function faceColor(tm: Teammate): Promise<string> { return (await faceOf(tm)).color; }
 
 // One manifest update at a time, a minute apart (apps.manifest.update is rate limited).
 let chain: Promise<unknown> = Promise.resolve();
@@ -95,6 +100,13 @@ export async function updateNow(teammateId: string): Promise<{ ok: boolean; erro
     const r: any = await (await fetch("https://slack.com/api/apps.manifest.update", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: new URLSearchParams({ app_id: a.app_id, manifest: JSON.stringify(manifest) }) })).json();
     await appendEvent({ type: "slack.manifest_updated", data: { teammate_id: tm.id, app_id: a.app_id, ok: r.ok, error: r.error ?? null, errors: r.errors ?? null, needs_reinstall: r.permissions_updated ?? null } });
     if (!r.ok) return { ok: false, error: `${r.error}${r.errors ? ` ${JSON.stringify(r.errors).slice(0, 400)}` : ""}` };
+    // The app icon is the same face as the ID card and App Home.
+    const { facePng } = await import("./idcard.ts");
+    const fd = new FormData();
+    fd.append("app_id", a.app_id);
+    fd.append("file", new Blob([new Uint8Array(await facePng(await faceOf(tm) as any))], { type: "image/png" }), "face.png");
+    const icon: any = await (await fetch("https://slack.com/api/apps.icon.set", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: fd })).json();
+    await appendEvent({ type: "slack.icon_set", data: { teammate_id: tm.id, app_id: a.app_id, ok: icon.ok, error: icon.error ?? null } });
   }
   return { ok: true };
 }

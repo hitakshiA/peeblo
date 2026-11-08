@@ -23,6 +23,18 @@ const iconFor = (tool: string): any => {
   return d ? { type: "icon", name: `https://www.google.com/s2/favicons?domain=${d}&sz=64` } : undefined;
 };
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u.slice(0, 40); } };
+// A source's link text names the thing, not the site: "GRO-327 · Eval check", "acme/web#212", else the page.
+export const sourceText = (u: string): string => {
+  try {
+    const url = new URL(u);
+    const issue = /\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/([^/?#]+))?/.exec(url.pathname);
+    if (issue) return issue[2] ? `${issue[1]} · ${decodeURIComponent(issue[2]).replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase())}`.slice(0, 80) : issue[1];
+    const gh = /^\/([^/]+)\/([^/]+)\/(?:pull|issues)\/(\d+)/.exec(url.pathname);
+    if (url.hostname.endsWith("github.com") && gh) return `${gh[1]}/${gh[2]}#${gh[3]}`;
+    const last = url.pathname.split("/").filter(Boolean).pop();
+    return last ? `${hostOf(u)} · ${decodeURIComponent(last).replace(/[-_]/g, " ").slice(0, 50)}` : hostOf(u);
+  } catch { return u.slice(0, 40); }
+};
 
 // The agent session's status (Slack's agent model): processing while it works (with the native Stop), active after.
 async function sessionStatus(v: View, status: "processing" | "active" | "suspended", title?: string): Promise<void> {
@@ -106,7 +118,7 @@ async function chunks(v: View, c: any[]): Promise<void> {
 
 function taskUpdate(v: View, id: string, title: string, status: "pending" | "in_progress" | "complete" | "error", output?: string, extra: { icon?: any; sources?: string[] } = {}) {
   v.tasks.set(id, { title, status });
-  const sources = (extra.sources ?? []).slice(0, 10).map((u) => ({ type: "url", text: hostOf(u), url: u }));
+  const sources = (extra.sources ?? []).slice(0, 10).map((u) => ({ type: "url", text: sourceText(u), url: u }));
   for (const x of sources) (v.sources ??= new Map()).set(x.url, x.text);
   // (Slack refuses an icon on task updates in every documented shape for now, so the service is in the title.)
   return chunks(v, [{ type: "task_update", id, title: title.slice(0, 120), status, ...(output ? { output: output.slice(0, 200) } : {}), ...(sources.length ? { sources } : {}) }]);

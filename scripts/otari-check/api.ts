@@ -36,7 +36,8 @@ export async function settle(runId: string, opts: { timeoutMs?: number; answer?:
       const id = e.data.approval_id;
       if (answered.has(id) || j.events.some((x) => x.type === "approval.resolved" && x.data.approval_id === id)) continue;
       answered.add(id);
-      await api("POST", `/v1/approvals/${id}`, { decision: opts.answer, scope: "once", ...(opts.answerAs ? { person_id: opts.answerAs } : {}) });
+      // Answered as the person the card names (every card has approvers), unless the check says who.
+      await api("POST", `/v1/approvals/${id}`, { decision: opts.answer, scope: "once", person_id: opts.answerAs ?? e.data.action?.approvers?.[0] ?? null });
     }
     if (["done", "failed", "cancelled"].includes(j.run.status)) return j;
     await new Promise((r) => setTimeout(r, 2000));

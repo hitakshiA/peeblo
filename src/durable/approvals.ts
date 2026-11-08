@@ -36,6 +36,17 @@ async function record(runId: string, sessionId: string, raw: Record<string, unkn
   // Every approval names who may answer it (src/approvers.ts).
   const { withApprovers } = await import("../approvers.ts");
   const action = await withApprovers(runId, raw);
+  // An estimate for the card: the next model call of this run, at its current prompt size, at catalog prices.
+  if (action.price_usd == null) {
+    const last = (await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'model.call' AND data->>'status' = '200' ORDER BY id DESC LIMIT 1", [runId])).rows[0]?.data;
+    if (last?.requested_model && last?.prompt_tokens) {
+      const { estimateCost } = await import("../otari/catalog.ts");
+      const { ROLES } = await import("../otari/routing.ts");
+      const m = last.requested_model in ROLES ? ROLES[last.requested_model].default : last.requested_model;
+      const est = await estimateCost(m, Number(last.prompt_tokens), 1000).catch(() => null);
+      if (est != null) action.price_usd = est;
+    }
+  }
   const id = newId("ap");
   await pool.query(
     "INSERT INTO approvals (id, run_id, fingerprint, action, expires_at) VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",

@@ -38,13 +38,26 @@ export function preview(a: any): string {
   return lines.slice(0, 12).join("\n") || (a.summary ? String(a.summary) : "No details.");
 }
 
+// "Writes 1 comment", "Moves money", "Removes 1 issue": the action in a few words, from the tool's name.
+function what(a: any): string | null {
+  if (a.risk === "money") return "Moves money";
+  if (a.risk === "outside_thread") return "Posts outside this thread";
+  if (a.risk === "shipping") return "Ships a change";
+  const tool = String(a.tool ?? "").replace(/^[a-z]+__/, "");
+  const m = /^(save|create|add|update|edit|post|send|write|set|delete|remove|archive|close)_(.+)$/.exec(tool);
+  if (!m) return a.risk ? RISK[a.risk] ?? null : null;
+  const noun = m[2].replace(/_/g, " ").replace(/s$/, "");
+  const verb = /delete|remove|archive/.test(m[1]) ? "Removes" : /update|edit|set|close/.test(m[1]) ? "Changes" : "Writes";
+  return `${verb} 1 ${noun}`;
+}
+
 const RISK: Record<string, string> = { money: "moves money", destructive: "removes something", shipping: "ships a change", outside_thread: "posts outside this thread", write: "writes" };
 
 export async function cardBlocks(a: any, id: string, teammate: string): Promise<any[]> {
   const domain = a.server ? DOMAINS[a.server] : null;
   const price = a.price_usd ? `≈$${Number(a.price_usd).toFixed(4)}` : null;
   const who = `only ${await approverNames(a.approvers ?? [])} can answer`;
-  const facts = [a.risk ? RISK[a.risk] ?? a.risk : null, price, who, a.rule ? `why: ${String(a.rule).slice(0, 160)}` : null].filter(Boolean).join(" · ");
+  const facts = [what(a), price, who, a.rule ? `why: ${String(a.rule).slice(0, 160)}` : null].filter(Boolean).join(" · ");
   const grantable = !(a.per_action || a.kind === "hire" || a.kind === "recipe_change" || a.kind === "company_memory" || String(a.tool ?? "").startsWith("otari_set"));
   const editable = a.arguments && typeof a.arguments === "object" && Object.keys(a.arguments).length > 0 && a.kind !== "hire";
   return [
