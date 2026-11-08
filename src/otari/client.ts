@@ -31,6 +31,12 @@ export async function otari<T = any>(method: string, path: string, body?: unknow
     const why = await overBuildCap((body as { model?: unknown } | undefined)?.model);
     if (why) throw new OtariError(why, 403, null, "build_price_cap");
   }
+  // The night cap covers Peeblo's own model calls too (judge, reviewer, guard), not only teammates' through the proxy.
+  if (method === "POST" && /\/(chat\/completions|messages|responses|decisions|embeddings|rerank)$/.test(path)) {
+    const { overNightCap } = await import("./night-cap.ts");
+    const why = await overNightCap();
+    if (why) throw new OtariError(why, 403, null, "night_cap");
+  }
   const idempotent = method === "GET" || method === "PUT" || method === "DELETE" || method === "HEAD";
   const tries = idempotent ? (opts.retries ?? 3) : 1;
   for (let i = 1; ; i++) {

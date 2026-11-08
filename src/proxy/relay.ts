@@ -218,6 +218,12 @@ export function startProxy(): Promise<Server> {
       await mkdir(process.env.PEEBLO_DUMP_SYSTEM, { recursive: true }).catch(() => {});
       await writeFile(`${process.env.PEEBLO_DUMP_SYSTEM}/${b.sessionId}.txt`, typeof sys === "string" ? sys : JSON.stringify(sys)).catch(() => {});
     }
+    // The night cap (a hard stop on total Otari spend since the run's baseline).
+    if (isInference) {
+      const { overNightCap } = await import("../otari/night-cap.ts");
+      const why = await overNightCap();
+      if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "night_cap", "peeblo-refused": "night_cap" }).end(JSON.stringify({ detail: why, code: "night_cap" }));
+    }
     if (isInference && raw && config.buildPriceCap.length) {
       const why = await overBuildCap(JSON.parse(raw.toString("utf8")).model).catch(() => null);
       if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "build_price_cap", "peeblo-refused": "build_price_cap" }).end(JSON.stringify({ detail: why, code: "build_price_cap" }));
