@@ -69,24 +69,24 @@ export async function waitingInstalls(personId: string | null, all: boolean): Pr
   return out.length ? [{ type: "header", text: { type: "plain_text", text: "Waiting for install" } }, ...out] : [];
 }
 
-// The hire card once installed (SLACK_UX_SPEC §3.2): the ID card as the hero, the face, name, role and the agent's
-// bio, with Message · Home · Edit.
+// The intro card once installed (SLACK_UX_SPEC §5.4): the ID card as the hero, the app's own face, the name, a
+// one-line subtitle (the role, cut at a word, never repeating the body), the agent's bio, and one button: Open home.
+// Settings live in App Home for the owner.
 export async function hireCard(tm: Teammate, appId: string, team: string, image: string | null): Promise<any> {
   const { config } = await import("../config.ts");
   const go = (extra = "") => `https://slack.com/app_redirect?app=${appId}&team=${team}${extra}`;
-  const bio = tm.config.profile?.agent_description || tm.config.role;
+  const role = tm.config.role.split(/[:;.(—–]/)[0].trim();
+  const subtitle = role.length <= 60 ? role : `${role.slice(0, 60).replace(/\s+\S*$/, "")}…`;
+  const bioText = (tm.config.profile?.bio || tm.config.profile?.agent_description || "").trim();
+  const bio = bioText && !bioText.toLowerCase().startsWith(subtitle.toLowerCase()) ? bioText : bioText.slice(subtitle.length).replace(/^[\s:,.—–-]+/, "");
   return {
     type: "card", block_id: `hired:${tm.slug}`,
     ...(image ? { hero_image: { type: "image", image_url: image, alt_text: `${tm.config.name} ID card` } } : {}),
     ...(config.publicUrl ? { icon: { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png`, alt_text: tm.config.name } } : {}),
     title: { type: "plain_text", text: tm.config.name.slice(0, 150) },
-    subtitle: { type: "plain_text", text: tm.config.role.slice(0, 150) },
-    body: { type: "mrkdwn", text: `${bio.length > 196 ? `${bio.slice(0, 195)}…` : bio}` },
-    actions: [
-      { type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "open_settings", value: tm.slug },
-      { type: "button", text: { type: "plain_text", text: "Home" }, url: go("&tab=home"), action_id: "open_home" },
-      { type: "button", style: "primary", text: { type: "plain_text", text: "Message" }, url: go(), action_id: "open_dm" },
-    ],
+    subtitle: { type: "plain_text", text: subtitle },
+    ...(bio ? { body: { type: "mrkdwn", text: bio.length > 196 ? `${bio.slice(0, 195).replace(/\s+\S*$/, "")}…` : bio } } : {}),
+    actions: [{ type: "button", style: "primary", text: { type: "plain_text", text: "Open home" }, url: go("&tab=home"), action_id: "open_home" }],
   };
 }
 

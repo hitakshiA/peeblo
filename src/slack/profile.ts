@@ -12,22 +12,25 @@ const EVENTS = ["app_mention", "message.channels", "message.groups", "message.im
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
 
-async function ownerName(tm: Teammate): Promise<string> {
-  if (!tm.owner_person) return "no owner yet";
-  const p = (await pool.query("SELECT display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0];
-  return p?.display_name ?? "a person";
+// The owner, as a person. Peeblo's owner is whoever runs this Peeblo (the first admin), never "no owner yet".
+async function ownerName(tm: Teammate): Promise<string | null> {
+  const p = tm.owner_person
+    ? (await pool.query("SELECT display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0]
+    : (await pool.query("SELECT display_name FROM people WHERE slack_user = ANY($1) ORDER BY created_at LIMIT 1", [config.admins])).rows[0];
+  return p?.display_name ? String(p.display_name).split(" ")[0] : null;
 }
 
-// The facts footer under the agent's bio (code fills it; the model never writes these numbers).
+const ASKS: Record<string, string> = { ask: "Asks before every write", auto: "Asks before it writes anything that matters", trusted: "Asks before it deletes anything", yolo: "Acts without asking" };
+
+// Three plain facts under the bio (code fills them; the model never writes these numbers).
 async function facts(tm: Teammate): Promise<string> {
   const c = tm.config;
+  const { readableModel } = await import("./look.ts");
+  const owner = await ownerName(tm);
   return [
-    `Owner: ${await ownerName(tm)}`,
-    `Model: ${c.model.default}${c.model.fallback ? `, falls back to ${c.model.fallback}` : ""}`,
-    `Budget: $${c.budget.monthly_usd} a month`,
-    `Approvals: ${c.mode} mode`,
-    `Tools: ${[...c.tools, ...c.connectors].join(", ") || "none"}`,
-    "Every reply ends with a receipt: the model, what it cost, and a link to the full trace.",
+    `Runs on ${readableModel(c.model.default).name}, an open model · $${c.budget.monthly_usd} a month`,
+    ASKS[c.mode] ?? ASKS.auto,
+    ...(owner ? [`Looked after by ${owner}`] : []),
   ].join("\n");
 }
 
@@ -36,15 +39,17 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
   const base = config.publicUrl;
   const peeblo = tm.slug === "peeblo";
   const bio = c.profile?.bio?.trim() || `${c.name} is ${c.role.replace(/^./, (x) => x.toLowerCase())}.`;
+  // Slack wants at least 175 characters here; a short bio gets one plain line about how it works.
   let long = `${bio}\n\n${await facts(tm)}`;
-  if (long.length < 175) long = `${long}\nIt works on its own computer and asks a person before it acts on anything that matters.`;
+  if (long.length < 175) long = `${bio}\nIt works on its own computer and keeps a receipt for every reply.\n\n${await facts(tm)}`;
   const short = cut(c.name, 18);
   return {
     display_information: { name: cut(c.name, 35), description: cut(c.role, 140), long_description: cut(long, 4000), background_color: color },
     features: {
       app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
       bot_user: { display_name: cut(tm.slug, 80), always_online: true },
-      agent_view: { agent_description: cut(c.profile?.agent_description?.trim() || c.role, 300), suggested_prompts: (c.profile?.starter_prompts ?? []).slice(0, 4) },
+      // The agent description replaces Slack's generic assistant text, so it is the agent's own bio.
+      agent_view: { agent_description: cut(c.profile?.agent_description?.trim() || bio, 300), suggested_prompts: (c.profile?.starter_prompts ?? []).slice(0, 4) },
       shortcuts: [
         { name: cut(`Ask ${short} about this`, 24), type: "message", callback_id: "ask_about", description: cut(`Ask ${c.name} about this message, in a thread`, 150) },
         { name: cut(`Hand this to ${short}`, 24), type: "message", callback_id: "hand_to", description: cut(`Give ${c.name} this message as a job`, 150) },
