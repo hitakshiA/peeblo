@@ -9,7 +9,8 @@ gates:
     type: command
     runs: [pre_tool_use.command]
     enforcement: required
-    forbidden: ["git push --force", "git push -f", "git push --force-with-lease"]
+    # Also a "+" refspec (git push origin +main) and deleting a remote branch, which rewrite or drop history too.
+    forbidden: ["git push --force", "git push -f", "git push --force-with-lease", "git push origin +", "git push -u origin +", " +refs/", " +main", " +master", "git push --delete", "git push origin :"]
     message: Force-pushing rewrites other people's history, so teammates never do it.
   - id: no-wiping-disks
     type: command

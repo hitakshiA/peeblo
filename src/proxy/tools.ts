@@ -36,8 +36,9 @@ const json = (res: ServerResponse, status: number, body: unknown) => void res.wr
 
 // An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule).
 export async function approvalTtl(runId: string): Promise<number> {
-  const src = (await pool.query("SELECT s.source FROM runs r JOIN submissions s ON s.id = r.submission_id WHERE r.id = $1", [runId])).rows[0]?.source;
-  return src === "schedule" || src === "webhook" ? 12 * 3600 : config.approvalTtlSeconds;
+  // Unattended (a schedule or trigger, or a teammate it called): 12 hours, then no.
+  const { isUnattended } = await import("../approvers.ts");
+  return (await isUnattended(runId)) ? 12 * 3600 : config.approvalTtlSeconds;
 }
 
 async function granted(teammateId: string, runId: string | null, fp: string): Promise<boolean> {
@@ -162,8 +163,23 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   const refusal = t.authorize ? await t.authorize(ctx, args) : null;
   if (refusal) { await event({ status: "refused", reason: refusal }); return reply({ text: refusal, isError: true }); }
   // The rule engine for this exact call (computer tools): required gates refuse, advisory gates ask.
-  const rule = t.gate ? await t.gate(ctx, args) : null;
+  let rule = t.gate ? await t.gate(ctx, args) : null;
   if (rule?.deny) { await event({ status: "refused", reason: rule.deny }); return reply({ text: rule.deny, isError: true }); }
+  // Outward own tools go through the same gate as connector writes: mode rule → reviewer in Auto → a card.
+  const outward = t.outward ? await t.outward(ctx, args) : null;
+  if (outward && !rule?.ask) {
+    const mode = await effectiveMode(ctx.teammate);
+    Object.assign(base, { mode, risk: outward });
+    let r = modeRule(mode, outward);
+    if (r === "review" && ctx.runId) {
+      const rv = await review(ctx.runId, ctx.sessionId, { teammate: ctx.teammate.slug, server: "peeblo", tool: t.name, arguments: args }, b.endUser ?? undefined).catch(() => ({ decision: "card" as const, reason: "the reviewer didn't answer", reviewed: false }));
+      await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "review.decided", data: { tool: t.name, server: "peeblo", risk: outward, decision: rv.decision, reason: rv.reason, request_ids: (rv as any).requestIds ?? [] } });
+      if (rv.decision === "revise") { await event({ status: "refused", reason: `reviewer: ${rv.reason}` }); return reply({ text: `Not yet: ${rv.reason}. Change that and try again, or ask the person.`, isError: true }); }
+      r = rv.decision === "allow" ? "allow" : "card";
+      base.reviewer = rv.reason;
+    }
+    if (r === "card") rule = { ask: base.reviewer ? `The reviewer wants a person to decide: ${base.reviewer}` : `${ctx.teammate.config.name} wants to ${t.name.replace(/_/g, " ")}${outward === "shipping" ? " (this ships work outside the team)" : outward === "outside_thread" ? " (this posts outside this conversation)" : ""}.` };
+  }
 
   const run = async () => {
     if (t.kind === "write" || rule?.ask) {
@@ -171,8 +187,9 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       if (!ctx.runId) return reply({ text: "This needs a person's approval, and there is no run to ask in.", isError: true });
       if (rule?.ask) base.rule = rule.ask;
       await event({ status: "waiting_approval" });
-      const action = { kind: "peeblo_tool", teammate: ctx.teammate.slug, tool: t.name, arguments: args, ...(t.describe ? await t.describe(ctx, args) : {}), asked_by: ctx.person?.id ?? null };
-      const a = await askApproval(ctx.runId, ctx.sessionId, action, config.approvalTtlSeconds);
+      const action = { kind: "peeblo_tool", teammate: ctx.teammate.slug, tool: t.name, arguments: args, ...(t.describe ? await t.describe(ctx, args) : {}), asked_by: ctx.person?.id ?? null, ...(outward ? { risk: outward, per_action: NEVER_WITHOUT_ASKING.includes(outward) } : {}) };
+      // Own tools ask like connector calls: unattended runs wait 12 h for the owner (approvers: src/approvers.ts).
+      const a = await askApproval(ctx.runId, ctx.sessionId, action, await approvalTtl(ctx.runId));
       if (a.status !== "approved") {
         await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
         return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : "A person said no, so nothing changed. Don't ask again in this conversation.", isError: true });
@@ -243,7 +260,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
         const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}) };
         // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no (K11).
         const ttl = await approvalTtl(b.runId);
-        if (ttl > config.approvalTtlSeconds && tm.owner_person) (action as any).approvers = [tm.owner_person];
+        // Who may answer: src/approvers.ts (the owner when unattended, else the person who asked).
         const a = await askApproval(b.runId, b.sessionId, action, ttl);
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });

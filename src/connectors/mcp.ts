@@ -15,7 +15,7 @@ const TTL = 5 * 60_000;
 let servers: { at: number; list: { id: string; name: string; purpose_hint?: string }[] } | null = null;
 const toolCache = new Map<string, { at: number; revision: string; tools: any[] }>();
 
-async function serverList() {
+export async function serverList() {
   if (servers && Date.now() - servers.at < TTL) return servers.list;
   const { data } = await otari<{ servers: { id: string; name: string; purpose_hint?: string }[] }>("GET", "/mcp/servers");
   servers = { at: Date.now(), list: data.servers ?? [] };

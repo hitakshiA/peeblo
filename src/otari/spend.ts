@@ -130,7 +130,7 @@ export async function personSpend(externalId: string): Promise<{ spent: number; 
 
 // The proxy's check before a model call leaves for Otari (K16): the call's estimate must fit the teammate's
 // monthly budget and the person's tier, across every key Peeblo holds.
-export type CapRefusal = { scope: "teammate" | "user"; spent: number; cap: number; estimate: number; message: string };
+export type CapRefusal = { scope: "teammate" | "user" | "unchecked"; spent: number; cap: number; estimate: number; message: string };
 export async function capCheck(tm: Teammate, endUser: string | null, model: string, estimate: number): Promise<CapRefusal | null> {
   const t = await teammateSpend(tm);
   if (t.spent + estimate > t.cap) return { scope: "teammate", spent: t.spent, cap: t.cap, estimate, message: `${tm.config.name} has ${usd(Math.max(0, t.cap - t.spent))} of its ${usd(t.cap)} monthly budget left, less than this call's estimated cost of ${usd(estimate)} (${model}).` };

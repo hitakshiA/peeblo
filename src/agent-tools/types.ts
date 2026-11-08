@@ -31,6 +31,10 @@ export type AgentTool = {
   // What the approval card shows (writes only).
   describe?: (ctx: ToolContext, args: any) => Promise<Record<string, unknown>> | Record<string, unknown>;
   run: (ctx: ToolContext, args: any) => Promise<ToolResult>;
+  // Own tools that act outside the conversation (push, hand a job on, set up a schedule): the risk class for this call,
+  // or null when this call doesn't (a list, a pause). The gate then treats it like a connector write: the mode
+  // rule, the reviewer in Auto, a card (src/proxy/tools.ts).
+  outward?: (ctx: ToolContext, args: any) => Promise<"write" | "shipping" | "outside_thread" | null> | "write" | "shipping" | "outside_thread" | null;
   // Loaded on demand with find_tools instead of at session start (K7b: fewer than 20 tools up front).
   deferred?: boolean;
 };

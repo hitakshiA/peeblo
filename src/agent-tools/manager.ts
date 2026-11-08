@@ -13,6 +13,9 @@ import { slack } from "../slack/api.ts";
 import { getApp } from "../ingress/apps.ts";
 import { createTeammateApp } from "../slack/admin.ts";
 import { installBlocks, offerOnCard } from "../slack/install.ts";
+import { configProblems } from "../hire-rules.ts";
+import { changeModel } from "../model-change.ts";
+import { ROLES } from "../otari/routing.ts";
 import { COLORS, facePng, idCardPng, pickFace, publishCard, SHAPES } from "../slack/idcard.ts";
 import type { SlackPlace } from "../slack/inbound.ts";
 import { object } from "./schema.ts";
@@ -51,7 +54,8 @@ const hireSpec = {
 };
 function configFrom(a: any): Partial<TeammateConfig> {
   return {
-    name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" },
+    // The default model is the worker role's, from config/model-tiers.json.
+    name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || ROLES["peeblo-worker"].default, fallback: ROLES["peeblo-worker"].fallback[0] },
     budget: { monthly_usd: a.budget_usd }, tools: a.tools ?? [], connectors: a.connectors ?? [], mode: a.mode ?? "auto",
     computer: { size: a.computer_size ?? "small", allowed_hosts: [] } as any,
   };
@@ -94,6 +98,9 @@ export const managerTools: AgentTool[] = [
     async authorize(ctx, a) {
       if (!ctx.person) return "Hiring needs a person to own the teammate.";
       try { validateConfig(configFrom(a)); } catch (e) { return `The spec isn't valid: ${(e as Error).message}`; }
+      // The authority rules (src/hire-rules.ts): YOLO for admins, an allowed model, a budget within the hirer's tier.
+      const bad = await configProblems(ctx.person, { mode: a.mode, model: a.model || null, budget_usd: a.budget_usd, tools: a.tools ?? [], connectors: a.connectors ?? [] });
+      if (bad) return bad;
       // Names and slugs are unique, so a name always means one teammate.
       const all = await listTeammates();
       const name = String(a.name).toLowerCase().trim();
@@ -155,8 +162,13 @@ export const managerTools: AgentTool[] = [
       const t = await findTeammate(a.teammate);
       if (!t) return `There's no teammate called ${a.teammate}; crew_status lists them.`;
       if (!mayManageTeammate(t, ctx.person)) return `Only ${t.config.name}'s owner or an admin can change it.`;
-      if (a.field === "mode" && a.value === "yolo" && !isOtariAdmin(ctx.person)) return "Only an admin can set YOLO mode.";
-      return null;
+      const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
+      // The same authority rules as a hire (src/hire-rules.ts).
+      return configProblems(ctx.person, {
+        mode: a.field === "mode" ? a.value : null, model: a.field === "model" ? a.value : null,
+        budget_usd: a.field === "budget_usd" ? Number(a.value) : null,
+        tools: a.field === "tools" ? list(a.value) : [], connectors: a.field === "connectors" ? list(a.value) : [],
+      });
     },
     async gate(ctx, a) {
       const t = (await findTeammate(a.teammate))!;
@@ -173,7 +185,15 @@ export const managerTools: AgentTool[] = [
     async run(ctx, a) {
       const t = (await findTeammate(a.teammate))!;
       const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
-      const patch: any = a.field === "instructions" ? { instructions: a.value } : a.field === "model" ? { model: { default: a.value } }
+      // A model change goes through changeModel: allowlist, authority and budget checked, the fallback kept, and a
+      // running session told (K3).
+      if (a.field === "model") {
+        try {
+          const r = await changeModel(t.slug, { model: a.value, fallback: t.config.model.fallback ?? null, personId: ctx.person!.id, why: a.reason });
+          return { text: `${t.config.name} is now at version ${r.teammate.version}: model = ${a.value} (fallback ${t.config.model.fallback ?? "none"}). New conversations use it.` };
+        } catch (e) { return { text: `Can't change the model: ${(e as Error).message}.`, isError: true }; }
+      }
+      const patch: any = a.field === "instructions" ? { instructions: a.value }
         : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) }
         : a.field === "budget_usd" ? { budget: { monthly_usd: Number(a.value) } } : { computer: { ...t.config.computer, size: a.value } };
       const next = await updateTeammate(t.slug, patch, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
@@ -191,6 +211,8 @@ export const managerTools: AgentTool[] = [
       output_shape: { type: ["string", "null"], description: "What to hand back, e.g. 'a 3-line summary with a table'." },
     }),
     kind: "local",
+    // Handing a job on acts through another teammate: the mode rule and the reviewer apply (Ask mode cards it).
+    outward: () => "write",
     async authorize(_ctx, a) { return (await findTeammate(a.teammate)) ? null : `There's no teammate called ${a.teammate}; crew_status lists them.`; },
     async run(ctx, a) {
       const t = (await findTeammate(a.teammate))!;

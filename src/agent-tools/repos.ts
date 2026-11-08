@@ -33,10 +33,9 @@ export const repoTools: AgentTool[] = [
     }),
     kind: "local",
     authorize(ctx, a) { return reposOf(ctx.teammate).some((r) => r.name === a.repo) ? null : `There's no repo called ${a.repo}.`; },
-    async gate(ctx) {
-      const { effectiveMode } = await import("../proxy/tools.ts");
-      return (await effectiveMode(ctx.teammate)) === "ask" ? { ask: `${ctx.teammate.config.name} wants to push its branch and open a draft PR.` } : null;
-    },
+    // Pushing and opening a PR ships work outside the computer: a card in every mode but YOLO (the gate).
+    outward: () => "shipping",
+    describe(ctx, a) { return { summary: `push ${ctx.teammate.config.name}'s branch of ${a.repo}${a.pr ? ` and open a draft PR "${a.pr.title}"` : ""}` }; },
     async run(ctx, a) {
       try {
         const r = await publish(ctx.teammate, ctx.sessionId, a.repo, a.pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null);

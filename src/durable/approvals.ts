@@ -31,7 +31,10 @@ async function approvalWorkflowFn(approvalId: string, runId: string, sessionId: 
 }
 const approvalWorkflow = DBOS.registerWorkflow(approvalWorkflowFn, { name: "approval" });
 
-async function record(runId: string, sessionId: string, action: Record<string, unknown>, ttlSeconds: number): Promise<string> {
+async function record(runId: string, sessionId: string, raw: Record<string, unknown>, ttlSeconds: number): Promise<string> {
+  // Every approval names who may answer it (src/approvers.ts).
+  const { withApprovers } = await import("../approvers.ts");
+  const action = await withApprovers(runId, raw);
   const id = newId("ap");
   await pool.query(
     "INSERT INTO approvals (id, run_id, fingerprint, action, expires_at) VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
@@ -66,9 +69,9 @@ export async function answerApproval(approvalId: string, d: Decision): Promise<{
   if (!rows[0]) return { ok: false, status: "not_found" };
   if (rows[0].status !== "pending") return { ok: false, status: rows[0].status };
   if (rows[0].expired) return { ok: false, status: "expired" };
-  // An approval may name who can answer it (e.g. only the teammate's owner); anyone else is refused.
-  const only = rows[0].action?.approvers as string[] | undefined;
-  if (only?.length && (!d.personId || !only.includes(d.personId))) return { ok: false, status: "not_allowed" };
+  // Every approval names who can answer it; anyone else is refused (an empty list means no one, never anyone).
+  const only = (rows[0].action?.approvers as string[] | undefined) ?? [];
+  if (!d.personId || !only.includes(d.personId)) return { ok: false, status: "not_allowed" };
   await DBOS.send(approvalId, d, "approval", `answer:${approvalId}`);
   return { ok: true, status: "sent" };
 }

@@ -128,7 +128,8 @@ async function approvalCard(v: View, e: EventRow): Promise<void> {
     : "go ahead";
   const detail = a.rule ?? (a.arguments ? "```" + JSON.stringify(a.arguments).slice(0, 600) + "```" : "");
   const price = a.price_usd ? ` · about $${Number(a.price_usd).toFixed(4)}` : "";
-  const only = a.kind === "hire" ? " · only the person who asked can answer" : a.approvers?.length ? " · only the owner can answer" : "";
+  const { approverNames } = await import("../approvers.ts");
+  const only = ` · only ${await approverNames(a.approvers ?? [])} can answer`;
   const posted: any = await slack(v.place.app_id, "chat.postMessage", {
     channel: v.place.channel, thread_ts: v.place.thread_ts, text: `${v.teammate} wants to ${what}. Approve?`,
     blocks: [

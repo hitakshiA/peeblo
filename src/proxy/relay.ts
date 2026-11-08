@@ -104,18 +104,22 @@ function gatewayTools(tools: any[], web: WebPolicy | null): any[] {
 async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   const j = JSON.parse(raw.toString("utf8"));
   const tm = await teammateAt(b.teammateId, b.teammateVersion);
-  if (!tm) return null;
+  if (!tm) return unchecked("its teammate's setup couldn't be found");
   const model = typeof j.model === "string" ? (j.model in ROLES ? ROLES[j.model].default : j.model) : tm.config.model.default;
   const promptChars = JSON.stringify(j.messages ?? j.input ?? "").length + JSON.stringify(j.tools ?? []).length + String(j.system ?? "").length;
   // Agents send the model's whole output limit as max_tokens; a turn rarely writes more than 8k, so the estimate
   // uses the smaller of the two (Otari's own caps still count the full allowance).
   const out = Math.min(Number(j.max_tokens ?? j.max_completion_tokens ?? j.max_output_tokens ?? 1000), 8192);
   const est = await estimateCost(model, roughTokens(" ".repeat(Math.min(promptChars, 4_000_000))), out);
-  if (est === null) return null; // unpriced (a role policy without a catalog default): Otari's own caps still apply
+  // No price, no call: money fails closed (K16).
+  if (est === null) return unchecked(`${model} has no price in Otari's catalog`);
   const cap = await capCheck(tm, b.endUser, model, est);
   if (cap) return cap;
   return runBudget(b.runId, est);
 }
+
+// A call whose cost can't be checked doesn't run.
+const unchecked = (why: string): CapRefusal => ({ scope: "unchecked", spent: 0, cap: 0, estimate: 0, message: `Peeblo couldn't check this call against the budget (${why}), so it didn't run.` });
 
 // A scheduled or triggered run has its own budget (K11); a run a person started has only the teammate's and theirs.
 async function runBudget(runId: string | null, est: number): Promise<CapRefusal | null> {
@@ -208,7 +212,8 @@ export function startProxy(): Promise<Server> {
       if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "build_price_cap", "peeblo-refused": "build_price_cap" }).end(JSON.stringify({ detail: why, code: "build_price_cap" }));
     }
     if (isInference && raw) {
-      const refusal = await budgetGate(b, raw).catch((e) => { console.error("proxy: budget check failed:", (e as Error).message); return null; });
+      // A budget check that fails refuses the call (fail closed).
+      const refusal = await budgetGate(b, raw).catch((e) => { console.error("proxy: budget check failed:", (e as Error).message); return unchecked(`the check failed: ${(e as Error).message.slice(0, 120)}`); });
       if (refusal) {
         const text = JSON.stringify({ detail: refusal.message, code: "budget_exceeded" });
         b.blocked = { runId: b.runId, turn: b.turn, status: 403, body: text };

@@ -6,6 +6,12 @@ import { createSchedule, cronProblem, hookUrl, outputPlace } from "../triggers.t
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
 
+// The person's own words behind this schedule (what the reviewer counts as intent for its runs).
+const originRequest = async (ctx: ToolContext) => {
+  if (!ctx.runId) return null;
+  const { personWords } = await import("../approvers.ts");
+  return (await personWords(ctx.runId)).asks.join("\n") || null;
+};
 const origin = async (ctx: ToolContext) => ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
 const promptHelp = "What to do each run, how to tell whether anything is worth reporting (if not, post nothing), and when to stop or ask.";
 async function list(ctx: ToolContext): Promise<string> {
@@ -13,6 +19,12 @@ async function list(ctx: ToolContext): Promise<string> {
   return rows.map((r) => `- ${r.id} ${r.kind} "${r.name ?? ""}" ${r.cron ?? r.run_at?.toISOString?.() ?? ""} ${r.enabled ? "on" : "paused"}${r.last_run_at ? `, last ran ${new Date(r.last_run_at).toISOString().slice(0, 16)}` : ""}`).join("\n") || "No schedules.";
 }
 async function setEnabled(ctx: ToolContext, id: string, on: boolean | null): Promise<string> {
+  // Only the person who set it up, the teammate's owner or an admin may pause, resume or remove a schedule.
+  const sc = (await pool.query("SELECT created_by FROM schedules WHERE id = $1 AND teammate_id = $2", [id, ctx.teammate.id])).rows[0];
+  if (!sc) return `No schedule ${id}.`;
+  const { isOtariAdmin } = await import("../authority.ts");
+  const p = ctx.person?.id ?? null;
+  if (!p || !(p === sc.created_by || p === ctx.teammate.owner_person || isOtariAdmin(ctx.person))) return `Only the person who set up ${id}, ${ctx.teammate.config.name}'s owner or an admin can change it.`;
   const r = on === null
     ? await pool.query("DELETE FROM schedules WHERE id = $1 AND teammate_id = $2 RETURNING kind", [id, ctx.teammate.id])
     : await pool.query("UPDATE schedules SET enabled = $3 WHERE id = $1 AND teammate_id = $2 RETURNING kind", [id, ctx.teammate.id, on]);
@@ -36,6 +48,8 @@ export const scheduleTools: AgentTool[] = [
       budget_usd: { type: ["number", "null"], minimum: 0, maximum: 1 },
     }),
     kind: "local",
+    // Setting one up acts on this teammate's behalf later; results in a channel post outside this conversation.
+    outward: (_ctx, a) => (a.action === "create" ? (a.channel ? "outside_thread" : "write") : null),
     async run(ctx, a) {
       if (a.action === "list") return { text: await list(ctx) };
       if (a.action !== "create") return { text: a.id ? await setEnabled(ctx, a.id, a.action === "remove" ? null : a.action === "resume") : "Which schedule? Give its id (list shows them).", isError: !a.id };
@@ -45,7 +59,7 @@ export const scheduleTools: AgentTool[] = [
       if (a.once_at && !(new Date(a.once_at).getTime() > Date.now())) return { text: "once_at must be a time in the future.", isError: true };
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? 0.05 });
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? 0.05 });
       return { text: `Scheduled "${a.name}" (${s.id}) ${a.cron ? `on ${a.cron} (UTC)` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? 0.05).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
     },
   },
@@ -62,13 +76,14 @@ export const scheduleTools: AgentTool[] = [
       budget_usd: { type: ["number", "null"], minimum: 0, maximum: 1 },
     }),
     kind: "local",
+    outward: (_ctx, a) => (a.action === "create" ? "write" : null),
     async run(ctx, a) {
       if (a.action === "list") return { text: await list(ctx) };
       if (a.action === "remove") return { text: a.id ? await setEnabled(ctx, a.id, null) : "Which trigger?", isError: !a.id };
       if (!a.prompt?.trim() || !a.name) return { text: "A trigger needs a name and a prompt.", isError: true };
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? 0.05, filter: a.filter ?? {} });
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? 0.05, filter: a.filter ?? {} });
       return { text: `Trigger "${a.name}" (${s.id}) is ready. Give the service this URL: ${hookUrl(ctx.teammate, s.id)}\nIts signing secret is shown to admins in the console (Triggers); for GitHub, use it as the webhook secret.`, data: { id: s.id, url: hookUrl(ctx.teammate, s.id) } };
     },
   },
@@ -87,6 +102,7 @@ export const scheduleTools: AgentTool[] = [
       channel: { type: ["string", "null"] },
     }),
     kind: "local",
+    outward: (_ctx, a) => (a.action === "create" ? "write" : null),
     async run(ctx, a) {
       if (a.action === "list") return { text: await list(ctx) };
       if (a.action === "remove") return { text: a.id ? await setEnabled(ctx, a.id, null) : "Which watch?", isError: !a.id };
@@ -94,7 +110,7 @@ export const scheduleTools: AgentTool[] = [
       if (!ctx.teammate.config.connectors.includes(a.server)) return { text: `${a.server} isn't one of your connectors.`, isError: true };
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { kind: "watch", name: a.name, prompt: a.prompt, place: out.place, filter: { every_hours: Math.max(1, a.every_hours ?? 1) }, watch: { server: a.server, tool: a.tool, arguments: a.arguments ?? {} } });
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "watch", name: a.name, prompt: a.prompt, place: out.place, filter: { every_hours: Math.max(1, a.every_hours ?? 1) }, watch: { server: a.server, tool: a.tool, arguments: a.arguments ?? {} } });
       return { text: `Watching ${a.server}.${a.tool} every ${Math.max(1, a.every_hours ?? 1)} h as "${a.name}" (${s.id}); you'll be woken only when it changes.`, data: { id: s.id } };
     },
   },

@@ -45,7 +45,7 @@ export async function outputPlace(tm: Teammate, origin: SlackPlace | null, chann
   return { place: { slack: { ...origin, channel, channel_type: "channel", thread_ts: undefined, trigger_ts: undefined, direct: false } } };
 }
 
-export async function createSchedule(tm: Teammate, by: string | null, s: { kind: Kind; name: string; prompt: string; cron?: string | null; runAt?: string | null; place: any; budgetUsd?: number; filter?: any; watch?: any }): Promise<{ id: string; secret?: string }> {
+export async function createSchedule(tm: Teammate, by: string | null, s: { kind: Kind; name: string; prompt: string; cron?: string | null; runAt?: string | null; place: any; budgetUsd?: number; filter?: any; watch?: any; originRequest?: string | null }): Promise<{ id: string; secret?: string }> {
   const id = newId("sc");
   const session = await openSession(tm.id, "api", `schedule:${id}`, { ...s.place, schedule_id: id });
   const secret = s.kind === "webhook" ? randomBytes(24).toString("hex") : null;
@@ -53,6 +53,7 @@ export async function createSchedule(tm: Teammate, by: string | null, s: { kind:
     `INSERT INTO schedules (id, teammate_id, session_id, kind, name, cron, run_at, prompt, output_to, budget_usd, filter, watch, created_by, secret)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [id, tm.id, session.id, s.kind, s.name, s.cron ?? null, s.runAt ?? null, s.prompt, s.place, Math.min(1, s.budgetUsd ?? 0.05), s.filter ?? {}, s.watch ?? null, by, secret ? seal(secret) : null]);
+  if (s.originRequest) await pool.query("UPDATE schedules SET origin_request = $2 WHERE id = $1", [id, s.originRequest.slice(0, 4000)]);
   if (s.kind === "cron") { const { syncSchedules } = await import("./durable/schedules.ts"); await syncSchedules(); }
   await appendEvent({ type: "schedule.created", data: { schedule_id: id, teammate_id: tm.id, kind: s.kind, name: s.name, by } });
   return { id, ...(secret ? { secret } : {}) };

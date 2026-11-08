@@ -73,6 +73,7 @@ async function flush(key: string): Promise<void> {
   // The latest message is the trigger the view reacts to and threads under.
   const placeNow = { ...place, trigger_ts: last.ts };
   await pool.query("UPDATE sessions SET place = jsonb_set(place, '{slack}', $2::jsonb), last_active_at = now() WHERE id = $1", [session.id, JSON.stringify(placeNow)]);
-  const { run, created } = await submit({ sessionId: session.id, personId: person.id, requestId: `slack:${teamId}:${place.channel}:${last.ts}`, text: p.parts.map((x) => x.text).join("\n"), source: "slack" });
+  // Per app: the same message can be for Peeblo (reading along) and for the teammate it mentions; each is its own job.
+  const { run, created } = await submit({ sessionId: session.id, personId: person.id, requestId: `slack:${teamId}:${appId}:${place.channel}:${last.ts}`, text: p.parts.map((x) => x.text).join("\n"), source: "slack" });
   if (created) await startRun(run.id);
 }

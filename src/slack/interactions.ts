@@ -33,6 +33,13 @@ async function feedbackNote(sessionId: string, runId: string, vote: string, by: 
   await writeNote(tm.slug, placeOfSession(s), { path: `feedback/${runId}`, title: `${by} marked a reply ${vote === "up" ? "helpful" : "not helpful"}`, body: `Asked: ${asked}\n\nReply: ${answer}`, source: `${by}, Slack feedback`, runId, tainted: true });
 }
 
+// Who may answer an approval, for the "only X can answer" reply.
+async function namesFor(approvalId: string): Promise<string> {
+  const { approverNames } = await import("../approvers.ts");
+  const ids = (await pool.query("SELECT action->'approvers' AS a FROM approvals WHERE id = $1", [approvalId])).rows[0]?.a ?? [];
+  return approverNames(ids);
+}
+
 export function installSlackInteractions(): void {
   onSlackInteraction(async ({ appId, payload }) => {
     if (payload.type !== "block_actions") return;
@@ -45,7 +52,7 @@ export function installSlackInteractions(): void {
       const r = await answerApproval(String(a.value), { decision, scope, personId: who.id });
       const name = who.display_name ?? `<@${payload.user.id}>`;
       const text = r.ok ? `${decision === "approved" ? `✅ Approved (${scope === "once" ? "once" : scope === "job" ? "for this job" : "always"})` : "✋ Declined"} by ${name}`
-        : r.status === "not_allowed" ? `Only the teammate's owner can answer this one, ${name}. It's still waiting.`
+        : r.status === "not_allowed" ? `Only ${await namesFor(String(a.value))} can answer this one. It's still waiting.`
         : `This request is ${r.status.replace("_", " ")}; nothing changed.`;
       if (r.ok || r.status !== "not_allowed") {
         const header = payload.message?.blocks?.[0];
