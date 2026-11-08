@@ -47,9 +47,9 @@ export async function offerOnCard(tm: Teammate, runId: string | null, url: strin
   const { rows } = await pool.query(
     `SELECT c.data FROM events r JOIN events c ON c.type = 'approval.card' AND c.data->>'approval_id' = r.data->>'approval_id'
       WHERE r.run_id = $1 AND r.type = 'approval.requested' AND r.data->'action'->>'kind' = 'hire' ORDER BY r.id DESC LIMIT 1`, [runId]);
-  const card = rows[0]?.data as (Msg & { image?: string; title?: string }) | undefined;
+  const card = rows[0]?.data as (Msg & { image?: string; hero?: string; title?: string }) | undefined;
   if (!card) return;
-  await pool.query("UPDATE hires SET card = $2 WHERE teammate_id = $1", [tm.id, { app_id: card.app_id, channel: card.channel, ts: card.ts, image: card.image ?? null }]);
+  await pool.query("UPDATE hires SET card = $2 WHERE teammate_id = $1", [tm.id, { app_id: card.app_id, channel: card.channel, ts: card.ts, image: card.hero ?? card.image ?? null }]);
   await slack(card.app_id, "chat.update", { channel: card.channel, ts: card.ts, text: `${tm.config.name} is hired. Add it to Slack:`, blocks: [
     ...(card.image ? [{ type: "image", image_url: card.image, alt_text: `${tm.config.name} ID card` }] : []),
     { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is hired.* Add it to Slack so it posts as itself.` } },
@@ -106,6 +106,9 @@ export async function switchToOwnApp(appId: string): Promise<void> {
     [tm.id, appId, app.team_id]);
   if (!hire || hire.installed_at) return;
   await pool.query("UPDATE hires SET installed_at = now() WHERE teammate_id = $1", [tm.id]);
+  // The bot user is new at install: set its face again so its first messages don't show Slack's default avatar.
+  const { setIcon } = await import("./profile.ts");
+  await setIcon(tm, appId).catch((e) => console.error("icon after install:", (e as Error).message));
   // The ID card and Peeblo's "is ready" message lose their button (both are thread replies, rebuilt from what we keep).
   const card = hire.card as (Msg & { image?: string | null }) | null;
   if (card) await slack(card.app_id, "chat.update", { channel: card.channel, ts: card.ts, text: `${tm.config.name} is in Slack.`, blocks: [await hireCard(tm, appId, app.team_id ?? "", card.image ?? null)] }).catch(() => null);

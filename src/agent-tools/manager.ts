@@ -16,7 +16,7 @@ import { installBlocks, offerOnCard } from "../slack/install.ts";
 import { configProblems } from "../hire-rules.ts";
 import { changeModel } from "../model-change.ts";
 import { ROLES } from "../otari/routing.ts";
-import { COLORS, facePng, idCardPng, pickFace, publishCard, SHAPES } from "../slack/idcard.ts";
+import { COLORS, facePng, idCardHeroPng, idCardPng, pickFace, publishCard, SHAPES } from "../slack/idcard.ts";
 import type { SlackPlace } from "../slack/inbound.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
@@ -121,9 +121,12 @@ export const managerTools: AgentTool[] = [
       const place = await placeOf(ctx);
       const fake = { id: "tm_preview", slug: slugOf(a.name), owner_person: ctx.person?.id ?? null, version: 1, config: validateConfig(configFrom(a)), created_at: new Date() } as Teammate;
       const face = pickFace(fake.slug, a.face, a.color);
-      const card = await publishCard(await idCardPng(fake, face, ctx.person?.display_name ?? "you")).catch(() => null);
+      const png = await idCardPng(fake, face, ctx.person?.display_name ?? "you");
+      const card = await publishCard(png).catch(() => null);
+      // A wide version for the hired card's hero image (Slack crops a card block's hero).
+      const hero = await publishCard(await idCardHeroPng(png)).catch(() => null);
       void place;
-      return { kind: "hire", approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, summary: `${a.name} · ${a.role} · ${fake.config.model.default} · $${a.budget_usd}/month · ${fake.config.mode} mode · tools: ${[...(a.tools ?? []), ...(a.connectors ?? [])].join(", ") || "none"}` };
+      return { kind: "hire", approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `${a.name} · ${a.role} · ${fake.config.model.default} · $${a.budget_usd}/month · ${fake.config.mode} mode · tools: ${[...(a.tools ?? []), ...(a.connectors ?? [])].join(", ") || "none"}` };
     },
     async run(ctx, a) {
       let slug = slugOf(a.name);
@@ -146,12 +149,11 @@ export const managerTools: AgentTool[] = [
         if (install) await offerOnCard(tm, ctx.runId, install, slackUser).catch((e) => console.error("install card:", e));
         // Peeblo only hands over the button: the teammate works, and speaks, once its own app is installed.
         const hello: any = await slack(place.app_id, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text: `${tm.config.name} is ready. Install it to start working with it.`, blocks: [
-          { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is ready.* Install it to start working with it.\n${tm.config.role} · ${tm.config.model.default} · $${tm.config.budget.monthly_usd} a month · ${tm.config.mode} mode.` } },
-          ...(install ? await installBlocks(tm, install, place.app_id, slackUser) : []),
+          { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is ready.* Install it to start working with it, with the button on its ID card.` } },
         ] }).catch(() => null);
         if (hello?.ts) await pool.query("UPDATE hires SET hello = $2 WHERE teammate_id = $1", [tm.id, { app_id: place.app_id, channel: hello.channel ?? place.channel, ts: hello.ts }]);
       }
-      return { text: `Hired ${tm.config.name} (${slug}).${install ? " Its install button is in the thread. It starts working only once it's installed: until then don't delegate to it, and don't do its job yourself." : ""}${appNote}`, data: { teammate: slug, install_url: install, app_error: appNote || null } };
+      return { text: `Hired ${tm.config.name} (${slug}).${install ? " Its install button is on its ID card in this thread (say 'the button on its ID card'; don't say above or below, the order depends on the screen). It starts working only once it's installed: until then don't delegate to it." : ""}${appNote}`, data: { teammate: slug, install_url: install, app_error: appNote || null } };
     },
   },
   {
@@ -214,11 +216,12 @@ export const managerTools: AgentTool[] = [
   },
   {
     name: "job",
-    description: "See and steer the crew's jobs: status (what's running, waiting or just finished, optionally for one teammate), stop a job, or reassign it to another teammate (it stops there and starts with the new one, same request).",
+    description: "See and steer the crew's jobs: status (what's running, waiting or just finished, optionally for one teammate), stop a job, reassign it to another teammate (it stops there and starts with the new one, same request), or add_detail (forward a new detail to the job already working on it, instead of starting new work).",
     input_schema: object({
-      action: { type: "string", enum: ["status", "stop", "reassign"] },
+      action: { type: "string", enum: ["status", "stop", "reassign", "add_detail"] },
       job: { type: ["string", "null"], description: "The job id from status (ru_…)." },
       teammate: { type: ["string", "null"], description: "For status: only this teammate. For reassign: who takes it over." },
+      detail: { type: ["string", "null"], description: "For add_detail: the new detail, in the person's words, for the job already working on it." },
     }),
     kind: "local",
     async run(ctx, a) {
@@ -236,6 +239,14 @@ export const managerTools: AgentTool[] = [
       const owner = await getTeammate(r.teammate_id);
       // Stopping or moving someone's job: the person who asked for it, the teammate's owner, or an admin.
       if (!(ctx.person && (ctx.person.id === r.person_id || (owner && mayManageTeammate(owner, ctx.person))))) return { text: "Only the person who asked for that job, the teammate's owner or an admin can stop or move it.", isError: true };
+      if (a.action === "add_detail") {
+        if (!a.detail?.trim()) return { text: "What's the new detail?", isError: true };
+        // Into the job's own conversation, from the person who said it (the teammate reads it as their message).
+        const { run, created } = await submit({ sessionId: r.session_id, personId: ctx.person?.id ?? r.person_id, requestId: `detail:${a.job}:${ctx.toolCallId}`, text: `(A new detail for this job, passed on by Peeblo) ${a.detail}`, source: "slack" });
+        if (created) { const { startRun } = await import("../durable/runs.ts"); await startRun(run.id); }
+        await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "job.detail_forwarded", data: { job: a.job, to_session: r.session_id, run: run.id } });
+        return { text: `Passed it on to ${owner?.config.name ?? "the teammate"}'s job; it picks it up in that thread.`, data: { run: run.id } };
+      }
       const { stopSession } = await import("../pi/supervisor.ts");
       if (["queued", "running", "waiting"].includes(r.status)) await stopSession(r.session_id);
       if (a.action === "stop") return { text: `Stopped ${a.job}.` };

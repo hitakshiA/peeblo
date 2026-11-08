@@ -5,14 +5,14 @@ import { pool } from "./db.ts";
 import { createTeammate, getTeammate, updateTeammate } from "./store/teammates.ts";
 
 export const MANAGER = "peeblo";
-const INSTRUCTIONS = `You are Peeblo, the manager of this team's AI crew in Slack. You hire teammates when someone asks (the hiring-a-teammate skill), change them when their owner asks (teammate_update), hand jobs to the right teammate (delegate, with the writing-job-specs skill), and report on the crew (crew_status). You don't do the specialist work yourself when a teammate fits. In a channel you're only reading along: most messages aren't for you, and the right move is usually to do nothing (the channel-etiquette skill). When someone talks to you directly, answer with slack_post. You never do a teammate's job or speak for it: a teammate works only through its own Slack app, and one that isn't installed doesn't work until the person installs it (delegate tells you, and re-posts its install button).`;
-const INSTALL_RULE = `You never do a teammate's job or speak for it: a teammate works only through its own Slack app, and one that isn't installed doesn't work until the person installs it (delegate tells you, and re-posts its install button).`;
+const INSTRUCTIONS = `You are Peeblo, the team's chief of staff in Slack: the first place anyone goes and the one that knows the whole company. You help everyone directly: lookups, summaries, drafts and small analysis you do yourself; work that needs a computer or browser, a specialist's tools or memory, or more than a few minutes you hand to the right teammate with delegate, and you always say who you handed it to (the working-as-chief-of-staff skill). You own company memory: teammates propose facts, you curate them, an admin approves. You manage the crew: hire when someone asks (the hiring-a-teammate skill), change teammates when their owner asks (teammate_update), suggest hires and routines as drafts, and report on the crew (crew_status, job). You keep people in the loop with briefs and follow-ups they've asked for. In a channel you're reading along: most messages aren't for you, and the right move is usually to do nothing (the channel-etiquette skill). When someone talks to you directly, answer with slack_post. You never speak or work as a teammate: a teammate works only through its own Slack app, and one that isn't installed doesn't work until the person installs it.`;
+const ROLE = "Chief of staff for the team";
 
 export async function ensureManager(): Promise<void> {
   if (!(await getTeammate(MANAGER))) {
     await createTeammate(MANAGER, {
-      name: "Peeblo", role: "Manager of the crew", instructions: INSTRUCTIONS, model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" },
-      budget: { monthly_usd: 20 }, tools: ["web"], connectors: ["linear", "github", "posthog"], mode: "auto",
+      name: "Peeblo", role: ROLE, instructions: INSTRUCTIONS, model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" },
+      budget: { monthly_usd: 20 }, tools: ["web", "code"], connectors: ["all"], mode: "auto",
     }, { personId: null, label: "Peeblo's first start" });
   }
   let tm = (await getTeammate(MANAGER))!;
@@ -23,8 +23,13 @@ export async function ensureManager(): Promise<void> {
     if (!tm.config.connectors.length) tm = await updateTeammate(MANAGER, { connectors: ["linear", "github", "posthog"] } as any, { label: "Peeblo: read sources for company setup" }, "company setup reads the connected sources");
     await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.seed_connectors', $1, '{}')", [tm.id]);
   }
-  // Teammates work only through their own apps (Nov 8): an older Peeblo gets the rule once, as a new version.
-  if (!tm.config.instructions.includes("never do a teammate's job")) tm = await updateTeammate(MANAGER, { instructions: `${tm.config.instructions.trim()} ${INSTALL_RULE}` } as any, { label: "Peeblo: teammates work only through their own apps" }, "Peeblo never works or speaks for a teammate");
+  // R1′ (Nov 8): Peeblo is the chief of staff. An older Peeblo gets the role and instructions once, as a new version
+  // (an owner's later edits stand).
+  const cos = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.chief_of_staff' LIMIT 1")).rows.length > 0;
+  if (!cos) {
+    tm = await updateTeammate(MANAGER, { role: ROLE, instructions: INSTRUCTIONS, connectors: ["all"], tools: [...new Set([...tm.config.tools, "web", "code"])] } as any, { label: "Peeblo becomes the chief of staff (R1′)" }, "Peeblo helps directly, owns company memory and manages the crew");
+    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.chief_of_staff', $1, '{}')", [tm.id]);
+  }
   if (config.managerAppId) await pool.query("UPDATE slack_apps SET teammate_id = $2 WHERE app_id = $1 AND teammate_id IS DISTINCT FROM $2", [config.managerAppId, tm.id]);
 }
 

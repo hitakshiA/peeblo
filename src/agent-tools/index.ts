@@ -29,6 +29,8 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
     "memory_search", "slack_react", "subagent",
     "company_memory_propose", "models_list", "price_estimate", "budget_status",
   ]);
-  const listed = all.map((t) => (DEFERRED.has(t.name) ? { ...t, deferred: true } : t));
+  // Peeblo hands work on with delegate, so asking a teammate loads on demand for it.
+  const deferHere = (n: string) => DEFERRED.has(n) || (tm.slug === "peeblo" && (n === "ask_teammate" || n === "web_fetch"));
+  const listed = all.map((t) => (deferHere(t.name) ? { ...t, deferred: true } : t));
   return opts.subagent ? listed.filter((t) => t.kind === "read") : listed;
 }

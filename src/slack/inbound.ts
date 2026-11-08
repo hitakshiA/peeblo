@@ -41,6 +41,9 @@ export function installSlackInbound(): void {
         const isManager = (await pool.query("SELECT slug FROM teammates WHERE id = $1", [teammateId])).rows[0]?.slug === "peeblo";
         const attention = (await pool.query("SELECT attention FROM channel_settings WHERE team_id = $1 AND channel = $2", [teamId, ev.channel])).rows[0]?.attention ?? "listen";
         if (!isManager || attention !== "listen" || ev.thread_ts) return;
+        // One listener: a message tagging another teammate is that teammate's to answer, so Peeblo doesn't read it.
+        const tagged = [...String(ev.text ?? "").matchAll(/<@([A-Z0-9]+)>/g)].map((m) => m[1]);
+        if (tagged.length && (await pool.query("SELECT 1 FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE a.bot_user_id = ANY($1) AND t.slug <> 'peeblo' LIMIT 1", [tagged])).rows.length) return;
         kindNow = "channel"; keyNow = ev.channel;
       }
     }

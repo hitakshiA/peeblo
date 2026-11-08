@@ -41,7 +41,7 @@ export async function configProblems(p: Person | null, c: { mode?: string | null
   if (badTools.length) return `Unknown tools: ${badTools.join(", ")} (use web, code or computer).`;
   if (c.connectors?.length) {
     const have = new Set((await serverList()).map((s) => s.name));
-    const missing = c.connectors.filter((x) => !have.has(x));
+    const missing = c.connectors.filter((x) => !have.has(x) && !(x === "all" && isOtariAdmin(p)));
     if (missing.length) return `No connector called ${missing.join(", ")} in Otari (crew_status lists the ones that exist).`;
   }
   return null;

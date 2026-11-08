@@ -11,7 +11,7 @@ export type ConnectorTool = {
   tool: string; description: string; inputSchema: Record<string, unknown>; readOnlyHint: boolean | null; // null: the server says nothing
 };
 
-const TTL = 5 * 60_000;
+const TTL = 30 * 60_000; // tool lists change rarely; a 409 on a stale revision refreshes the server
 let servers: { at: number; list: { id: string; name: string; purpose_hint?: string }[] } | null = null;
 const toolCache = new Map<string, { at: number; revision: string; tools: any[] }>();
 
@@ -37,23 +37,25 @@ const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
 export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorTool[]; missing: string[]; failed: string[] }> {
   if (!c.connectors.length) return { tools: [], missing: [], failed: [] };
   const list = await serverList();
+  // "all" (Peeblo, the chief of staff): every MCP server connected in Otari. Their tools start deferred; writes
+  // still go through the gate like anyone's.
+  if (c.connectors.includes("all")) c = { ...c, connectors: [...new Set([...c.connectors.filter((x) => x !== "all"), ...list.map((x) => x.name)])] };
   const tools: ConnectorTool[] = [];
   const missing: string[] = [];
   const failed: string[] = [];
-  for (const name of c.connectors) {
-    const s = list.find((x) => x.name === name);
-    if (!s) { missing.push(name); continue; }
-    try {
-      const t = await serverTools(s.id);
-      for (const tool of t.tools) {
-        tools.push({
-          name: `${safe(s.name)}__${safe(tool.name)}`.slice(0, 64), server: s.name, serverId: s.id, revision: t.revision,
-          tool: tool.name, description: `[${s.name}] ${tool.description ?? tool.name}`.slice(0, 1024),
-          inputSchema: tool.input_schema ?? { type: "object", properties: {} }, readOnlyHint: typeof tool.annotations?.readOnlyHint === "boolean" ? tool.annotations.readOnlyHint : null,
-        });
-      }
-    } catch {
-      failed.push(name);
+  // Servers are read in parallel (Peeblo's "all" is ~28 servers; one by one took ~40 s cold).
+  const found = c.connectors.map((name) => ({ name, s: list.find((x) => x.name === name) }));
+  for (const f of found) if (!f.s) missing.push(f.name);
+  const loaded = await Promise.all(found.filter((f) => f.s).map(async (f) => ({ f, t: await serverTools(f.s!.id).catch(() => null) })));
+  for (const { f, t } of loaded) {
+    const s = f.s!;
+    if (!t) { failed.push(f.name); continue; }
+    for (const tool of t.tools) {
+      tools.push({
+        name: `${safe(s.name)}__${safe(tool.name)}`.slice(0, 64), server: s.name, serverId: s.id, revision: t.revision,
+        tool: tool.name, description: `[${s.name}] ${tool.description ?? tool.name}`.slice(0, 1024),
+        inputSchema: tool.input_schema ?? { type: "object", properties: {} }, readOnlyHint: typeof tool.annotations?.readOnlyHint === "boolean" ? tool.annotations.readOnlyHint : null,
+      });
     }
   }
   return { tools, missing, failed };
@@ -119,4 +121,11 @@ export async function executeTool(t: ConnectorTool, args: Record<string, unknown
 // After a refusal for a stale revision, the catalog is re-read so the next listing is current.
 export function forgetServer(serverId: string): void {
   toolCache.delete(serverId);
+}
+
+// Loads every server's tool list once at start (and every 25 min), so the first session isn't the one waiting.
+export function warmCatalog(): void {
+  const warm = () => void serverList().then((l) => Promise.all(l.map((x) => serverTools(x.id, true).catch(() => null)))).catch(() => {});
+  warm();
+  setInterval(warm, 25 * 60_000).unref();
 }

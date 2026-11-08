@@ -12,7 +12,7 @@ const DIR = join(import.meta.dirname, "..", "skills");
 export function skillsFor(tm: Teammate): string[] {
   const computer = tm.config.tools.includes("computer");
   return [
-    ...(tm.slug === "peeblo" ? ["hiring-a-teammate", "writing-job-specs", "channel-etiquette", "company-setup", "changing-otari-settings"] : []),
+    ...(tm.slug === "peeblo" ? ["working-as-chief-of-staff", "hiring-a-teammate", "writing-job-specs", "channel-etiquette", "company-setup", "changing-otari-settings"] : []),
     "writing-routines", "tidying-memory", "reviewing-work",
     ...(computer ? ["writing-recipes", ...(((tm.config.computer as any)?.repos ?? []).length ? ["working-in-repos"] : [])] : []),
   ].filter((s) => existsSync(join(DIR, s, "SKILL.md")));
@@ -32,6 +32,7 @@ export function skillsPrompt(tm: Teammate): string {
   return [
     "The following skills provide specialized instructions for specific tasks.",
     "When a task matches a skill's description, call read_skill with its name before you start, and follow it.",
+    "read_skill is the only way to open a skill: skills aren't files you can reach from code execution or a computer.",
     "",
     "<available_skills>",
     ...list.flatMap((s) => ["  <skill>", `    <name>${esc(s.name)}</name>`, `    <description>${esc(s.description)}</description>`, "  </skill>"]),

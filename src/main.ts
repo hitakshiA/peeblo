@@ -29,6 +29,7 @@ installPiExecutor();
   const { ensureManager, installHireWelcome } = await import("./manager.ts");
   await ensureManager().catch((e) => console.error("peeblo manager:", (e as Error).message)); installHireWelcome();
   (await import("./slack/profile.ts")).installProfileSync();
+  (await import("./connectors/mcp.ts")).warmCatalog();
 }
 // Receipts need to know whether Otari's org guardrail is on (Otari doesn't report it on streams).
 const readGuard = () => import("./guard.ts").then(async (g) => {

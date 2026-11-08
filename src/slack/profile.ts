@@ -101,14 +101,20 @@ export async function updateNow(teammateId: string): Promise<{ ok: boolean; erro
     await appendEvent({ type: "slack.manifest_updated", data: { teammate_id: tm.id, app_id: a.app_id, ok: r.ok, error: r.error ?? null, errors: r.errors ?? null, needs_reinstall: r.permissions_updated ?? null } });
     if (!r.ok) return { ok: false, error: `${r.error}${r.errors ? ` ${JSON.stringify(r.errors).slice(0, 400)}` : ""}` };
     // The app icon is the same face as the ID card and App Home.
-    const { facePng } = await import("./idcard.ts");
-    const fd = new FormData();
-    fd.append("app_id", a.app_id);
-    fd.append("file", new Blob([new Uint8Array(await facePng(await faceOf(tm) as any))], { type: "image/png" }), "face.png");
-    const icon: any = await (await fetch("https://slack.com/api/apps.icon.set", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: fd })).json();
-    await appendEvent({ type: "slack.icon_set", data: { teammate_id: tm.id, app_id: a.app_id, ok: icon.ok, error: icon.error ?? null } });
+    await setIcon(tm, a.app_id);
   }
   return { ok: true };
+}
+
+export async function setIcon(tm: Teammate, appId: string): Promise<boolean> {
+  const { configToken } = await import("./admin.ts");
+  const { facePng } = await import("./idcard.ts");
+  const fd = new FormData();
+  fd.append("app_id", appId);
+  fd.append("file", new Blob([new Uint8Array(await facePng(await faceOf(tm) as any))], { type: "image/png" }), "face.png");
+  const icon: any = await (await fetch("https://slack.com/api/apps.icon.set", { method: "POST", headers: { authorization: `Bearer ${await configToken()}` }, body: fd })).json();
+  await appendEvent({ type: "slack.icon_set", data: { teammate_id: tm.id, app_id: appId, ok: icon.ok, error: icon.error ?? null } });
+  return Boolean(icon.ok);
 }
 
 export function installProfileSync(): void {

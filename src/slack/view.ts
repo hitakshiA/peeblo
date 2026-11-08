@@ -201,7 +201,7 @@ async function approvalCard(v: View, e: EventRow): Promise<void> {
   const blocks = await cardBlocks(a, id, v.teammate);
   const posted: any = await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text: question(a, v.teammate), blocks });
   // Where the card is, so a hire can add its install button and an expired card can say so.
-  if (posted?.ts) await appendEvent({ sessionId: e.session_id, runId: e.run_id, type: "approval.card", data: { approval_id: id, app_id: v.place.app_id, channel: posted.channel ?? v.place.channel, ts: posted.ts, image: a.id_card_url ?? null } });
+  if (posted?.ts) await appendEvent({ sessionId: e.session_id, runId: e.run_id, type: "approval.card", data: { approval_id: id, app_id: v.place.app_id, channel: posted.channel ?? v.place.channel, ts: posted.ts, image: a.id_card_url ?? null, hero: a.id_card_hero ?? null } });
   // Waiting on a person: the session is suspended. An approver who isn't the asker gets the card in a DM too.
   await sessionStatus(v, "suspended");
   const askedBy = (await pool.query("SELECT sub.person_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [e.run_id])).rows[0]?.person_id;
