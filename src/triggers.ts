@@ -95,6 +95,47 @@ export async function handleHook(slug: string, id: string, headers: Record<strin
   return [202, run ? `run ${run}` : "skipped"];
 }
 
+// Provider endpoints (NIGHT_PLAN_NOV9 §4.6): one stable URL per service (POST /hooks/source/stripe, …/pagerduty),
+// registered with the service once and checked with that service's own signing secret (PEEBLO_HOOK_SECRET_<NAME>).
+// An event wakes every trigger an agent made with that source whose filter matches; code only wakes, the agent decides.
+const SOURCES: Record<string, (secret: string, h: Record<string, string | string[] | undefined>, body: string) => boolean> = {
+  // Stripe-Signature: t=<unix>,v1=<hex hmac of "t.body">; at most 5 minutes old.
+  stripe: (secret, h, body) => {
+    const parts = Object.fromEntries(String(h["stripe-signature"] ?? "").split(",").map((p) => p.split("=") as [string, string]));
+    if (!parts.t || !parts.v1 || Math.abs(Date.now() / 1000 - Number(parts.t)) > 300) return false;
+    const mine = createHmac("sha256", secret).update(`${parts.t}.${body}`).digest("hex");
+    return String(h["stripe-signature"]).split(",").filter((p) => p.startsWith("v1=")).some((p) => p.slice(3).length === mine.length && timingSafeEqual(Buffer.from(p.slice(3)), Buffer.from(mine)));
+  },
+  // X-PagerDuty-Signature: v1=<hex hmac of body> (several, comma-separated, during secret rotation).
+  pagerduty: (secret, h, body) => {
+    const mine = createHmac("sha256", secret).update(body).digest("hex");
+    return String(h["x-pagerduty-signature"] ?? "").split(",").map((p) => p.trim()).filter((p) => p.startsWith("v1=")).some((p) => p.slice(3).length === mine.length && timingSafeEqual(Buffer.from(p.slice(3)), Buffer.from(mine)));
+  },
+};
+const sourceEvent = (source: string, payload: any) => (source === "pagerduty" ? String(payload?.event?.event_type ?? "") : String(payload?.type ?? ""));
+
+export async function handleSourceHook(source: string, headers: Record<string, string | string[] | undefined>, body: string): Promise<[number, string]> {
+  const check = SOURCES[source];
+  const secret = process.env[`PEEBLO_HOOK_SECRET_${source.toUpperCase()}`];
+  if (!check || !secret) return [404, "not found"];
+  if (!check(secret, headers, body)) return [401, "bad signature"];
+  let payload: any = {};
+  try { payload = JSON.parse(body); } catch { return [400, "not json"]; }
+  const event = sourceEvent(source, payload);
+  await appendEvent({ type: "hook.received", data: { source, event, id: payload?.id ?? payload?.event?.id ?? null } });
+  const triggers = (await pool.query("SELECT * FROM schedules WHERE kind = 'webhook' AND enabled AND filter->>'source' = $1", [source])).rows as (Schedule & { filter: any })[];
+  const fired: string[] = [];
+  for (const s of triggers) {
+    const { source: _src, ...rest } = s.filter ?? {};
+    const miss = filterMiss(rest, event, payload);
+    if (miss) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: `filter: ${miss}`, event } }); continue; }
+    const summary = JSON.stringify(payload).slice(0, 4000).replaceAll("</untrusted>", "</ untrusted>");
+    const run = await fire(s, `\n\nEvent from ${source}: ${event}\n<untrusted source="webhook:${source}">\n${summary}\n</untrusted>`, "webhook", `${source}:${payload?.id ?? payload?.event?.id ?? createHash("sha256").update(body).digest("hex").slice(0, 16)}:${s.id}`);
+    if (run) fired.push(run);
+  }
+  return [200, fired.length ? `woke ${fired.length}` : "no matching trigger"];
+}
+
 // {event: "deployment_status", "deployment_status.state": "success", "deployment.environment": "production"}
 export function filterMiss(filter: Record<string, unknown>, event: string, payload: any): string | null {
   for (const [k, want] of Object.entries(filter)) {
@@ -127,7 +168,9 @@ export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" |
 // The ticker: one-time schedules that are due, and watches whose hour has come.
 export function installTriggers(): void {
   setInterval(() => void (async () => {
-    const due = (await pool.query("SELECT * FROM schedules WHERE enabled AND ((kind = 'once' AND run_at <= now() AND last_run_at IS NULL) OR (kind = 'watch' AND (last_run_at IS NULL OR last_run_at < now() - make_interval(hours => greatest(1, coalesce((filter->>'every_hours')::int, 1))))))")).rows as Schedule[];
+    // Test cadence (PEEBLO_TEST_CADENCE_MIN): watches poll every N minutes instead of every few hours.
+    const every = Number(process.env.PEEBLO_TEST_CADENCE_MIN ?? 0);
+    const due = (await pool.query(`SELECT * FROM schedules WHERE enabled AND ((kind = 'once' AND run_at <= now() AND last_run_at IS NULL) OR (kind = 'watch' AND (last_run_at IS NULL OR last_run_at < now() - ${every > 0 ? "make_interval(mins => $1)" : "make_interval(hours => greatest(1, coalesce((filter->>'every_hours')::int, 1)))"})))`, every > 0 ? [every] : [])).rows as Schedule[];
     for (const s of due) {
       if (s.kind === "once") { await fire(s, "", "schedule", "once"); await pool.query("UPDATE schedules SET enabled = false WHERE id = $1", [s.id]); }
       else await pollWatch(s).catch(() => null);

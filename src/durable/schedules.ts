@@ -21,7 +21,9 @@ const tick = DBOS.registerWorkflow(tickFn, { name: "schedule-tick" });
 export async function syncSchedules(): Promise<number> {
   const { rows } = await pool.query<ScheduleRow & { enabled: boolean }>("SELECT id, session_id, cron, prompt, created_by, enabled FROM schedules WHERE kind = 'cron'");
   const enabled = rows.filter((r) => r.enabled);
-  await DBOS.applySchedules(enabled.map((r) => ({ scheduleName: `schedule:${r.id}`, workflowFn: tick, schedule: r.cron, context: r.id, automaticBackfill: false })));
+  // Test cadence (PEEBLO_TEST_CADENCE_MIN, off by default): every cron runs every N minutes, so a story can see it fire.
+  const every = Number(process.env.PEEBLO_TEST_CADENCE_MIN ?? 0);
+  await DBOS.applySchedules(enabled.map((r) => ({ scheduleName: `schedule:${r.id}`, workflowFn: tick, schedule: every > 0 ? `*/${every} * * * *` : r.cron, context: r.id, automaticBackfill: false })));
   for (const r of rows.filter((r) => !r.enabled)) await DBOS.deleteSchedule(`schedule:${r.id}`).catch(() => {});
   return enabled.length;
 }

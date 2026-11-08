@@ -65,12 +65,13 @@ export const scheduleTools: AgentTool[] = [
   },
   {
     name: "webhook_trigger",
-    description: "Run a job when a service sends an event (e.g. 'after every deploy': GitHub deployment_status). Returns the URL to give the service; a filter keeps only the events you want.",
+    description: "Run a job when a service sends an event, when a person asks (\"if we get a dispute, tell me in #finance\"). For Stripe and PagerDuty set source (they already send events to Peeblo) and a filter on the event type, e.g. {type: 'charge.dispute.created'} or {event: 'incident.triggered'}; for others (GitHub) you get a URL to give the service. Tag only the people the person asked you to.",
     input_schema: object({
       action: { type: "string", enum: ["create", "list", "remove"] },
       id: { type: ["string", "null"] },
       name: { type: ["string", "null"] },
       prompt: { type: ["string", "null"], description: promptHelp },
+      source: { type: ["string", "null"], enum: ["stripe", "pagerduty", null], description: "A service that already sends Peeblo its events." },
       filter: { type: ["object", "null"], description: "Fields the event must match, e.g. {event: 'deployment_status', 'deployment_status.state': 'success'}.", additionalProperties: true } as any,
       channel: { type: ["string", "null"] },
       budget_usd: { type: ["number", "null"], minimum: 0, maximum: 1 },
@@ -83,7 +84,8 @@ export const scheduleTools: AgentTool[] = [
       if (!a.prompt?.trim() || !a.name) return { text: "A trigger needs a name and a prompt.", isError: true };
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? 0.05, filter: a.filter ?? {} });
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? 0.05, filter: { ...(a.filter ?? {}), ...(a.source ? { source: a.source } : {}) } });
+      if (a.source) return { text: `Trigger "${a.name}" (${s.id}) is on: ${a.source} events${a.filter ? ` matching ${JSON.stringify(a.filter)}` : ""} wake you with the event.`, data: { id: s.id } };
       return { text: `Trigger "${a.name}" (${s.id}) is ready. Give the service this URL: ${hookUrl(ctx.teammate, s.id)}\nIts signing secret is shown to admins in the console (Triggers); for GitHub, use it as the webhook secret.`, data: { id: s.id, url: hookUrl(ctx.teammate, s.id) } };
     },
   },

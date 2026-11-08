@@ -146,6 +146,10 @@ export function startIngress(): Promise<Server> {
       else if (req.method === "POST" && url.pathname === "/slack/interactions") { out = await handleInteraction(await rawBody(req), req); if (out[1].startsWith("{")) type = "application/json"; }
       else if (req.method === "POST" && url.pathname === "/slack/commands") out = await handleCommand(await rawBody(req), req);
       else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") { out = await handleOAuth(url); type = "text/html"; }
+      else if (req.method === "POST" && /^\/hooks\/source\/(stripe|pagerduty)$/.test(url.pathname)) {
+        const { handleSourceHook } = await import("../triggers.ts");
+        out = await handleSourceHook(url.pathname.split("/")[3], req.headers, await rawBody(req));
+      }
       else if (req.method === "POST" && /^\/hooks\/[a-z0-9-]{2,31}\/sc_[a-z0-9]+$/.test(url.pathname)) {
         const [, , slug, id] = url.pathname.split("/");
         const { handleHook } = await import("../triggers.ts");
