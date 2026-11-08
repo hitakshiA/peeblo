@@ -1,8 +1,8 @@
-// The approval card (SLACK_UX_SPEC §3.4, K15): drawn by code, never by the model. The service's icon and
-// "Okay to …?", a plain preview of the action (never raw JSON), one line with what it does, the price and who may
-// answer, and Approve · Edit · Not now (with For this job / Always in a menu where a grant is allowed). Edit opens
-// a form with the arguments; submitting it approves the edited call.
+// The approval card (SLACK_UX_SPEC §5.2, K15), drawn by code, never by the model, shaped like the landing page:
+// the service's icon, "Okay to write to Linear?", one quiet line ("Writes 1 comment · GRO-323 · ≈ $0.0002"), and
+// Approve / Not now. "Not now" opens a small form: a reason (optional), or approve with edits, or for the whole job.
 import { approverNames } from "../approvers.ts";
+import { money, serviceName } from "./look.ts";
 
 const DOMAINS: Record<string, string> = { linear: "linear.app", github: "github.com", posthog: "posthog.com", stripe: "stripe.com", hubspot: "hubspot.com", notion: "notion.so", sheets: "google.com", intercom: "intercom.com", freshdesk: "freshdesk.com", supabase: "supabase.com", airtable: "airtable.com" };
 const human = (k: string) => k.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -12,10 +12,24 @@ const verb = (tool: string) => tool.replace(/^[a-z]+__/, "").replace(/_/g, " ");
 export function question(a: any, teammate: string): string {
   if (a.kind === "hire") return `Okay to hire ${a.summary?.split(" · ")[0] ?? "this teammate"}?`;
   if (a.kind === "recipe_change") return `Okay to change ${teammate}'s computer setup?`;
-  if (a.kind === "company_memory") return "Okay to save this company memory?";
-  if (a.server) return `Okay for ${teammate} to ${verb(a.tool)} in ${human(a.server)}?`;
+  if (a.kind === "company_memory") return "Okay to save this company note?";
+  if (a.risk === "money") {
+    const p = a.arguments?.parameters ?? a.arguments ?? {};
+    const amount = Number(p.amount);
+    const cur = String(p.currency ?? "usd").toUpperCase();
+    return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : "Move"} ${cur === "USD" ? "$" : `${cur} `}${(amount / 100).toFixed(2)}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
+  }
+  if (a.server) return `Okay to write to ${serviceName(a.server)}?`;
   if (a.tool) return `Okay for ${teammate} to ${verb(a.tool)}?`;
   return `Okay for ${teammate} to go ahead?`;
+}
+
+// What it touches, by name: "GRO-323", "acme/web", "Renewal save plans".
+function target(a: any): string | null {
+  const x = a.arguments ?? {};
+  const p = x.parameters ?? {};
+  const v = x.identifier ?? x.issueId ?? x.issue_id ?? x.id ?? p.charge ?? p.customer ?? (x.owner && x.repo ? `${x.owner}/${x.repo}` : null) ?? x.title ?? x.name ?? x.spreadsheet_title ?? null;
+  return typeof v === "string" || typeof v === "number" ? String(v).slice(0, 60) : null;
 }
 
 // The action in plain words: each argument on its own line, long text quoted, nested values flattened.
@@ -53,28 +67,48 @@ function what(a: any): string | null {
 
 const RISK: Record<string, string> = { money: "moves money", destructive: "removes something", shipping: "ships a change", outside_thread: "posts outside this thread", write: "writes" };
 
-export async function cardBlocks(a: any, id: string, teammate: string): Promise<any[]> {
-  const domain = a.server ? DOMAINS[a.server] : null;
-  const price = a.price_usd ? `≈$${Number(a.price_usd).toFixed(4)}` : null;
-  const who = `only ${await approverNames(a.approvers ?? [])} can answer`;
-  const facts = [what(a), price, who, a.rule ? `why: ${String(a.rule).slice(0, 160)}` : null].filter(Boolean).join(" · ");
-  const grantable = !(a.per_action || a.kind === "hire" || a.kind === "recipe_change" || a.kind === "company_memory" || String(a.tool ?? "").startsWith("otari_set"));
-  const editable = a.arguments && typeof a.arguments === "object" && Object.keys(a.arguments).length > 0 && a.kind !== "hire";
+export async function cardBlocks(a: any, id: string, teammate: string, askedBy?: string | null): Promise<any[]> {
+  const domain = a.server ? DOMAINS[a.server] ?? `${a.server}.com` : null;
+  const approvers: string[] = a.approvers ?? [];
+  // "Only Priya can answer" only when the person asking isn't the one who decides.
+  const onlyOthers = approvers.length && (!askedBy || !approvers.includes(askedBy)) ? `only ${await approverNames(approvers)} can answer` : null;
+  const line = [what(a), target(a), a.price_usd ? `≈ ${money(Number(a.price_usd))}` : null, onlyOthers].filter(Boolean).join(" · ");
   return [
     ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${a.summary ?? "teammate"} ID card`.slice(0, 2000) }] : []),
-    { type: "section", text: { type: "mrkdwn", text: `*${question(a, teammate)}*` }, ...(domain ? { accessory: { type: "image", image_url: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, alt_text: a.server } } : {}) },
-    ...(a.kind === "hire" ? [] : [{ type: "section", text: { type: "mrkdwn", text: preview(a).slice(0, 2900) } }]),
-    { type: "context", elements: [{ type: "mrkdwn", text: facts.slice(0, 2900) }] },
-    { type: "actions", block_id: `approval:${id}`, elements: [
-      { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "approve_once", value: id },
-      ...(editable ? [{ type: "button", text: { type: "plain_text", text: "Edit" }, action_id: "edit_approval", value: id }] : []),
-      { type: "button", text: { type: "plain_text", text: "Not now" }, action_id: "deny", value: id },
-      ...(grantable ? [{ type: "overflow", action_id: "approve_more", options: [
-        { text: { type: "plain_text", text: "Approve for this job" }, value: `job:${id}` },
-        { text: { type: "plain_text", text: "Always approve this" }, value: `always:${id}` },
-      ] }] : []),
-    ] },
+    { type: "card", block_id: `approval:${id}`,
+      ...(domain ? { icon: { type: "image", image_url: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`, alt_text: serviceName(a.server) } } : {}),
+      title: { type: "plain_text", text: question(a, teammate).slice(0, 150) },
+      ...(line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
+      ...(a.kind === "hire" || a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } } : {}),
+      actions: [
+        { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "approve_once", value: id },
+        { type: "button", text: { type: "plain_text", text: "Not now" }, action_id: "not_now", value: id },
+      ] },
   ];
+}
+
+// "Not now" opens this: a reason (optional), and behind it the other answers (approve with edits, for this job,
+// always). Edit and Reply live here, not as extra buttons on the card.
+export function notNowModal(a: any, id: string, teammate: string): any {
+  const grantable = !(a.per_action || a.kind === "hire" || a.kind === "recipe_change" || a.kind === "company_memory" || String(a.tool ?? "").startsWith("otari_set"));
+  const editable = a.arguments && typeof a.arguments === "object" && Object.keys(a.arguments).length > 0 && a.kind !== "hire";
+  const opt = (value: string, text: string) => ({ value, text: { type: "plain_text", text } });
+  const choices = [opt("deny", "Not now"), ...(editable ? [opt("edit", "Approve with my edits")] : []), ...(grantable ? [opt("job", "Approve for this whole job"), opt("always", "Always approve this")] : [])];
+  const inputs = editable ? Object.entries(a.arguments ?? {}).slice(0, 12).map(([k, v]) => {
+    const text = typeof v === "string" ? v : JSON.stringify(v);
+    return { type: "input", block_id: `arg:${k}`, label: { type: "plain_text", text: human(k).slice(0, 2000) }, optional: true,
+      element: { type: "plain_text_input", action_id: "v", initial_value: text.slice(0, 3000), multiline: text.length > 60 } };
+  }) : [];
+  return {
+    type: "modal", callback_id: "not_now", private_metadata: id,
+    title: { type: "plain_text", text: "Not now" }, submit: { type: "plain_text", text: "Send" }, close: { type: "plain_text", text: "Cancel" },
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `*${question(a, teammate)}*\n${preview(a).slice(0, 1500)}` } },
+      { type: "input", block_id: "choice", label: { type: "plain_text", text: "What should happen" }, element: { type: "radio_buttons", action_id: "v", initial_option: choices[0], options: choices } },
+      { type: "input", block_id: "reason", optional: true, label: { type: "plain_text", text: `Tell ${teammate} why, or what to do instead` }, element: { type: "plain_text_input", action_id: "v", multiline: true } },
+      ...(inputs.length ? [{ type: "context", elements: [{ type: "mrkdwn", text: "Edits below apply only with “Approve with my edits”." }] }, ...inputs] : []),
+    ],
+  };
 }
 
 // The Edit form: one input per argument (top level; nested ones as JSON), prefilled.

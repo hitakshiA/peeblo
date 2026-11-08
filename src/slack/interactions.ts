@@ -37,7 +37,9 @@ async function feedbackNote(sessionId: string, runId: string, vote: string, by: 
 async function updateCard(approvalId: string, text: string | null): Promise<void> {
   if (!text) return;
   const c = (await pool.query("SELECT data FROM events WHERE type = 'approval.card' AND data->>'approval_id' = $1 LIMIT 1", [approvalId])).rows[0]?.data;
-  if (c) await slack(c.app_id, "chat.update", { channel: c.channel, ts: c.ts, text, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text }] }] }).catch(() => null);
+  // An inline card (inside the reply's message) is collapsed by the view on approval.resolved; redrawing it here
+  // would wipe the steps around it.
+  if (c && !c.inline) await slack(c.app_id, "chat.update", { channel: c.channel, ts: c.ts, text, blocks: [{ type: "context", elements: [{ type: "mrkdwn", text }] }] }).catch(() => null);
 }
 
 // Who may answer an approval, for the "only X can answer" reply.
@@ -49,6 +51,23 @@ async function namesFor(approvalId: string): Promise<string> {
 
 export function installSlackInteractions(): void {
   onSlackInteraction(async ({ appId, payload }) => {
+    // The "Not now" form: not now (with an optional reason), or approve with edits, for this job, or always.
+    if (payload.type === "view_submission" && payload.view?.callback_id === "not_now") {
+      const id = String(payload.view.private_metadata);
+      const team = payload.team?.id ?? payload.user?.team_id;
+      const who = await personForSlack(team, payload.user.id);
+      const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [id])).rows[0];
+      if (!row) return;
+      const values = payload.view.state?.values ?? {};
+      const choice = String(values.choice?.v?.selected_option?.value ?? "deny");
+      const reason = String(values.reason?.v?.value ?? "").trim() || undefined;
+      const { editedArgs } = await import("./approval-card.ts");
+      const argValues = Object.fromEntries(Object.entries(values).filter(([k]) => k.startsWith("arg:")));
+      await answerApproval(id, choice === "deny" ? { decision: "denied", scope: "once", personId: who.id, reason }
+        : choice === "edit" ? { decision: "approved", scope: "once", personId: who.id, arguments: editedArgs(row.action.arguments ?? {}, argValues), reason }
+        : { decision: "approved", scope: choice === "always" ? "always" : "job", personId: who.id, reason });
+      return;
+    }
     // The Edit form on an approval card: the approver's edited call is what runs.
     if (payload.type === "view_submission" && payload.view?.callback_id === "edit_approval") {
       const id = String(payload.view.private_metadata);
@@ -76,6 +95,22 @@ export function installSlackInteractions(): void {
       await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: await settingsModal(tm) });
       return;
     }
+    // Not now: the small form (only someone who may answer the card can open it).
+    if (a.action_id === "not_now") {
+      const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
+      if (!row || row.status !== "pending") return;
+      if (!(row.action.approvers ?? []).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
+      const tm = await getTeammate(row.action.teammate);
+      const { notNowModal } = await import("./approval-card.ts");
+      await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: notNowModal(row.action, String(a.value), tm?.config.name ?? "the teammate") });
+      return;
+    }
+    // The Receipt button: the receipt modal (facts, steps, one "Open full trace" link).
+    if (a.action_id === "open_receipt") {
+      const { receiptModal } = await import("./receipt-modal.ts");
+      await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: await receiptModal(String(a.value)) });
+      return;
+    }
     // Edit: the form with the call's arguments (only someone who may answer the card can open it).
     if (a.action_id === "edit_approval") {
       const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
@@ -99,10 +134,8 @@ export function installSlackInteractions(): void {
       const text = r.ok ? `${decision === "approved" ? `✅ Approved (${scope === "once" ? "once" : scope === "job" ? "for this job" : "always"})` : "✋ Declined"} by ${name}`
         : r.status === "not_allowed" ? `Only ${await namesFor(String(a.value))} can answer this one. It's still waiting.`
         : `This request is ${r.status.replace("_", " ")}; nothing changed.`;
-      if (r.ok || r.status !== "not_allowed") {
-        const header = payload.message?.blocks?.[0];
-        await respond(payload.response_url, { replace_original: true, text, blocks: [...(header ? [header] : []), { type: "context", elements: [{ type: "mrkdwn", text }] }] });
-      } else await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text });
+      // The card collapses in place when the run sees the decision (the view); only problems answer here, privately.
+      if (!r.ok) await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text });
       return;
     }
     // App Home controls. Stop: anyone who may see the job. Schedules and pausing: the owner or an admin.

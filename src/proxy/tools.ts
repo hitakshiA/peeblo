@@ -191,7 +191,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
       if (readCache.size > 2000) readCache.clear();
       readCache.set(repeatKey, text);
     }
-    await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : { summary: summarize(r.text), sources: urlsIn(r.text) }), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
+    await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : { summary: summarize(r.text), lines: r.text.split("\n").filter((l) => /^\s*(- |• |\d+\. )/.test(l)).length, sources: urlsIn(r.text) }), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
     return reply({ ...r, text });
   };
 
@@ -246,7 +246,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       const a = await askApproval(ctx.runId, ctx.sessionId, action, await approvalTtl(ctx.runId));
       if (a.status !== "approved") {
         await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
-        return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : "A person said no, so nothing changed. Don't ask again in this conversation.", isError: true });
+        return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : `A person said no${a.reason ? `: "${a.reason}"` : ""}, so nothing changed. ${a.reason ? "Act on what they said." : "Don't ask again in this conversation."}`, isError: true });
       }
       base.approval_id = a.approvalId;
       if (a.arguments) { args = a.arguments; base.edited = true; }
@@ -319,7 +319,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
         const a = await askApproval(b.runId, b.sessionId, action, ttl);
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
-          return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : "A person said no to this call, so it did not run. Do not retry it.", isError: true });
+          return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : `A person said no to this call${a.reason ? `: "${a.reason}"` : ""}, so it did not run. ${a.reason ? "Act on what they said; don't repeat the same call." : "Do not retry it."}`, isError: true });
         }
         if (!perAction && (a.scope === "always" || a.scope === "job")) {
           await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);
