@@ -6,7 +6,8 @@ import { appendEvent } from "../store/events.ts";
 import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";
 
-const cut = (s: unknown, n: number) => { const t = String(s ?? "").trim(); return t.length <= n ? t : `${t.slice(0, n - 1)}…`; };
+// Cut at a word boundary with an ellipsis, never mid-word.
+const cut = (s: unknown, n: number) => { const t = String(s ?? "").trim(); if (t.length <= n) return t; const w = t.slice(0, n - 1).replace(/\s+\S*$/, ""); return `${w || t.slice(0, n - 1)}…`; };
 const num = (v: unknown) => (typeof v === "number" ? v : Number(String(v).replace(/[$,%\s]/g, "")));
 
 function table(a: any): any[] | string {
@@ -17,7 +18,7 @@ function table(a: any): any[] | string {
   if (rows.some((r) => !Array.isArray(r) || r.length !== cols.length)) return `Every row needs exactly ${cols.length} cells, one per column.`;
   // A column is numeric (sorts by value) when every cell in it is a number.
   const numeric = cols.map((_, i) => rows.every((r) => typeof r[i] === "number"));
-  const cell = (v: unknown, i: number) => (numeric[i] ? { type: "raw_number", value: v as number, text: (v as number).toLocaleString("en-US") } : { type: "raw_text", text: cut(v === null || v === "" ? "–" : v, 500) });
+  const cell = (v: unknown, i: number) => (numeric[i] ? { type: "raw_number", value: v as number, text: (v as number).toLocaleString("en-US") } : { type: "raw_text", text: cut(v === null || v === "" ? "–" : v, cols.length > 3 ? 32 : 48) });
   return [{ type: "data_table", caption: cut(a.title || "Table", 150), page_size: Math.min(Math.max(rows.length, 1), rows.length > 10 ? 10 : rows.length),
     rows: [cols.map((c) => ({ type: "raw_text", text: c || "–" })), ...rows.map((r) => r.map(cell))] }];
 }

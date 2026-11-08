@@ -32,10 +32,8 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
     slack_post: null, slack_react: null, plan: null, read_skill: null, find_tools: null, delegate: null,
   };
   if (tool in own) return own[tool];
-  if (tool === "computer_bash") {
-    const first = String(d.command ?? "").trim().split(/\s+/)[0]?.split("/").pop() ?? "";
-    return first && /^[\w.-]{1,30}$/.test(first) ? `Ran ${first}` : "Ran a command";
-  }
+  // Code work reads like the landing page, never the command itself.
+  if (tool === "computer_bash") return /\b(pytest|npm test|jest|vitest|go test|cargo test)\b/.test(String(d.command ?? "")) ? "Ran the tests" : "Worked it out on its computer";
   const [server, action = ""] = tool.split("__");
   if (!action) return cap(tool.replace(/_/g, " "));
   const svc = server === "atlassian" ? atlassianName(action) : serviceName(server);
@@ -117,8 +115,8 @@ export function receiptChip(r: Receipt | null): any {
   const first = models[0] ?? { name: "a model", logo: null };
   const rest = [...(r.providers.length ? [`via ${readableProvider(r.providers[0])}`] : []), `${r.calls} call${r.calls === 1 ? "" : "s"}`,
     ...(r.fallbacks && models[1] ? [`fell back to ${models[1].name}`] : []), money(r.cost_usd)];
-  // Short pieces wrap as a unit, so the logo stays on the same line as the model's name in a narrow thread.
-  return { type: "context", elements: [...(first.logo ? [{ type: "image", image_url: first.logo, alt_text: first.name }] : []), { type: "mrkdwn", text: `*${first.name}*` }, { type: "mrkdwn", text: rest.join(" · ") }] };
+  // One text element after the logo, as receipt.tsx draws it: "*DeepSeek V4.1 Flash*  via DeepInfra · 6 calls · $0.0017".
+  return { type: "context", elements: [...(first.logo ? [{ type: "image", image_url: first.logo, alt_text: first.name }] : []), { type: "mrkdwn", text: `*${first.name}*  ${rest.join(" · ")}` }] };
 }
 
 // A service's brand mark on a light rounded tile (as on the landing page), served by Peeblo; else its favicon.

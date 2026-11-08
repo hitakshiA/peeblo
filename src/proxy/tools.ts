@@ -97,7 +97,7 @@ const readCache = new Map<string, string>();
 const TURN_CALLS = 12;
 const turnCalls = new Map<string, number>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
-const RESULT_CAP = 8000;
+const RESULT_CAP = 16_000;
 
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();

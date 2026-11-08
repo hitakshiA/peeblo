@@ -91,6 +91,8 @@ export const slackTools: AgentTool[] = [
           [ctx.teammate.id, place.channel]);
         if (rows[0].n >= UNPROMPTED_PER_HOUR) return { text: `You've already posted ${rows[0].n} times unprompted in this channel in the last hour; stay quiet unless someone asks you.`, isError: true };
       }
+      // A hand-made table wraps its columns, so no cell is cut mid-word.
+      if (a.blocks?.length) for (const b of a.blocks) if (b?.type === "table" && Array.isArray(b.rows) && !b.column_settings) b.column_settings = (b.rows[0] ?? []).map(() => ({ is_wrapped: true }));
       if (a.blocks?.length) {
         // Blocks can't go into a live stream; they post as their own message in the thread.
         const r = await slack(place.app_id, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text, blocks: a.blocks }).catch((e) => ({ ok: false, error: (e as Error).message }));
