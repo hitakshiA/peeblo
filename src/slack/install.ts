@@ -47,14 +47,26 @@ export async function offerOnCard(tm: Teammate, runId: string | null, url: strin
   const { rows } = await pool.query(
     `SELECT c.data FROM events r JOIN events c ON c.type = 'approval.card' AND c.data->>'approval_id' = r.data->>'approval_id'
       WHERE r.run_id = $1 AND r.type = 'approval.requested' AND r.data->'action'->>'kind' = 'hire' ORDER BY r.id DESC LIMIT 1`, [runId]);
-  const card = rows[0]?.data as (Msg & { image?: string; hero?: string; title?: string }) | undefined;
+  const card = rows[0]?.data as (Msg & { image?: string; hero?: string; title?: string; inline?: boolean; thread_ts?: string }) | undefined;
   if (!card) return;
-  await pool.query("UPDATE hires SET card = $2 WHERE teammate_id = $1", [tm.id, { app_id: card.app_id, channel: card.channel, ts: card.ts, image: card.hero ?? card.image ?? null }]);
-  await slack(card.app_id, "chat.update", { channel: card.channel, ts: card.ts, text: `${tm.config.name} is hired. Add it to Slack:`, blocks: [
-    ...(card.image ? [{ type: "image", image_url: card.image, alt_text: `${tm.config.name} ID card` }] : []),
+  await postInstall(tm, { app_id: card.app_id, channel: card.channel, ts: card.ts, inline: Boolean(card.inline), image: card.hero ?? card.image ?? null }, url, slackUser);
+}
+
+// The ID card with its install button. A card inside the reply's message (inline) can't carry it, because that
+// message is redrawn as the work goes on, so the button gets its own message in the thread.
+export async function postInstall(tm: Teammate, card: { app_id: string; channel: string; ts: string; inline: boolean; image: string | null; thread_ts?: string }, url: string, slackUser: string | null): Promise<void> {
+  const blocks = [
+    ...(card.image ? [{ type: "image", image_url: card.image, alt_text: `${tm.config.name}'s ID card` }] : []),
     { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is hired.* Add it to Slack so it posts as itself.` } },
     ...(await installBlocks(tm, url, card.app_id, slackUser)),
-  ] }).catch(() => null);
+  ];
+  let where = { app_id: card.app_id, channel: card.channel, ts: card.ts, image: card.image };
+  if (card.inline) {
+    const thread = card.thread_ts ?? ((await pool.query("SELECT s.place->'slack'->>'thread_ts' AS t FROM hires h JOIN events e ON e.type = 'approval.card' AND e.data->>'ts' = $1 JOIN sessions s ON s.id = e.session_id LIMIT 1", [card.ts])).rows[0]?.t ?? card.ts);
+    const r: any = await slack(card.app_id, "chat.postMessage", { channel: card.channel, thread_ts: thread, text: `${tm.config.name} is hired. Add it to Slack:`, blocks }).catch(() => null);
+    if (r?.ts) where = { ...where, ts: r.ts };
+  } else await slack(card.app_id, "chat.update", { channel: card.channel, ts: card.ts, text: `${tm.config.name} is hired. Add it to Slack:`, blocks }).catch(() => null);
+  await pool.query("UPDATE hires SET card = $2 WHERE teammate_id = $1", [tm.id, where]);
 }
 
 // The hires still waiting for their install, for Peeblo's App Home (the viewer's own hires; an admin sees all).

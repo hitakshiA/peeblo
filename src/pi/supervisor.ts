@@ -362,7 +362,9 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
   // Only direct asks and delegated jobs: a channel it reads along in, a welcome or an unattended run may end quietly.
   if (!["slack", "api", "teammate"].includes(src) || (place && !place.direct)) return { again: null };
   const posted = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' ORDER BY id", [ctx.run.id])).rows.map((x) => String(x.t));
-  const calls = (await pool.query("SELECT data->>'tool' AS t, data->>'status' AS s FROM events WHERE run_id = $1 AND type = 'tool.call' ORDER BY id", [ctx.run.id])).rows as { t: string; s: string }[];
+  // Each tool call's latest status only (an approved write logs "waiting_approval", then "completed").
+  const calls = (await pool.query(`SELECT DISTINCT ON (coalesce(data->>'id', id::text)) data->>'tool' AS t, data->>'status' AS s FROM events
+    WHERE run_id = $1 AND type = 'tool.call' ORDER BY coalesce(data->>'id', id::text), id DESC`, [ctx.run.id])).rows as { t: string; s: string }[];
   // A plain reply (it posted, and used no other tool) has nothing left half-done: no judge call for a greeting.
   if (src !== "teammate" && (posted.length || r.text.trim()) && calls.every((c) => c.t === "slack_post")) return { again: null };
   // A job handed to a teammate is done for this turn: the teammate posts the result itself.
