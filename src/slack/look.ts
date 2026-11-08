@@ -25,7 +25,7 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
     browser_read: "Read a web page", browser_act: "Used a web page", computer_read: "Read a file", computer_write: "Wrote a file",
     computer_edit: "Edited a file", repo_open: "Opened the repo", repo_publish: "Opened a pull request", subagent: "Asked a helper",
     ask_teammate: d.callee ? `Asked ${cap(d.callee)}` : "Asked a teammate", ask_human: "Asked a question", teammate_hire: "Drafted a hire",
-    teammate_update: "Changed a teammate", recipe_propose: "Proposed a setup change", schedule: "Set up a schedule", watch: "Set up a watch",
+    teammate_update: "Changed a teammate", teammate_retire: "Retired a teammate", recipe_propose: "Proposed a setup change", schedule: "Set up a schedule", watch: "Set up a watch",
     company_memory_propose: "Proposed a company note", models_list: "Looked up models", price_estimate: "Estimated a price",
     canvas_write: "Wrote a canvas", show_data: "Drew it up", skill_save: "Saved a skill", channel_watch: "Changed what it watches",
     // Not steps: the reply itself, the plan, reading a skill, and a hand-off (its own line says who has it).

@@ -78,6 +78,25 @@ export const askHumanTool: AgentTool = {
   };
 
 export const managerTools: AgentTool[] = [
+  {
+    name: "teammate_retire",
+    description: "Retire (fire) a teammate when its owner or an admin asks: its Otari key and budget are removed, its Slack app is uninstalled, its schedules stop. Its history is kept. A person approves it on a card first.",
+    input_schema: object({ teammate: { type: "string" }, reason: { type: "string" } }),
+    kind: "write",
+    async authorize(ctx, a) {
+      const t = await findTeammate(a.teammate);
+      if (!t) return `There's no teammate called ${a.teammate}; crew_status lists them.`;
+      if (t.slug === "peeblo") return "Peeblo can't be retired.";
+      return mayManageTeammate(t, ctx.person) ? null : `Only ${t.config.name}'s owner or an admin can retire it.`;
+    },
+    describe: async (_ctx, a) => ({ summary: `Retire ${a.teammate}: ${String(a.reason).slice(0, 160)}`, risk: "destructive", per_action: true }),
+    async run(ctx, a) {
+      const t = (await findTeammate(a.teammate))!;
+      const { retireTeammate } = await import("../retire.ts");
+      const r = await retireTeammate(t.id, { personId: ctx.person?.id ?? null, label: `${ctx.person?.display_name ?? "someone"}: ${a.reason}` });
+      return r.ok ? { text: `Retired ${t.config.name}: ${r.steps.join("; ")}.` } : { text: r.steps.join("; "), isError: true };
+    },
+  },
   askHumanTool,
   {
     name: "crew_status",
