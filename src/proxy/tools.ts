@@ -105,6 +105,13 @@ const RESULT_CAP = 16_000;
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();
 
+// Where a vendor tool is the wrong road for a common question, the right one, in front of the model: in the tool's
+// description and in its error. (Stripe's analytics needs Sigma access many accounts don't have.)
+const TOOL_HINTS: Record<string, string> = {
+  "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 8, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
+};
+const hintFor = (server: string, tool: string) => TOOL_HINTS[`${server}:${tool}`] ?? "";
+
 type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
 
 // K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
@@ -143,7 +150,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
       : "Never guess a repo's owner: unless you know the exact owner/repo, find it first with search_repositories (user:<login> from get_me, or org:<org>).";
     const tools: Listed[] = [
       ...own.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema, asks: t.kind === "write", direct: !t.deferred })),
-      ...cat.tools.filter((t) => !subagent || classify(t, {}) === "read").map((t) => ({ name: t.name, description: t.server === "github" && repos ? `${t.description}\n${repos}` : t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
+      ...cat.tools.filter((t) => !subagent || classify(t, {}) === "read").map((t) => ({ name: t.name, description: t.server === "github" && repos ? `${t.description}\n${repos}` : hintFor(t.server, t.tool) ? `${t.description}\n${hintFor(t.server, t.tool)}` : t.description, input_schema: t.inputSchema, asks: needsApproval(tm.config.mode, classify(t, {})), direct: direct.has(t.name) })),
     ];
     return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
   }
@@ -428,6 +435,7 @@ function compactList(text: string): string | null {
 // start, the record count and the path, and works on the file there with computer_bash when it needs the rest.
 async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
   const chars = r.text.length;
+  if (r.isError && hintFor(t.server, t.tool)) return { ...r, chars, text: `${r.text}\n[peeblo: ${hintFor(t.server, t.tool)}]` };
   if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
   // Otari cuts MCP results at 50,000 characters: keep the records that arrived whole.
   let salvaged: ReturnType<typeof salvageList> = null;

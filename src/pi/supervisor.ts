@@ -378,8 +378,14 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
     && !ok(["memory_write", "person_note", "company_memory_propose", "promise", "memory_forget", "skill_save"])) {
     return ruled("said noted without saving", "You told them it's noted or saved, but no memory tool saved anything this turn. Save it now (a person's preference: person_note; a fact about the company: company_memory_propose if you're Peeblo with an admin, else memory_write; anything else: memory_write), then correct your reply with slack_post if it said more than you did.");
   }
+  // Saying a route failed that wasn't tried this turn (the subscription list, when no subscription read happened).
+  const triedSubs = (await pool.query(`SELECT 1 FROM events WHERE run_id = $1 AND type = 'tool.call' AND data->>'tool' LIKE '%stripe_api_read'
+    AND data->>'args_preview' ILIKE '%subscription%' LIMIT 1`, [ctx.run.id])).rowCount;
+  if (!triedSubs && /\bsubscriptions?\b/i.test(said) && /\b(denied|refus\w*|blocked|won['’]?t|can['’]?t|fail\w*|no access)\b/i.test(said)) {
+    return ruled("claimed an untried route failed", "Your reply says the subscription list was refused or failed, but you never read it this turn. Never claim a route failed that you didn't try. Read active subscriptions now with stripe_api_read (GetSubscriptions, status active, limit 8, every page with starting_after), add up MRR per currency on your computer, and post it with slack_post in plain words.");
+  }
   // Talking about keys and permissions instead of the answer: say what was done, and use any data a read did return.
-  if (PLUMBING.test(posted.join("\n"))) {
+  if (PLUMBING.test(said)) {
     const readOk = calls.some((c) => c.s === "completed" && c.t.includes("__"));
     return ruled("permission talk in the reply", `Your reply talks about keys or permissions. People don't need the plumbing: say what you did in plain words ("Stripe wouldn't give me MRR directly, so I added it up from subscriptions").${readOk ? " A read this turn did return data: use it (get any missing pages first), compute the answer on your computer, and post it." : " If there's another way to get it, use it; otherwise say plainly what you couldn't get."} Then correct your reply with slack_post.`);
   }
