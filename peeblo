@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ./peeblo up | down | status | logs | check | image [small|large] | slack-app
+# ./peeblo up | down | status | logs | check | image [small|large] | slack-app | backup | upgrade
 # Linux: everything runs in Docker Compose (core needs /dev/kvm for teammate computers).
 # macOS: Compose runs Postgres; core runs natively, because Gondolin needs the host's hypervisor.
 set -euo pipefail
@@ -75,6 +75,20 @@ case "${1:-up}" in
     load_env
     if pid=$(core_pid); then kill "$pid"; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
     if [ "$(uname)" = Darwin ]; then mac_compose stop db; else compose --profile linux stop; fi ;;
+  backup)
+    # The database and the data that can't be rebuilt (memory, settings, workspaces); computer images are rebuilt.
+    load_env; mkdir -p local/backups; at="$(date -u +%Y%m%d-%H%M%S)"; out="local/backups/peeblo-$at"
+    compose exec -T db pg_dump -U peeblo -d peeblo --format=custom > "$out.dump" || { echo "peeblo: the database dump failed (is it running? ./peeblo up)"; exit 1; }
+    if [ "$(uname)" = Darwin ]; then native_env; tar -czf "$out-data.tgz" -C "$PEEBLO_DATA_DIR" --exclude ./images .
+    else docker run --rm -v "${PROJECT}_data:/data:ro" -v "$PWD/local/backups:/out" alpine:3.20 tar -czf "/out/peeblo-$at-data.tgz" -C /data --exclude ./images .; fi
+    echo "peeblo: backed up to $out.dump and $out-data.tgz (restore: pg_restore --clean into the db, untar into the data directory)" ;;
+  upgrade)
+    # Never mid-job: an approval or a running job would be cut. Then the new code, and a restart.
+    load_env
+    busy=$(compose exec -T db psql -U peeblo -d peeblo -Atc "SELECT count(*) FROM runs WHERE status IN ('running','waiting')" 2>/dev/null || echo 0)
+    if [ "${busy:-0}" -gt 0 ] && [ "${2:-}" != "--now" ]; then echo "peeblo: $busy job(s) are running or waiting on an approval; try again later, or ./peeblo upgrade --now"; exit 1; fi
+    git pull --ff-only || { echo "peeblo: git pull failed; nothing changed"; exit 1; }
+    "$0" down && "$0" up ;;
   status)
     load_env
     if [ "$(uname)" = Darwin ]; then mac_compose ps; pid=$(core_pid) && echo "core: running (pid $pid)" || echo "core: stopped"; else compose --profile linux ps; fi ;;
@@ -83,7 +97,7 @@ case "${1:-up}" in
     load_env
     if [ "$(uname)" = Darwin ]; then native_env; node src/bin.ts "$@"
     # The large image is built from a Debian container image, with the host's Docker, for this command only.
-    elif [ "${1:-}" = image ] && [ "${2:-}" = large ]; then compose --profile linux run --rm --no-deps --user root -v /var/run/docker.sock:/var/run/docker.sock peeblo "$@"
+    elif [ "${1:-}" = image ] && [ "${2:-}" = large ]; then compose --profile linux run --rm --no-deps --user "1000:$(stat -c %g /var/run/docker.sock)" -v /var/run/docker.sock:/var/run/docker.sock peeblo "$@"
     else compose --profile linux run --rm peeblo "$@"; fi ;;
-  *) echo "usage: ./peeblo up|down|status|logs|check|image|slack-app"; exit 2 ;;
+  *) echo "usage: ./peeblo up|down|status|logs|check|image|slack-app|backup|upgrade"; exit 2 ;;
 esac
