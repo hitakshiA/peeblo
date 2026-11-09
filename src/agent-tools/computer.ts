@@ -99,6 +99,7 @@ export const computerTools: AgentTool[] = [
       command: { type: "string" },
       timeout_seconds: { type: ["integer", "null"], minimum: 1, maximum: 600, description: "Default 120." },
     }),
+    describe(ctx, a) { return { summary: `Run on ${ctx.teammate.config.name}'s computer: ${String(a.command ?? "").replace(/\s+/g, " ").slice(0, 140)}` }; },
     kind: "local",
     async gate(_ctx, a) { return rules({ commands: [a.command] }); },
     async run(ctx, a) {

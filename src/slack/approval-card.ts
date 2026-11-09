@@ -21,6 +21,7 @@ export function question(a: any, teammate: string): string {
     return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : "Move"} ${cur === "USD" ? "$" : `${cur} `}${(amount / 100).toFixed(2)}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
   }
   if (a.server) return a.risk === "read" ? `Okay to look this up in ${serviceName(a.server)}?` : `Okay to write to ${serviceName(a.server)}?`;
+  if (a.tool && a.summary && a.kind === "peeblo_tool") return `${String(a.summary).split("\n")[0].replace(/[.?]$/, "")}?`;
   if (a.tool) return `Okay for ${teammate} to ${verb(a.tool)}?`;
   return `Okay for ${teammate} to go ahead?`;
 }
@@ -95,7 +96,8 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
       // A hire reads like its ID card: the role, then what it can use, its budget and how it asks.
       ...(a.kind === "hire" && a.hire ? { subtitle: { type: "plain_text", text: cutWord(String(a.hire.role), 150) }, body: { type: "mrkdwn", text: cutWord(`Can use ${a.hire.uses} · ${a.hire.budget} · ${a.hire.asks}`, 200) } }
         : line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
-      ...(a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } } : {}),
+      ...(a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } }
+        : a.kind !== "hire" && typeof a.rule === "string" && a.rule ? { body: { type: "mrkdwn", text: cutWord(a.rule.replace(/^The reviewer wants a person to decide: /, "Why I'm asking: "), 200) } } : {}),
       // A card takes only buttons (an overflow menu is refused), so Edit is a plain third button.
       actions: [
         { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "approve_once", value: id },

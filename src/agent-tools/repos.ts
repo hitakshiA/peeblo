@@ -26,19 +26,20 @@ export const repoTools: AgentTool[] = [
   },
   {
     name: "repo_publish",
-    description: "Publish your branch for a repo: push your commits to GitHub and, with pr, open a draft pull request. Only your own branch can be published, and only as new commits on top (no force pushes, no tags).",
+    description: "Publish your work for a repo: push your branch to GitHub and, with pr, open a draft pull request; or, with onto_pr, push your commits onto an open PR's branch in the same repo. Only new commits on top (no force pushes, no tags). Never push with git yourself.",
     input_schema: object({
       repo: { type: "string" },
       pr: { type: ["object", "null"], properties: { title: { type: "string" }, body: { type: ["string", "null"] } }, required: ["title", "body"], additionalProperties: false },
+      onto_pr: { type: ["integer", "null"], description: "Push your commits onto this open pull request's branch (same repo) instead of your own branch, e.g. to add a fix to someone's PR. Your branch must contain the PR's latest commit: merge or rebase onto origin/<its branch> first." },
     }),
     kind: "local",
     authorize(ctx, a) { return reposOf(ctx.teammate).some((r) => r.name === repoKey(ctx.teammate, String(a.repo))) ? null : `There's no repo called ${a.repo}.`; },
     // Pushing and opening a PR ships work outside the computer: a card in every mode but YOLO (the gate).
     outward: () => "shipping",
-    describe(ctx, a) { return { summary: `push ${ctx.teammate.config.name}'s branch of ${a.repo}${a.pr ? ` and open a draft PR "${a.pr.title}"` : ""}` }; },
+    describe(ctx, a) { return { summary: a.onto_pr ? `Push ${ctx.teammate.config.name}'s commits onto PR #${a.onto_pr} in ${a.repo}` : `Push ${ctx.teammate.config.name}'s branch of ${a.repo}${a.pr ? ` and open a draft PR "${a.pr.title}"` : ""}` }; },
     async run(ctx, a) {
       try {
-        const r = await publish(ctx.teammate, ctx.sessionId, repoKey(ctx.teammate, String(a.repo)), a.pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null);
+        const r = await publish(ctx.teammate, ctx.sessionId, repoKey(ctx.teammate, String(a.repo)), a.pr && !a.onto_pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null, a.onto_pr ?? null);
         return { text: r.text, data: { commit: r.pushed, pr_url: r.pr_url } };
       } catch (e) {
         return { text: (e as Error).message, isError: true };

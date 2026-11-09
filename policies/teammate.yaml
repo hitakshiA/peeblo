@@ -18,6 +18,13 @@ gates:
     enforcement: required
     forbidden: ["rm -rf /", "rm -rf ~", "rm -rf /workspace", "mkfs", "dd if=/dev/zero"]
     message: That would wipe the computer's disk.
+  - id: no-credentials-in-git
+    type: command
+    runs: [pre_tool_use.command]
+    enforcement: required
+    # A token in a remote URL or git config is stored in plain text and travels with the checkout.
+    forbidden: ["x-access-token", "GH_TOKEN}@", "GH_TOKEN@", "git remote add", "git remote set-url", "insteadOf", "insteadof"]
+    message: Credentials never go into git remotes or config. Publish with repo_publish, which pushes your branch or an open PR's branch.
   - id: ask-before-push
     type: command
     runs: [pre_tool_use.command]

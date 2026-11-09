@@ -221,7 +221,7 @@ export function checkBundle(mirror: string, bundle: string, w: { branch: string;
   return { ok: true, heads };
 }
 
-export async function publish(tm: Teammate, sessionId: string, repo: string, pr?: { title: string; body?: string } | null): Promise<{ text: string; pushed: string; pr_url?: string | null }> {
+export async function publish(tm: Teammate, sessionId: string, repo: string, pr?: { title: string; body?: string } | null, ontoPr?: number | null): Promise<{ text: string; pushed: string; pr_url?: string | null }> {
   if (String((tm.config as any).git?.publish ?? "own-branches") === "off") throw new Error("publishing is off for this teammate");
   const r = reposOf(tm).find((x) => x.name === repo);
   const w = (await worktreesOf(sessionId)).find((x) => x.repo === repo);
@@ -257,6 +257,27 @@ export async function publish(tm: Teammate, sessionId: string, repo: string, pr?
       catch { await appendEvent({ sessionId, runId: null, type: "repo.publish_refused", data: { repo, reason: "not a fast-forward" } }); throw new Error(`refused: ${w.branch} was rewritten since it was last published (not a fast-forward); teammates never force-push. Make new commits on top instead.`); }
     }
     const token = await tokenFor(tm, r);
+    // Onto an open PR's branch in the same repo (not a fork, not the default or a protected branch), fast-forward
+    // only: the PR's current head must already be in what we push.
+    if (ontoPr) {
+      const gh = /github\.com[/:]([^/]+)\/([^/.]+)(\.git)?$/.exec(r.remote);
+      if (!gh || !token) throw new Error("pushing to a pull request needs a GitHub repo with a credential");
+      const pj: any = await (await fetch(`https://api.github.com/repos/${gh[1]}/${gh[2]}/pulls/${ontoPr}`, { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "peeblo" } })).json();
+      if (!pj?.head?.ref) throw new Error(`no pull request #${ontoPr} in ${gh[1]}/${gh[2]}`);
+      if (pj.state !== "open") throw new Error(`#${ontoPr} is ${pj.state}; only an open PR's branch can take new commits`);
+      if (pj.head.repo?.full_name !== `${gh[1]}/${gh[2]}`) throw new Error(`#${ontoPr} comes from a fork; push to your own branch and open a PR instead`);
+      const target = String(pj.head.ref);
+      const def = (() => { try { return hostGit(["--git-dir", m, "symbolic-ref", "--short", "HEAD"]); } catch { return "main"; } })();
+      if (target === def || target === w.base || (r.protected ?? []).includes(target)) throw new Error(`${target} is the default or a protected branch`);
+      hostGit(["--git-dir", m, "fetch", "--quiet", r.remote, `+refs/heads/${target}:refs/peeblo/pr/${ontoPr}`], token);
+      const head = hostGit(["--git-dir", m, "rev-parse", `refs/peeblo/pr/${ontoPr}`]);
+      try { hostGit(["--git-dir", m, "merge-base", "--is-ancestor", head, incoming]); }
+      catch { throw new Error(`your branch doesn't contain #${ontoPr}'s latest commit (${head.slice(0, 10)} on ${target}); merge or rebase onto origin/${target} first, then publish again`); }
+      hostGit(["--git-dir", m, "push", "--quiet", r.remote, `${incoming}:refs/heads/${target}`], token);
+      hostGit(["--git-dir", m, "update-ref", "-d", `refs/peeblo/incoming/${sessionId}`]);
+      await appendEvent({ sessionId, runId: null, type: "repo.published", data: { repo, branch: target, pr: ontoPr, commit: incoming, pr_url: pj.html_url } });
+      return { text: `Pushed ${incoming.slice(0, 10)} onto #${ontoPr}'s branch ${target}: ${pj.html_url}`, pushed: incoming, pr_url: pj.html_url };
+    }
     // To the URL, not "origin": a mirror's origin pushes every ref and takes no refspec.
     hostGit(["--git-dir", m, "push", "--quiet", r.remote, `${incoming}:${ref}`], token);
     hostGit(["--git-dir", m, "update-ref", ref, incoming]);
