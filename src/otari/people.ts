@@ -22,12 +22,6 @@ export async function ensureEndUser(externalId: string, alias: string | null, bu
   known.set(k, budgetId ?? null);
 }
 
-// Moves a person to a tier (an admin decision, or a check).
-export async function moveToTier(externalId: string, alias: string | null, budgetId: string, key?: { keyId: string; secret: string }): Promise<void> {
-  const opts = key ? { auth: { authorization: `Bearer ${key.secret}` } } : {};
-  await otari("PUT", `/end-users/${encodeURIComponent(externalId)}`, { alias: alias ?? externalId, budget_id: budgetId, metadata: { app: "peeblo" } }, opts);
-  known.set(`${key?.keyId ?? "core"}:${externalId}`, budgetId);
-}
 
 export type EndUser = { user_id: string; alias: string | null; spend: number; budget_id: string | null; blocked: boolean };
 export async function endUser(externalId: string): Promise<EndUser | null> {

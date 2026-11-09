@@ -8,7 +8,7 @@ import { estimateCost, isOpenWeight, modelFacts, models, openWeightModels, tierF
 import { otari } from "../otari/client.ts";
 import { links } from "../otari/links.ts";
 import { tiers } from "../otari/people.ts";
-import { pinnedName, recommend, ROLES, waitUntilServing } from "../otari/routing.ts";
+import { policySpec, recommend, ROLES, waitUntilServing } from "../otari/routing.ts";
 import { personSpend, teammateSpend, usd } from "../otari/spend.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
@@ -206,12 +206,14 @@ export const otariTools: AgentTool[] = [
     },
     async describe(_ctx, a) { return { setting: "routing_policy", name: a.name, default: a.default_model, fallbacks: a.fallback_models, reason: a.reason }; },
     async run(_ctx, a) {
-      const spec = { select: [{ default: await pinnedName(a.default_model) }], on_failure: await Promise.all(a.fallback_models.map((m: string) => pinnedName(m))) };
+      // Keeps the role's budget step-down. Start-up leaves this change in place until config/model-tiers.json changes.
+      const spec = await policySpec({ ...ROLES[a.name], default: a.default_model, fallback: a.fallback_models });
       await upsertRoutingPolicy(a.name, spec);
       const w = await waitUntilServing(a.name);
       const list = await routingPolicies();
       const p = ((list.data ?? list) as { name: string; spec: any }[]).find((x) => x.name === a.name);
-      if (!p || p.spec?.select?.[0]?.default !== spec.select[0].default) return { text: `Otari doesn't show the new targets for ${a.name}; check ${links.routingPolicy(a.name)}.`, isError: true };
+      const want = (spec.select.find((x) => "default" in x) as { default: string }).default;
+      if (!p || !(p.spec?.select ?? []).some((x: any) => x.default === want)) return { text: `Otari doesn't show the new targets for ${a.name}; check ${links.routingPolicy(a.name)}.`, isError: true };
       return { text: `${a.name} now runs ${a.default_model}${a.fallback_models.length ? `, then ${a.fallback_models.join(", ")}` : ""} (read back from Otari; serving steadily after ${Math.round(w.waitedMs / 1000)} s).`, data: { spec } };
     },
   },

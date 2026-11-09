@@ -14,8 +14,7 @@ import { displayName, slack } from "./api.ts";
 import { getApp } from "../ingress/apps.ts";
 
 const SCOPES: Record<string, { decision: "approved" | "denied"; scope: "once" | "job" | "always" }> = {
-  approve_once: { decision: "approved", scope: "once" }, approve_job: { decision: "approved", scope: "job" },
-  approve_always: { decision: "approved", scope: "always" }, deny: { decision: "denied", scope: "once" },
+  approve_once: { decision: "approved", scope: "once" }, deny: { decision: "denied", scope: "once" },
 };
 
 async function respond(url: string | undefined, body: Record<string, unknown>): Promise<void> {
@@ -145,12 +144,6 @@ export function installSlackInteractions(): void {
       await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: editModal(row.action, String(a.value), tm?.config.name ?? "the teammate") });
       return;
     }
-    // The menu: approve for this job, or always.
-    if (a.action_id === "approve_more") {
-      const [scope, id] = String(a.selected_option?.value ?? "").split(":");
-      a.action_id = scope === "always" ? "approve_always" : "approve_job";
-      a.value = id;
-    }
     if (a.action_id in SCOPES) {
       const { decision, scope } = SCOPES[a.action_id];
       const r = await answerApproval(String(a.value), { decision, scope, personId: who.id });
@@ -207,8 +200,8 @@ export function installSlackInteractions(): void {
       }
       if (a.action_id === "ask_again") return;
     }
-    // Recovering from a failed run (SLACK_UX_SPEC §3.6): retry, retry on the fallback model, or ask the owner.
-    if (["retry_run", "retry_fallback", "ask_owner"].includes(a.action_id)) {
+    // Recovering from a failed run (SLACK_UX_SPEC §3.6): retry, or ask the owner.
+    if (["retry_run", "ask_owner"].includes(a.action_id)) {
       const r = (await pool.query("SELECT r.session_id, sub.text, sub.person_id, s.teammate_id, s.place FROM runs r JOIN submissions sub ON sub.id = r.submission_id JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.value])).rows[0];
       const tm = r ? await getTeammate(r.teammate_id) : null;
       if (!r || !tm) return;
@@ -222,7 +215,6 @@ export function installSlackInteractions(): void {
       }
       const { submit } = await import("../store/sessions.ts");
       const { startRun } = await import("../durable/runs.ts");
-      if (a.action_id === "retry_fallback" && tm.config.model.fallback) await pool.query("UPDATE sessions SET place = jsonb_set(place, '{model}', to_jsonb($2::text)) WHERE id = $1", [r.session_id, tm.config.model.fallback]);
       const { run, created } = await submit({ sessionId: r.session_id, personId: who.id, requestId: `${a.action_id}:${a.value}:${payload.action_ts ?? Date.now()}`, text: r.text, source: "slack" });
       if (created) await startRun(run.id);
       return;

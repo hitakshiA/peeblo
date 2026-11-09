@@ -7,7 +7,6 @@ import { pool } from "../db.ts";
 import { answerApproval } from "../durable/approvals.ts";
 import { checkAction, ruleMessage } from "../otari/rules.ts";
 import { startRun } from "../durable/runs.ts";
-import { syncSchedules } from "../durable/schedules.ts";
 import { newId } from "../ids.ts";
 import { runEvents } from "../store/events.ts";
 import { getRun, getSession, openSession, submit, type SessionKind } from "../store/sessions.ts";
@@ -145,16 +144,6 @@ export const router = new Router()
     if (body.teammate) { const tm = await getTeammate(String(body.teammate)); if (!tm) throw notFound("teammate"); teammateId = tm.id; }
     await saveApp({ app_id: body.app_id, teammate_id: teammateId, team_id: body.team_id ?? null, bot_user_id: body.bot_user_id ?? null, secrets: s });
     return { app_id: body.app_id, teammate_id: teammateId };
-  })
-  .add("POST", "/v1/schedules", async ({ body }) => {
-    const tm = await getTeammate(String(body?.teammate ?? ""));
-    if (!tm) throw notFound("teammate");
-    if (!body?.cron || !body?.prompt) throw bad("cron and prompt are required");
-    const session = await openSession(tm.id, "desk", `desk:${tm.id}`);
-    const id = newId("sc");
-    await pool.query("INSERT INTO schedules (id, teammate_id, session_id, cron, prompt, created_by) VALUES ($1, $2, $3, $4, $5, $6)", [id, tm.id, session.id, body.cron, body.prompt, body.person_id ?? null]);
-    await syncSchedules();
-    return { id, session_id: session.id };
   });
 
 function authorized(header: string | undefined): boolean {
