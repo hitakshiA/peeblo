@@ -446,6 +446,11 @@ function compactList(text: string): string | null {
 // start, the record count and the path, and works on the file there with computer_bash when it needs the rest.
 async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
   const chars = r.text.length;
+  // Otari's web firewall answers some request shapes with a bare nginx 403 page (no request id): a filter, not a
+  // permission problem. Seen on SQL with comments or a sub-select inside the select list.
+  if (r.isError && /403/.test(r.text) && /<html|nginx|403 Forbidden<\/title>/i.test(r.text)) {
+    return { ...r, chars, text: `A gateway filter in front of ${t.server} blocked this request's shape before it reached the service (not a permission problem, and the data is there). Rewrite it more simply and try once more: no SQL comments (-- or /* */), no sub-selects inside the select list, no UNION; split it into two plain queries if needed.${hintFor(t.server, t.tool) ? ` ${hintFor(t.server, t.tool)}` : ""}` };
+  }
   if (r.isError && hintFor(t.server, t.tool)) return { ...r, chars, text: `${r.text}\n[peeblo: ${hintFor(t.server, t.tool)}]` };
   if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
   // Otari cuts MCP results at 50,000 characters: keep the records that arrived whole.
