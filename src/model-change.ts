@@ -37,7 +37,10 @@ export async function changeModel(slug: string, change: { model: string; fallbac
   const s = await teammateSpend(tm);
   if (est !== null && s.spent + est > s.cap) throw new ModelChangeRefused(`${tm.config.name} has ${usd(Math.max(0, s.cap - s.spent))} left this month, less than one turn on ${change.model} (about ${usd(est)})`);
 
-  const next = await updateTeammate(slug, { model: { default: change.model, ...(change.fallback ? { fallback: change.fallback } : {}) } as Teammate["config"]["model"] }, { label: `person:${person!.id}` }, change.why ?? "model change");
+  // A specific model a person picked keeps a fallback (a role policy has Otari's own): the worker role's model, or the
+  // reviewer's when that is the model picked.
+  const fallback = change.fallback ?? (change.model in ROLES ? null : [ROLES["peeblo-worker"].default, ROLES["peeblo-reviewer"].default].find((m) => m !== change.model) ?? null);
+  const next = await updateTeammate(slug, { model: { default: change.model, ...(fallback ? { fallback } : {}) } as Teammate["config"]["model"] }, { label: `person:${person!.id}` }, change.why ?? "model change");
   if (change.now) {
     await appendEvent({ sessionId: change.now.sessionId, runId: null, type: "session.config", data: { version: next.version, model: change.model, reason: "takeover", by: person!.display_name ?? person!.id, why: change.why ?? null } });
   }

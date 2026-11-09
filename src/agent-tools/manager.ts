@@ -253,7 +253,7 @@ export const managerTools: AgentTool[] = [
       if (a.field === "model") {
         try {
           const r = await changeModel(t.slug, { model: a.value, fallback: t.config.model.fallback ?? null, personId: ctx.person!.id, why: a.reason });
-          return { text: `${t.config.name} is now at version ${r.teammate.version}: model = ${a.value} (fallback ${t.config.model.fallback ?? "none"}). New conversations use it.` };
+          return { text: `${t.config.name} is now at version ${r.teammate.version}: model = ${a.value} (fallback ${r.teammate.config.model.fallback ?? "Otari's, through the role policy"}). New conversations use it.` };
         } catch (e) { return { text: `Can't change the model: ${(e as Error).message}.`, isError: true }; }
       }
       if (a.field === "profile") {

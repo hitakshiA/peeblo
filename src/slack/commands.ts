@@ -101,9 +101,15 @@ export async function settingsModal(tm: Teammate): Promise<any> {
   const c = tm.config;
   const { openWeightModels } = await import("../otari/catalog.ts");
   const { serverList } = await import("../connectors/mcp.ts");
-  const models = (await openWeightModels().catch(() => [] as any[])).map((m: any) => m.id ?? m).filter((m: string) => typeof m === "string").slice(0, 90);
-  if (!models.includes(c.model.default)) models.unshift(c.model.default);
+  // The role's usual model first (it keeps Otari's fallback and the cheaper model near the budget), then every
+  // open-weight model by its name.
+  const { readableModel } = await import("./look.ts");
+  const usual = c.model.default.startsWith("peeblo-") ? c.model.default : "peeblo-worker";
+  const others = (await openWeightModels().catch(() => [] as any[])).map((m: any) => m.id ?? m).filter((m: string) => typeof m === "string" && m !== usual).slice(0, 89);
+  const models = [usual, ...(c.model.default !== usual && !others.includes(c.model.default) ? [c.model.default] : []), ...others].slice(0, 90);
   const conns = (await serverList().catch(() => [] as any[])).map((s: any) => s.name).slice(0, 90);
+  const usualName = await modelLabel(usual);
+  const modelText = (m: string) => (m === usual ? `Usual: ${usualName} (with fallback)` : `${readableModel(m).name} · ${m}`);
   const opt = (v: string, label = v) => ({ text: { type: "plain_text", text: label.slice(0, 75) }, value: v });
   return {
     type: "modal", callback_id: "teammate_settings", private_metadata: tm.slug,
@@ -111,7 +117,7 @@ export async function settingsModal(tm: Teammate): Promise<any> {
     blocks: [
       { type: "alert", level: "warning", text: { type: "mrkdwn", text: "Raising a capability (mode, budget, tools, connectors, a bigger computer) is checked against your own limits, and every change is a new version you can see in the console." } },
       { type: "input", block_id: "instructions", optional: true, label: { type: "plain_text", text: "Standing instructions" }, element: { type: "plain_text_input", action_id: "v", multiline: true, initial_value: c.instructions.slice(0, 3000) } },
-      { type: "input", block_id: "model", label: { type: "plain_text", text: "Model" }, element: { type: "static_select", action_id: "v", initial_option: opt(c.model.default), options: models.map((m: string) => opt(m)) } },
+      { type: "input", block_id: "model", label: { type: "plain_text", text: "Model" }, element: { type: "static_select", action_id: "v", initial_option: opt(c.model.default, modelText(c.model.default)), options: models.map((m: string) => opt(m, modelText(m))) } },
       { type: "input", block_id: "budget", label: { type: "plain_text", text: "Monthly budget (USD)" }, element: { type: "number_input", action_id: "v", is_decimal_allowed: true, initial_value: String(c.budget.monthly_usd), min_value: "0", max_value: "500" } },
       { type: "input", block_id: "mode", label: { type: "plain_text", text: "Approvals" }, element: { type: "radio_buttons", action_id: "v", initial_option: opt(c.mode, c.mode), options: MODES.map((m) => opt(m, m)) } },
       { type: "input", block_id: "tools", optional: true, label: { type: "plain_text", text: "Tools" }, element: { type: "multi_static_select", action_id: "v", ...(c.tools.length ? { initial_options: c.tools.map((t) => opt(t)) } : {}), options: ["web", "code", "computer"].map((t) => opt(t)) } },
