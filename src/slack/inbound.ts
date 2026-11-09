@@ -38,6 +38,10 @@ export function installSlackInbound(): void {
     let keyNow = placeKey;
     let inThread = false;
     if (!dm && !mentioned) {
+      // One listener: a message that tags another teammate (and not this one) is that teammate's to answer, in a
+      // channel and in a thread this teammate is already in.
+      const taggedIds = [...String(ev.text ?? "").matchAll(/<@([A-Z0-9]+)>/g)].map((m) => m[1]);
+      if (taggedIds.length && (await pool.query("SELECT 1 FROM slack_apps WHERE bot_user_id = ANY($1) AND app_id <> $2 LIMIT 1", [taggedIds, appId])).rows.length) return;
       const known = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND kind = 'thread' AND place_key = $2", [teammateId, placeKey])).rows[0];
       inThread = Boolean(known);
       if (!known) {

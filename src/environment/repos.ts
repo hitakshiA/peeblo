@@ -96,7 +96,10 @@ export async function worktreesOf(sessionId: string): Promise<Worktree[]> {
 
 // Creates (or re-attaches) the session's worktree for a repo. After a lost VM disk, it is rebuilt from the branch
 // plus the latest WIP snapshot.
+// A repo by its short name or its owner/repo (the GitHub name agents see).
+export const repoKey = (tm: Teammate, repo: string) => reposOf(tm).find((x) => x.name === repo || x.name === repo.split("/").pop() || x.remote.replace(/\.git$/, "").endsWith(`/${repo}`))?.name ?? repo;
 export async function openRepo(tm: Teammate, sessionId: string, repo: string, slug?: string | null, base?: string | null): Promise<{ wt: Worktree; created: boolean; restored: boolean; setup: string }> {
+  repo = repoKey(tm, repo);
   const r = reposOf(tm).find((x) => x.name === repo);
   if (!r) throw Object.assign(new Error(`no repo called ${repo}; this teammate has ${reposOf(tm).map((x) => x.name).join(", ") || "no repos"} (an owner adds repos to its config)`), { status: 404 });
   const existing = (await pool.query("SELECT * FROM session_worktrees WHERE session_id = $1 AND repo = $2 AND removed_at IS NULL", [sessionId, repo])).rows[0] as Worktree | undefined;

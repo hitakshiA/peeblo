@@ -2,7 +2,7 @@
 // harness must act or check. repo_open makes (or restores) the session's checkout on its own branch; repo_publish
 // pushes that branch from the host-owned mirror and can open a draft PR. Branch names, refusals and the push
 // itself are code (environment/repos.ts).
-import { openRepo, publish, reposOf } from "../environment/repos.ts";
+import { openRepo, publish, repoKey, reposOf } from "../environment/repos.ts";
 import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";
 
@@ -32,13 +32,13 @@ export const repoTools: AgentTool[] = [
       pr: { type: ["object", "null"], properties: { title: { type: "string" }, body: { type: ["string", "null"] } }, required: ["title", "body"], additionalProperties: false },
     }),
     kind: "local",
-    authorize(ctx, a) { return reposOf(ctx.teammate).some((r) => r.name === a.repo) ? null : `There's no repo called ${a.repo}.`; },
+    authorize(ctx, a) { return reposOf(ctx.teammate).some((r) => r.name === repoKey(ctx.teammate, String(a.repo))) ? null : `There's no repo called ${a.repo}.`; },
     // Pushing and opening a PR ships work outside the computer: a card in every mode but YOLO (the gate).
     outward: () => "shipping",
     describe(ctx, a) { return { summary: `push ${ctx.teammate.config.name}'s branch of ${a.repo}${a.pr ? ` and open a draft PR "${a.pr.title}"` : ""}` }; },
     async run(ctx, a) {
       try {
-        const r = await publish(ctx.teammate, ctx.sessionId, a.repo, a.pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null);
+        const r = await publish(ctx.teammate, ctx.sessionId, repoKey(ctx.teammate, String(a.repo)), a.pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null);
         return { text: r.text, data: { commit: r.pushed, pr_url: r.pr_url } };
       } catch (e) {
         return { text: (e as Error).message, isError: true };
