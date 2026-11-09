@@ -146,6 +146,14 @@ export async function teammateSpend(tm: Teammate): Promise<{ spent: number; cap:
 // A person across all of Peeblo's keys (end users belong to the key that made them), against their tier.
 export async function personSpend(externalId: string): Promise<{ spent: number; cap: number | null; tier: string | null }> {
   const r = await reading(`person:${externalId}`, async () => {
+    // With a session, one org read (an end user per key, all labelled with the person's id).
+    const org = await orgUsage().catch(() => null);
+    if (org) {
+      const t = await tiers();
+      const u = await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`).then((x) => x.data, () => null);
+      const tier = t.find((x) => x.budget_id === u?.budget_id) ?? t.find((x) => x.is_default);
+      return { spent: org.by_user.filter((g) => g.label === externalId).reduce((a, g) => a + g.cost, 0), cap: tier?.max_budget ?? null, label: tier?.name ?? "" };
+    }
     const { rows } = await pool.query<{ key_id: string; secret: Buffer }>("SELECT key_id, secret FROM teammate_keys WHERE retired_at IS NULL");
     const auths = [undefined, ...rows.map((x) => ({ authorization: `Bearer ${unseal<string>(x.secret)}` }))];
     let spent = 0;
@@ -181,4 +189,18 @@ export function raiseOptions(budget: number, spent: number): number[] {
   const base = Math.max(budget, spent);
   const a = Math.max(Math.ceil(base * 1.5), Math.ceil(budget) + 1);
   return [a, Math.max(Math.ceil(base * 2), a + 5)];
+}
+
+// Otari's own usage for the whole org (admin session): by teammate tag, model, key and end user, plus a daily series.
+// One read replaces a read per key; cached a minute.
+type Group = { key: string | null; label: string | null; cost: number; tokens: number; requests: number };
+export type OrgUsage = { by_tag: Group[]; by_model: Group[]; by_user: Group[]; by_api_key: Group[]; series: { bucket_start: string; cost: number; requests: number }[]; totals: { cost: number; request_count: number } };
+let orgCache: { at: number; start: string; data: OrgUsage } | null = null;
+export async function orgUsage(start = monthStart().toISOString()): Promise<OrgUsage | null> {
+  const { admin, session } = await import("./admin.ts");
+  if (!(await session())) return null;
+  if (orgCache && orgCache.start === start && Date.now() - orgCache.at < 60_000) return orgCache.data;
+  const data = await admin<OrgUsage>("GET", `/organizations/me/usage/summary?start_date=${encodeURIComponent(start)}&group_by_tag=teammate`, undefined, "reading usage", "");
+  orgCache = { at: Date.now(), start, data };
+  return data;
 }

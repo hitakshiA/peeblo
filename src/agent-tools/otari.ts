@@ -101,6 +101,35 @@ export const otariTools: AgentTool[] = [
     },
   },
   {
+    name: "usage_report",
+    description: "Who and what spent money this month (or since a date), straight from Otari's usage: each teammate, each model, each person (admins only), and spend per day. For \"how much has everyone spent\", \"who's the most expensive\", a spend chart (pass the daily rows to show_data).",
+    input_schema: object({ since: { type: ["string", "null"], description: "ISO date; empty for this month." } }),
+    kind: "read",
+    async run(ctx, a) {
+      const { orgUsage } = await import("../otari/spend.ts");
+      const since = a.since ? new Date(a.since).toISOString() : undefined;
+      const u = await orgUsage(since).catch((e) => { throw new Error(`Otari's usage couldn't be read: ${(e as Error).message}`); });
+      if (!u) return { text: "Reading the whole org's usage needs Otari's dashboard session (an admin connects it in the console). Per teammate, budget_status works now.", isError: true };
+      const { listTeammates } = await import("../store/teammates.ts");
+      const names = new Map((await listTeammates()).map((t) => [t.slug, t.config.name]));
+      const { readableModel } = await import("../slack/look.ts");
+      const top = (g: { label: string; cost: number; requests: number }[], n = 8) => g.filter((x) => x.cost > 0).sort((x, y) => y.cost - x.cost).slice(0, n).map((x) => `- ${x.label}: ${usd(x.cost)} (${x.requests} calls)`).join("\n");
+      const crew = top(u.by_tag.filter((g) => g.key && names.has(g.key)).map((g) => ({ label: names.get(g.key!)!, cost: g.cost, requests: g.requests })));
+      const models = new Map<string, { label: string; cost: number; requests: number }>();
+      for (const g of u.by_model) { const n = readableModel(String(g.key ?? "")).name; const m = models.get(n) ?? { label: n, cost: 0, requests: 0 }; m.cost += g.cost; m.requests += g.requests; models.set(n, m); }
+      let people = "";
+      if (isOtariAdmin(ctx.person)) {
+        const { pool } = await import("../db.ts");
+        const who = new Map((await pool.query<{ end_user_id: string; display_name: string }>("SELECT end_user_id, display_name FROM people WHERE end_user_id IS NOT NULL")).rows.map((r) => [r.end_user_id, r.display_name]));
+        const per = new Map<string, { label: string; cost: number; requests: number }>();
+        for (const g of u.by_user) { const id = String(g.label ?? ""); if (!who.has(id)) continue; const p = per.get(id) ?? { label: who.get(id)!, cost: 0, requests: 0 }; p.cost += g.cost; p.requests += g.requests; per.set(id, p); }
+        people = `\nBy person:\n${top([...per.values()])}`;
+      }
+      const days = u.series.filter((d) => d.cost > 0).map((d) => ({ day: d.bucket_start.slice(0, 10), usd: Number(d.cost.toFixed(4)), calls: d.requests }));
+      return { text: `From Otari's usage since ${(since ?? "the start of the month").slice(0, 10)} (the whole org: ${usd(u.totals.cost)}, ${u.totals.request_count} calls).\nBy teammate:\n${crew || "- none yet"}\nBy model:\n${top([...models.values()], 6)}${people}\nPer day (for show_data): ${JSON.stringify(days.slice(-31))}`, data: { days } };
+    },
+  },
+  {
     name: "otari_read_setting",
     description: "Read one of the team's Otari settings: whether web search and code execution are on, the guardrail, the routing policies, the connected MCP servers, or the budget tiers.",
     input_schema: object({ what: { type: "string", enum: ["web_search", "code_execution", "guardrail", "routing_policies", "mcp_servers", "budget_tiers"] } }),
