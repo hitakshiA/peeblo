@@ -34,8 +34,8 @@ export const config = {
   otariEndUserBudget: process.env.OTARI_END_USER_BUDGET_ID?.trim() || "",
   proxyPort: Number(process.env.PEEBLO_PROXY_PORT ?? 7341),
   piIdleMs: Number(process.env.PEEBLO_PI_IDLE_MS ?? 10 * 60_000),
-  // Otari's server-side tools, switchable (NIGHT_PLAN_NOV9 §0: code execution and fetch off; web search only as a
-  // tool the model chooses). Vision (look) can be switched off too.
+  // Otari's server-side tools and vision, each switchable (on by default). The agent chooses them; nothing
+  // attaches them to every call.
   otariCode: (process.env.PEEBLO_OTARI_CODE ?? "on") !== "off",
   webFetch: (process.env.PEEBLO_WEB_FETCH ?? "on") !== "off",
   vision: (process.env.PEEBLO_VISION ?? "on") !== "off",

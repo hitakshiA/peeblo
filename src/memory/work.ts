@@ -1,4 +1,4 @@
-// Work memory (NIGHT_PLAN_NOV9 §7.2): what an agent did, for whom and what it promised, kept so a later
+// Work memory: what an agent did, for whom and what it promised, kept so a later
 // conversation (even after its computer was evicted and the session closed) can find it with recall.
 // - Every finished job writes a one-paragraph entry from the run's events (code, not the model): what was asked,
 //   for whom, where, the steps, what changed, the result, links, and the agent's own one-line summary.

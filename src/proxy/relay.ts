@@ -248,13 +248,6 @@ export function startProxy(): Promise<Server> {
 
     // Money is code (K16): a call whose estimate would take the teammate or the person over their budget is
     // refused here, before it reaches Otari, in Otari's own refusal shape.
-    // Debugging aid (off unless PEEBLO_DUMP_SYSTEM names a folder): the system prompt each session really sends.
-    if (isInference && raw && process.env.PEEBLO_DUMP_SYSTEM) {
-      const sys = JSON.parse(raw.toString("utf8")).messages?.find((m: any) => m.role === "system" || m.role === "developer")?.content;
-      const { writeFile, mkdir } = await import("node:fs/promises");
-      await mkdir(process.env.PEEBLO_DUMP_SYSTEM, { recursive: true }).catch(() => {});
-      await writeFile(`${process.env.PEEBLO_DUMP_SYSTEM}/${b.sessionId}.txt`, typeof sys === "string" ? sys : JSON.stringify(sys)).catch(() => {});
-    }
     if (isInference && raw) {
       // A budget check that fails refuses the call (fail closed).
       const t1 = Date.now();

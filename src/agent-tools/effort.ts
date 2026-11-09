@@ -1,4 +1,4 @@
-// Smart routing for one job (NIGHT_PLAN_NOV9 §2.3): everyday work runs on the teammate's role policy (DeepSeek Flash,
+// Smart routing for one job: everyday work runs on the teammate's role policy (DeepSeek Flash,
 // MiMo fallback, in Otari). When a job is unusual, the teammate asks Otari's recommender which model fits this work,
 // and the rest of the job runs on the answer. Only budgets limit it (the per-teammate and total caps), never a
 // count of calls, so nothing stops mid-job.

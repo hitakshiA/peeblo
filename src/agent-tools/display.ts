@@ -1,4 +1,4 @@
-// show_data: a sortable table, a chart, or a KPI strip in the reply (NIGHT_PLAN_NOV9 §6.5). The agent gives the
+// show_data: a sortable table, a chart, or a KPI strip in the reply. The agent gives the
 // numbers; code draws Slack's own blocks (data_table, data_visualization, layout) and the view puts them in the
 // reply's message, after the answer and before the receipt. How to choose and label a chart is in the
 // visualizing-data skill.

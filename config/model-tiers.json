@@ -214,6 +214,5 @@
       "provider": "mistral",
       "at": "2026-11-07"
     }
-  },
-  "night": "Nov 9 night: DeepSeek V4.1 Flash only for every role, no fallbacks to other families (routing build in the morning). peeblo-vision is unused tonight (PEEBLO_VISION=off)."
+  }
 }

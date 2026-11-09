@@ -122,7 +122,7 @@ const findPerson = async (who: string) => {
   return (await pool.query("SELECT id, display_name, slack_user FROM people WHERE slack_user = $1 OR lower(display_name) = lower($2) OR lower(split_part(display_name, ' ', 1)) = lower($2) ORDER BY (slack_user = $1) DESC, created_at LIMIT 1", [id ?? "", name])).rows[0];
 };
 
-// recall, person cards, promises and forgetting (NIGHT_PLAN_NOV9 §7.2).
+// recall, person cards, promises and forgetting.
 export const workMemoryTools: AgentTool[] = [
   {
     name: "recall",

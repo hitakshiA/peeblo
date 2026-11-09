@@ -95,7 +95,7 @@ export async function handleHook(slug: string, id: string, headers: Record<strin
   return [202, run ? `run ${run}` : "skipped"];
 }
 
-// Provider endpoints (NIGHT_PLAN_NOV9 §4.6): one stable URL per service (POST /hooks/source/stripe, …/pagerduty),
+// Provider endpoints: one stable URL per service (POST /hooks/source/stripe, …/pagerduty),
 // registered with the service once and checked with that service's own signing secret (PEEBLO_HOOK_SECRET_<NAME>).
 // An event wakes every trigger an agent made with that source whose filter matches; code only wakes, the agent decides.
 const SOURCES: Record<string, (secret: string, h: Record<string, string | string[] | undefined>, body: string) => boolean> = {
@@ -168,9 +168,7 @@ export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" |
 // The ticker: one-time schedules that are due, and watches whose hour has come.
 export function installTriggers(): void {
   setInterval(() => void (async () => {
-    // Test cadence (PEEBLO_TEST_CADENCE_MIN): watches poll every N minutes instead of every few hours.
-    const every = Number(process.env.PEEBLO_TEST_CADENCE_MIN ?? 0);
-    const due = (await pool.query(`SELECT * FROM schedules WHERE enabled AND ((kind = 'once' AND run_at <= now() AND last_run_at IS NULL) OR (kind = 'watch' AND (last_run_at IS NULL OR last_run_at < now() - ${every > 0 ? "make_interval(mins => $1)" : "make_interval(hours => greatest(1, coalesce((filter->>'every_hours')::int, 1)))"})))`, every > 0 ? [every] : [])).rows as Schedule[];
+    const due = (await pool.query(`SELECT * FROM schedules WHERE enabled AND ((kind = 'once' AND run_at <= now() AND last_run_at IS NULL) OR (kind = 'watch' AND (last_run_at IS NULL OR last_run_at < now() - make_interval(hours => greatest(1, coalesce((filter->>'every_hours')::int, 1))))))`)).rows as Schedule[];
     for (const s of due) {
       if (s.kind === "once") { await fire(s, "", "schedule", "once"); await pool.query("UPDATE schedules SET enabled = false WHERE id = $1", [s.id]); }
       else await pollWatch(s).catch(() => null);

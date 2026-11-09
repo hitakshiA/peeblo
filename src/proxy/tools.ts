@@ -103,7 +103,7 @@ const LOOP_STOP = 6;
 const identical = new Map<string, number>();
 // A repeat of a read in the same run gets the earlier result back without calling the service again.
 const readCache = new Map<string, string>();
-// At most this many tool calls in one turn; after that only slack_post runs (NIGHT_PLAN_NOV9 §1).
+// At most this many tool calls in one turn; after that only slack_post runs.
 // Peeblo's chat turns stay short; a teammate working a job on its computer gets room for real work (its spend cap
 // is the real limit). Both get a heads-up when 3 calls are left.
 const TURN_CALLS_CHAT = 20, TURN_CALLS_WORK = 80; // chat: room for a second route when a source refuses
@@ -119,21 +119,19 @@ const invalidStreak = new Map<string, number>();
 const TOOL_HINTS: Record<string, string> = {
   "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 8, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
 };
-// Connection facts an admin sets per server (dataDir/server-notes.json, e.g. {"sanity": "projectId uxjk1mer, dataset
-// production"}): ids the model would otherwise guess, and vendors answer a wrong id with a misleading auth error.
-// Connection notes, in three layers read fresh each minute: what ships with Peeblo for that vendor
+// Connection facts per server: ids the model would otherwise guess (vendors answer a wrong id with a misleading
+// auth error), plan limits, and the query shapes that work.
+// Two layers, read fresh each minute: what ships with Peeblo for that vendor
 // (config/connections/<server>.md, generic quirks), this workspace's company memory (connections/<server>.md: ids,
-// plan limits, lessons the crew learned; changed by talking, approved by an admin), and the older server-notes.json.
+// plan limits, lessons the crew learned; changed by talking, approved by an admin).
 let notes: { at: number; v: Record<string, string> } = { at: 0, v: {} };
 const body = (file: string) => { try { return readFileSync(file, "utf8").replace(/^---[\s\S]*?---\n/, "").trim(); } catch { return ""; } };
 function serverNote(server: string): string {
   if (Date.now() - notes.at > 60_000) notes = { at: Date.now(), v: {} };
   if (notes.v[server] !== undefined) return notes.v[server];
-  let legacy = "";
-  try { legacy = JSON.parse(readFileSync(join(config.dataDir, "server-notes.json"), "utf8"))[server] ?? ""; } catch { /* none */ }
   const shipped = body(join(process.cwd(), "config", "connections", `${server}.md`));
   const company = body(join(companyDir(), "connections", `${server}.md`));
-  notes.v[server] = [shipped, company || legacy].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  notes.v[server] = [shipped, company].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   return notes.v[server];
 }
 const hintFor = (server: string, tool: string) => [serverNote(server) && `This connection (company memory connections/${server}): ${serverNote(server)} Use these exact ids, never a guess; if you learn something lasting about it, propose a change to that note.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
@@ -142,7 +140,7 @@ type Listed = { name: string; description: string; input_schema: unknown; asks: 
 
 // K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
-// Connector tools all start deferred (the small start set, NIGHT_PLAN_NOV9 §1); find_tools loads what a job needs.
+// Connector tools all start deferred (the small start set); find_tools loads what a job needs.
 const DIRECT_CONNECTOR_TOOLS = 0;
 export async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
   const { rows } = await pool.query(
@@ -489,7 +487,7 @@ function compactList(text: string): string | null {
   return `${meta ? `${meta}\n` : ""}${lines.join("\n")}${arr.length > 40 ? `\n… and ${arr.length - 40} more` : ""}`;
 }
 
-// A long connector result goes to a file on the agent's own computer (NIGHT_PLAN_NOV9 §1). The model reads the
+// A long connector result goes to a file on the agent's own computer. The model reads the
 // start, the record count and the path, and works on the file there with computer_bash when it needs the rest.
 async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
   const chars = r.text.length;

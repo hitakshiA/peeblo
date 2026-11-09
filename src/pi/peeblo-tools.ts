@@ -1,7 +1,7 @@
 // Peeblo's Pi extension: the teammate's tools. It runs inside Pi, so it imports nothing from core and holds
 // no secret: it asks core's loopback proxy (with the per-session token Pi already has) which tools exist,
 // and sends every call back to it. Core decides, asks for approval, and has Otari run it.
-// A session starts with the small start set (NIGHT_PLAN_NOV9 §1). Every other tool (Peeblo's own and every
+// A session starts with the small start set. Every other tool (Peeblo's own and every
 // connector's, ~1,200 for Peeblo) is registered only when find_tools picks it (K7b): registering them all at start
 // cost ~25 s per session.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
