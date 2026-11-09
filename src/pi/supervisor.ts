@@ -341,7 +341,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   if (r.stuck) {
     // The tool result already told the teammate it was stopped; the fixed sentence is only a fallback.
     const said = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [ctx.run.id])).rows[0].n);
-    return { text: said || r.text ? r.text : `I stopped here: ${r.stuck.reason}. Tell me how you'd like to go on.`, stopReason: "stuck" };
+    return { text: said || r.text ? r.text : `I had to stop before finishing this one; my work so far is saved. Say "continue" and I'll pick up where I left off.`, stopReason: "stuck" };
   }
   // Peeblo's own refusal (before Otari) carries its sentence; Otari's carries its numbers.
   if (r.money) return { text: r.money.by === "peeblo" ? `I can't run this: ${r.money.message} An admin can raise the budget, or it resets next month.` : budgetReply(r.money, tm.config.name), stopReason: "budget_blocked" };
