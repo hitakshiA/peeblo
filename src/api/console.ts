@@ -45,17 +45,10 @@ export function logout(req: IncomingMessage, res: ServerResponse): void {
 }
 
 // The built console (console/dist), served at /console/.
-// What the console shows for a job's ask: a person's words, or a plain name for an event Peeblo started itself.
-function askedLabel(text: string | null): string {
-  const t = String(text ?? "");
-  const ev = /^<peeblo_event>\s*([^:.\n]+)/.exec(t);
-  if (!ev) return t;
-  const kind = ev[1].trim();
-  return /first contact/.test(kind) ? "Welcome message (first contact)" : `${kind[0].toUpperCase()}${kind.slice(1)} (started by Peeblo)`;
-}
 // Where a session lives, in words: a DM, or a thread in a channel.
 const whereLabel = (kind: string, placeKey: string) => /^D/.test(placeKey) || kind === "dm" ? "Direct message" : /^[CG]/.test(placeKey) ? "Channel thread" : kind;
 
+import { askedLabel } from "../asked.ts";
 const DIST = join(import.meta.dirname, "..", "..", "console", "dist");
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".json": "application/json" };
 export function serveConsole(path: string, res: ServerResponse): boolean {

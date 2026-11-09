@@ -70,9 +70,12 @@ export const scheduleTools: AgentTool[] = [
     input_schema: object({}),
     kind: "read",
     async run(ctx) {
-      const rows = (await pool.query("SELECT kind, name, cron, run_at, enabled, filter AS source FROM schedules WHERE teammate_id = $1 ORDER BY created_at DESC LIMIT 20", [ctx.teammate.id])).rows;
+      const rows = (await pool.query("SELECT kind, name, cron, run_at, enabled, last_run_at, filter AS source FROM schedules WHERE teammate_id = $1 ORDER BY created_at DESC LIMIT 20", [ctx.teammate.id])).rows;
       if (!rows.length) return { text: "You have no schedules, triggers or watches." };
-      return { text: rows.map((r: any) => `- ${r.name ?? "(unnamed)"}: ${r.kind === "cron" ? `${r.cron} (UTC)` : r.kind === "once" ? `once at ${new Date(r.run_at).toISOString().slice(0, 16)} UTC` : r.kind}${r.enabled ? "" : " (paused)"}`).join("\n") };
+      // One-off times in the asker's own time zone, worked out here (models get offsets wrong), with UTC beside them.
+      const tz = ctx.person ? (await pool.query<{ tz: string | null }>("SELECT tz FROM people WHERE id = $1", [ctx.person.id])).rows[0]?.tz ?? null : null;
+      const at = (d: Date) => `${tz ? `${new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(d)} ${tz} (` : ""}${d.toISOString().slice(0, 16).replace("T", " ")} UTC${tz ? ")" : ""}`;
+      return { text: rows.map((r: any) => `- ${r.name ?? "(unnamed)"}: ${r.kind === "cron" ? `${r.cron} (cron, UTC)` : r.kind === "once" ? `once at ${at(new Date(r.run_at))}` : r.kind}${r.kind === "once" && r.last_run_at ? " (done: it ran)" : r.enabled ? "" : " (paused)"}`).join("\n") };
     },
   },
   {

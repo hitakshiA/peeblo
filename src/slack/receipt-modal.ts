@@ -9,11 +9,15 @@ import { money, readableModel, readableProvider, stepOutput, stepTitle } from ".
 async function personBudget(runId: string): Promise<string | null> {
   const p = (await pool.query("SELECT p.display_name, p.end_user_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id JOIN people p ON p.id = sub.person_id WHERE r.id = $1", [runId])).rows[0];
   if (!p?.end_user_id) return null;
+  // The same number the budget check uses: across every teammate's key, over the tier's own period.
   const { endUser, tiers } = await import("../otari/people.ts");
-  const [u, t] = await Promise.all([endUser(p.end_user_id), tiers()]);
+  const { personSpend } = await import("../otari/spend.ts");
+  const [u, t, s] = await Promise.all([endUser(p.end_user_id), tiers(), personSpend(p.end_user_id)]);
   const tier = t.find((x) => x.budget_id === u?.budget_id) ?? t.find((x) => x.is_default);
-  if (!u || !tier?.max_budget) return null;
-  return `${String(p.display_name ?? "You").split(" ")[0]} · ${money(Number(u.spend))} of ${money(tier.max_budget)} this month`;
+  if (!tier?.max_budget) return null;
+  const a = tier.reset_alignment ?? "";
+  const period = /day/.test(a) ? "today" : /week/.test(a) ? "this week" : "this month";
+  return `${String(p.display_name ?? "You").split(" ")[0]} · ${money(s.spent)} of ${money(tier.max_budget)} ${period}`;
 }
 
 export async function receiptModal(runId: string): Promise<any> {

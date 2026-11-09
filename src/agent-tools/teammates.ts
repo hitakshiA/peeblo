@@ -8,7 +8,7 @@ import type { AgentTool } from "./types.ts";
 
 export const askTeammateTool: AgentTool = {
   name: "ask_teammate",
-  description: "Ask another teammate for something in its field (a number, a lookup, a review) in this same thread. wait: true gets you its answer here; wait: false lets it answer in the thread while you carry on.",
+  description: "Ask another teammate for something in its field (a number, a lookup, a review) in this same thread. wait: true gets you its answer here; wait: false lets it answer in the thread while you carry on. Pass on what the person said in their words; never say a person approved something unless they approved it on a card.",
   input_schema: object({
     teammate: { type: "string" },
     question: { type: "string", description: "What you need and why." },

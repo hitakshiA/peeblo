@@ -50,6 +50,8 @@ async function body(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+const MAX_OUT = 16_384;
+
 function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string, label?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
@@ -61,6 +63,9 @@ function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?
     j.metadata = { ...(j.metadata ?? {}) };
     if (b.endUser && config.otariKeyKind === "service") j.metadata.user_id = b.endUser; else delete j.metadata.user_id;
   } else if (b.endUser && config.otariKeyKind === "service") j.user = b.endUser; else delete j.user;
+  // Agents ask for the model's whole output limit (384k tokens on some), and Otari reserves budget for all of it,
+  // so a teammate near its budget would be refused a one-line answer. One turn never writes that much.
+  for (const k of ["max_tokens", "max_completion_tokens", "max_output_tokens"]) if (typeof j[k] === "number" && j[k] > MAX_OUT) j[k] = MAX_OUT;
   if (Array.isArray(j.tools)) j.tools = gatewayTools(j.tools, b.web);
   // Code runs in Otari's sandbox, inside the model call. One sandbox per session, held between calls.
   if (path === "/chat/completions" && b.code && sandbox) j.tools = [...(j.tools ?? []), { type: "otari_code_execution", container: sandbox }];

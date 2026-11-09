@@ -49,12 +49,22 @@ const hireSpec = {
   connectors: { type: "array", items: { type: "string" }, maxItems: 10, description: "Otari MCP server names, e.g. linear, posthog, stripe." },
   read_only: { type: ["array", "null"], items: { type: "string" }, description: "Connectors it may only read, never write (e.g. [\"stripe\"] when a person says read-only on Stripe). Enforced, not just instructions." },
   github_repos: { type: ["array", "null"], items: { type: "string" }, maxItems: 5, description: "owner/repo it works in (e.g. your-org/checkout-api): GitHub access scoped to these, and its own checkout of each on its computer. Required for any teammate that changes code." },
-  mode: { type: ["string", "null"], enum: [...MODES, null] },
+  mode: { type: ["string", "null"], enum: [...MODES, null], description: "When it asks first. ask: a card before every write. auto (default): a write the person plainly asked for goes ahead after a reviewer check, anything else gets a card. trusted: asks only before money, deletes, shipping and posts outside the conversation. yolo: never asks (admins only). In every mode but yolo, money, deletes, shipping work and posts outside the conversation always get a card. Describe the mode to people in these words; if they want every write approved, set ask." },
   computer_size: { type: ["string", "null"], enum: ["small", "large", null], description: "large only for teammates that browse websites." },
   face: { type: ["string", "null"], enum: [...SHAPES, null] },
   color: { type: ["string", "null"], enum: [...COLORS, null] },
   profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
 };
+// A hire pins a model only when a person named it; otherwise it runs on the worker role policy, which carries the
+// fallback and the step-down to a cheaper model near its budget.
+async function keepModelIfNamed(runId: string | null, a: any): Promise<void> {
+  if (!a.model || !runId) return;
+  const { personWords } = await import("../approvers.ts");
+  const said = (await personWords(runId)).asks.join(" ").toLowerCase();
+  const parts = String(a.model).toLowerCase().split(/[/:_\s-]+/).filter((p) => p.length >= 3 && !/^\d/.test(p));
+  if (!parts.some((p) => said.includes(p))) a.model = null;
+}
+
 export function configFrom(a: any): Partial<TeammateConfig> {
   return {
     // Teammates run on the worker role policy in Otari (config/model-tiers.json), unless a person picked a model.
@@ -127,6 +137,7 @@ export const managerTools: AgentTool[] = [
     kind: "write",
     async authorize(ctx, a) {
       if (!ctx.person) return "Hiring needs a person to own the teammate.";
+      await keepModelIfNamed(ctx.runId, a);
       try { validateConfig(configFrom(a)); } catch (e) { return `The spec isn't valid: ${(e as Error).message}`; }
       // The authority rules (src/hire-rules.ts): YOLO for admins, an allowed model, a budget within the hirer's tier.
       const bad = await configProblems(ctx.person, { mode: a.mode, model: a.model || null, budget_usd: a.budget_usd, tools: a.tools ?? [], connectors: a.connectors ?? [] });
@@ -156,11 +167,12 @@ export const managerTools: AgentTool[] = [
         ...(a.connectors ?? []).filter((c: string) => c !== "github" || !a.github_repos?.length).map((c: string) => `${serviceName(c)}${(a.read_only ?? []).includes(c) ? " (read-only)" : ""}`),
         "its own computer", ...((a.tools ?? []).includes("web") ? ["the web"] : []),
       ];
-      const asks = { ask: "asks before every write", auto: "asks before it writes anything that matters", trusted: "asks before it deletes anything", yolo: "acts without asking" }[String(fake.config.mode)] ?? "asks before it writes";
+      const asks = { ask: "asks before every write", auto: "asks before money, deletes and any write you didn't ask for", trusted: "asks before money and deletes", yolo: "acts without asking" }[String(fake.config.mode)] ?? "asks before it writes";
       const hireFacts = { role: a.role, uses: uses.join(", "), budget: `$${a.budget_usd} a month`, asks };
       return { kind: "hire", hire: hireFacts, approvers: ctx.person ? [ctx.person.id] : [], id_card_url: card, id_card_hero: hero, summary: `Hire ${a.name}: ${String(a.role).replace(/^./, (c: string) => c.toLowerCase())}` };
     },
     async run(ctx, a) {
+      await keepModelIfNamed(ctx.runId, a);
       // Slugs stay unique across archived teammates too (an archived "patch" keeps its history), so a taken one
       // gets a short suffix; the name people see stays "Patch".
       let slug = slugOf(a.name);
@@ -240,6 +252,10 @@ export const managerTools: AgentTool[] = [
         : a.field === "computer_size" ? a.value === "large" && c.computer?.size !== "large"
         : a.field === "read_only" ? (((c as any).read_only ?? []) as string[]).some((x) => !list(a.value).includes(x))
         : a.field === "model";
+      // A change another teammate asked for (a handoff) is never a person's word, whatever its message says: the
+      // owner's card decides, for every field.
+      const from = ctx.runId ? (await pool.query("SELECT data->>'caller' AS caller FROM events WHERE type = 'chain.call' AND data->>'child_run' = $1 LIMIT 1", [ctx.runId])).rows[0]?.caller : null;
+      if (from) return { ask: `${from} asked to change ${c.name}'s ${a.field.replace("_usd", "")}${a.field === "instructions" ? "" : ` to ${a.value}`} (${a.reason}). A teammate asked, not a person, so the owner decides.` };
       return raises ? { ask: `${ctx.person?.display_name ?? "Someone"} wants to change ${c.name}'s ${a.field.replace("_usd", "")} to ${a.value} (${a.reason}).` } : null;
     },
     async run(ctx, a) {

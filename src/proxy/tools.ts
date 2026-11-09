@@ -226,6 +226,8 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
       // Only text from outside the company is screened (customer tickets and chats, web pages and scrapers, other
       // people's files, other bots): internal tools stay labelled as untrusted but cost no guard call.
       screened = OUTSIDE.test(source) ? await screen(text, b.endUser).catch(() => null) : null;
+      // On the receipt: which guard checked this outside text, and what it said.
+      if (screened) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "guard.checked", data: { checked_by: screened.checked_by, safe: !screened.flagged, source, score: screened.score, request_id: screened.requestId ?? null, ...(screened.disputed ? { disputed: screened.disputed } : {}) } }).catch(() => {});
       text = wrapUntrusted(text, source, screened);
     }
     if (!r.isError && (extra.kind ?? base.kind) === "read") {

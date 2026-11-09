@@ -222,7 +222,7 @@ export function installSlackInteractions(): void {
     // Out of budget: ask the owner for more, and the owner's raise.
     if (a.action_id.startsWith("raise_budget")) a.action_id = "raise_budget"; // one per button: Slack needs unique ids
     if (a.action_id === "ask_budget" || a.action_id === "raise_budget") {
-      const [slug, amount] = String(a.value).split(":");
+      const [slug, amount, blockedRun] = String(a.value).split(":");
       const tm = await getTeammate(slug);
       if (!tm) return;
       const { mayManageTeammate } = await import("../authority.ts");
@@ -233,7 +233,18 @@ export function installSlackInteractions(): void {
         if (bad) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: bad }).catch(() => {}));
         const { updateTeammate } = await import("../store/teammates.ts");
         await updateTeammate(tm.slug, { budget: { monthly_usd: Number(amount) } } as any, { label: `${who.display_name ?? "the owner"} from Slack` }, "budget raised from the budget card");
-        return void (await respond(payload.response_url, { replace_original: true, text: `✓ ${tm.config.name}'s budget is now $${amount} a month (raised by ${who.display_name ?? "the owner"}).` }).catch(() => {}));
+        await respond(payload.response_url, { replace_original: true, text: `✓ ${tm.config.name}'s budget is now $${amount} a month (raised by ${who.display_name ?? "the owner"}).${blockedRun ? " Running the job again." : ""}` }).catch(() => {});
+        // The job the budget stopped runs again, for the person who asked it (once per raise).
+        if (blockedRun) {
+          const r = (await pool.query("SELECT r.session_id, sub.text, sub.person_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [blockedRun])).rows[0];
+          if (r) {
+            const { submit } = await import("../store/sessions.ts");
+            const { startRun } = await import("../durable/runs.ts");
+            const { run, created } = await submit({ sessionId: r.session_id, personId: r.person_id ?? who.id, requestId: `raise:${blockedRun}:${amount}`, text: r.text, source: "slack" });
+            if (created) await startRun(run.id);
+          }
+        }
+        return;
       }
       const owner = tm.owner_person ? (await pool.query("SELECT slack_user FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.slack_user : null;
       if (!owner) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `${tm.config.name} has no owner yet; ask an admin.` }).catch(() => {}));

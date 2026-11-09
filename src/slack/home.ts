@@ -10,6 +10,7 @@ import { onEvent } from "../store/events.ts";
 import { personForSlack } from "../store/people.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 import { slack } from "./api.ts";
+import { askedLabel } from "../asked.ts";
 
 const viewers = new Map<string, { appId: string; teammateId: string; user: string; at: number; last: number; timer?: NodeJS.Timeout }>();
 
@@ -44,7 +45,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
     const step = (await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'plan.updated' ORDER BY id DESC LIMIT 1", [r.id])).rows[0]?.data?.steps?.find((x: any) => x.status === "doing")?.step;
     const link = await permalink(appId, r.place?.slack);
     // What a person asked, in their words; runs no person started are named for what they are.
-    const label = r.source === "welcome" ? "Saying hello to someone new" : r.source === "schedule" || r.source === "webhook" ? "A scheduled job" : r.source === "teammate" ? `A job from another teammate: ${String(r.asked).split("\n").find((l: string) => l.startsWith("Objective:"))?.slice(11) ?? ""}` : String(r.asked).replace(/<[^>]+>/g, "").replace(/\n/g, " ");
+    const label = r.source === "welcome" ? "Saying hello to someone new" : r.source === "schedule" || r.source === "webhook" ? "A scheduled job" : r.source === "teammate" ? `A job from another teammate: ${String(r.asked).split("\n").find((l: string) => l.startsWith("Objective:"))?.slice(11) ?? ""}` : askedLabel(r.asked).replace(/<[^>]+>/g, "").replace(/\n/g, " ");
     blocks.push({ type: "section", text: { type: "mrkdwn", text: `${r.status === "waiting" ? "⏸️ waiting for approval" : "⏳"} ${label.slice(0, 200)}${step ? `\n_${step}_` : ""}` } });
     blocks.push({ type: "actions", elements: [
       ...(link ? [{ type: "button", text: { type: "plain_text", text: "Open thread" }, url: link, action_id: `open_thread:${r.id}` }] : []),
@@ -77,7 +78,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   for (const r of recent) {
     const { buildReceipt } = await import("../receipts.ts");
     const link = await buildReceipt(r.id).then((x) => x.links?.session ?? null).catch(() => null);
-    lines.push(`${r.status === "done" ? "✅" : "⚠️"} ${String(r.asked).replace(/\n/g, " ").replace(/<[^>]+>/g, "").trim() || "(a job)"} · ${usd(Number(r.cost))}${link ? ` · <${link}|receipt>` : ""}`);
+    lines.push(`${r.status === "done" ? "✅" : "⚠️"} ${askedLabel(r.asked).replace(/\n/g, " ").replace(/<[^>]+>/g, "").trim() || "(a job)"} · ${usd(Number(r.cost))}${link ? ` · <${link}|receipt>` : ""}`);
   }
   blocks.push({ type: "section", text: { type: "mrkdwn", text: lines.join("\n") || "No jobs yet." } });
   // Budget meter: the teammate's month, and the viewer's share of it.

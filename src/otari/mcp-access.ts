@@ -79,10 +79,11 @@ async function keyIds(): Promise<Set<string>> {
   return new Set((await pool.query<{ key_id: string }>("SELECT key_id FROM teammate_keys WHERE retired_at IS NULL")).rows.map((r) => r.key_id));
 }
 
-// A teammate's connectors or read-only list changed: its grants follow (in the background, with a session).
+// A teammate is hired, or its connectors or read-only list changed: its grants follow (in the background, with a session).
 export function followTeammateChanges(): void {
   void import("../store/events.ts").then(({ onEvent }) => onEvent(async (e) => {
-    if (e.type !== "teammate.updated") return;
+    // A new hire too: its first connector call should already run on its own key.
+    if (e.type !== "teammate.updated" && e.type !== "teammate.hired") return;
     const { getTeammate } = await import("../store/teammates.ts");
     const tm = await getTeammate(String((e.data as any).teammate_id));
     if (tm) await syncTeammateAccess(tm).catch((x) => console.error(`mcp access ${tm.slug}:`, (x as Error).message));

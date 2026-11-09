@@ -81,7 +81,7 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
       const who = from.personId ? await getPerson(from.personId) : null;
       const dm: any = who?.slack_user ? await slack(own, "conversations.open", { users: who.slack_user }).catch(() => null) : null;
       if (!dm?.channel?.id) return { refused: `${callee.config.name} can't reach the person from its own app here.` };
-      const top: any = await slack(own, "chat.postMessage", { channel: dm.channel.id, text: `${from.caller.config.name} handed me this: ${text.split("\n").find((l) => l.startsWith("Objective:") || l.length > 20)?.slice(0, 280) ?? "a job"}` });
+      const top: any = await slack(own, "chat.postMessage", { channel: dm.channel.id, text: `${from.caller.config.name} handed me this: ${text.split("\n").find((l) => l.startsWith("Objective:") || (l.length > 20 && !/ asks \(for .*\):$/.test(l)))?.slice(0, 280) ?? "a job"}` });
       place = { app_id: own, team: here.team, channel: dm.channel.id, channel_type: "im", thread_ts: top.ts, trigger_ts: top.ts, user: who!.slack_user!, direct: true };
     }
   }

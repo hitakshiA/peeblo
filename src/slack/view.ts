@@ -79,6 +79,14 @@ async function post(v: View, text: string, blocks?: any[]): Promise<any> {
   return slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text, ...(blocks ? { blocks } : {}), mrkdwn: true });
 }
 
+// The reply always lands: if Slack refuses a block (a chart, a table), it goes again without those, then as text.
+async function postSafely(v: View, text: string, blocks: any[]): Promise<void> {
+  const DATA = ["data_visualization", "data_table", "layout"];
+  try { await post(v, text, blocks); return; } catch (e) { console.error("slack view: reply:", (e as Error).message); }
+  try { await post(v, text, blocks.filter((b) => !DATA.includes(b.type))); return; } catch (e) { console.error("slack view: reply without data blocks:", (e as Error).message); }
+  await post(v, text).catch((e) => console.error("slack view: plain reply:", (e as Error).message));
+}
+
 const planTitle = (v: View): string => {
   const list = [...v.tasks.values()];
   const n = list.length;
@@ -245,7 +253,9 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async (e) => {
         // The stream couldn't be closed: the answer goes out as its own message, with its text, never just "Done".
         console.error("slack view: stopStream:", (e as Error).message);
-        await post(v, finalText || summary, [...(finalText ? [{ type: "markdown", text: finalText.slice(0, 11_000) }] : []), ...blocks]);
+        // Close the stream without the blocks Slack refused, so "Working on it" never stays up.
+        await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open] }).catch(() => null);
+        await postSafely(v, finalText || summary, [...(finalText ? [{ type: "markdown", text: finalText.slice(0, 11_000) }] : []), ...blocks]);
       });
     } else if (v.privateOnly && !v.posted) {
       // Answered privately: the receipt goes to the asker privately too.
@@ -253,7 +263,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     } else if (v.place.direct || v.posted || fallbackText) {
       // What it posted is the message's text; the status line is only for a run that said nothing.
       const said = fallbackText ?? (v.text.trim() ? v.text : null);
-      await post(v, said ?? summary, [...(said ? [{ type: "markdown", text: said.slice(0, 11_000) }] : []), ...blocks]);
+      await postSafely(v, said ?? summary, [...(said ? [{ type: "markdown", text: said.slice(0, 11_000) }] : []), ...blocks]);
     }
     if (v.place.direct) {
       await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes");
@@ -279,11 +289,14 @@ async function budgetCard(v: View, d: any): Promise<void> {
   const asker = (await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [v.place.user])).rows[0];
   const { mayManageTeammate } = await import("../authority.ts");
   const buttons = asker && mayManageTeammate(tm, asker)
-    ? raiseOptions(tm.config.budget.monthly_usd, spent).map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: `raise_budget:${i}`, value: `${tm.slug}:${x}` }))
+    ? raiseOptions(tm.config.budget.monthly_usd, spent).map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: `raise_budget:${i}`, value: `${tm.slug}:${x}${v.runId ? `:${v.runId}` : ""}` }))
     : [{ type: "button", style: "primary", text: { type: "plain_text", text: `Ask ${ownerName} for more` }, action_id: "ask_budget", value: tm.slug }];
   v.budgetShown = true;
   await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text: `${tm.config.name} has used its budget for this month.`, blocks: [
-    { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} has used ${usd(spent)} of ${usd(tm.config.budget.monthly_usd)} this month*, so it stopped before going over.` } },
+    { type: "section", text: { type: "mrkdwn", text: spent >= tm.config.budget.monthly_usd
+      ? `*${tm.config.name} is out of budget:* it has used ${usd(spent)} of its ${usd(tm.config.budget.monthly_usd)} this month, so this job didn't run.`
+      : `*${tm.config.name} is near its budget:* ${usd(spent)} of ${usd(tm.config.budget.monthly_usd)} used this month, and this job would go over, so it didn't run.` } },
+    ...(String(buttons[0]?.action_id ?? "").startsWith("raise_budget") ? [{ type: "context", elements: [{ type: "mrkdwn", text: "Raise it and this job runs again." }] }] : []),
     { type: "actions", elements: buttons },
   ] }).catch((e) => console.error("budget card:", (e as Error).message));
 }

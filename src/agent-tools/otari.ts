@@ -92,7 +92,17 @@ export const otariTools: AgentTool[] = [
       const names = new Map((await listTeammates()).map((t) => [t.slug, t.config.name]));
       const { readableModel } = await import("../slack/look.ts");
       const top = (g: { label: string; cost: number; requests: number }[], n = 8) => g.filter((x) => x.cost > 0).sort((x, y) => y.cost - x.cost).slice(0, n).map((x) => `- ${x.label}: ${usd(x.cost)} (${x.requests} calls)`).join("\n");
-      const crew = top(u.by_tag.filter((g) => g.key && names.has(g.key)).map((g) => ({ label: names.get(g.key!)!, cost: g.cost, requests: g.requests })));
+      // By key: every teammate calls on its own Otari key, so its key's usage is its spend (a tag can be missing).
+      const { pool: db } = await import("../db.ts");
+      const keyNames = new Map((await db.query<{ key_id: string; slug: string }>("SELECT k.key_id, t.slug FROM teammate_keys k JOIN teammates t ON t.id = k.teammate_id")).rows.map((r) => [r.key_id, names.get(r.slug) ?? r.slug]));
+      const { config } = await import("../config.ts");
+      const { readScreenKey } = await import("../guard.ts");
+      const screenKey = readScreenKey()?.id;
+      const isCore = (g: { label: string | null }) => Boolean(coreLabel && g.label === coreLabel);
+      const coreLabel = await (async () => { try { const { admin } = await import("../otari/admin.ts"); const r: any = await admin("GET", "/organizations/me/keys", undefined, "listing keys", ""); return ((r.data ?? r) as any[]).find((k) => k.key_prefix && config.otariKey.startsWith(k.key_prefix) && config.otariKey.endsWith(k.key_suffix ?? ""))?.key_name ?? null; } catch { return null; } })();
+      const mine = u.by_api_key.filter((g) => g.key && (keyNames.has(g.key) || g.key === screenKey || isCore(g)));
+      const crewTotal = mine.reduce((x, g) => x + g.cost, 0);
+      const crew = top(mine.map((g) => ({ label: keyNames.get(g.key!) ?? (g.key === screenKey ? "Guardrail screening" : "Peeblo (setup and checks, core key)"), cost: g.cost, requests: g.requests })));
       const models = new Map<string, { label: string; cost: number; requests: number }>();
       for (const g of u.by_model) { const n = readableModel(String(g.key ?? "")).name; const m = models.get(n) ?? { label: n, cost: 0, requests: 0 }; m.cost += g.cost; m.requests += g.requests; models.set(n, m); }
       let people = "";
@@ -104,7 +114,7 @@ export const otariTools: AgentTool[] = [
         people = `\nBy person:\n${top([...per.values()])}`;
       }
       const days = u.series.filter((d) => d.cost > 0).map((d) => ({ day: d.bucket_start.slice(0, 10), usd: Number(d.cost.toFixed(4)), calls: d.requests }));
-      return { text: `From Otari's usage since ${(since ?? "the start of the month").slice(0, 10)} (the whole org: ${usd(u.totals.cost)}, ${u.totals.request_count} calls).\nBy teammate:\n${crew || "- none yet"}\nBy model:\n${top([...models.values()], 6)}${people}\nPer day (for show_data): ${JSON.stringify(days.slice(-31))}`, data: { days } };
+      return { text: `From Otari's usage since ${(since ?? "the start of the month").slice(0, 10)}. Peeblo's crew: ${usd(crewTotal)} (by each teammate's own Otari key). The whole Otari org, including keys that aren't Peeblo's: ${usd(u.totals.cost)}, ${u.totals.request_count} calls; report the crew's number unless asked about the org.\nBy teammate:\n${crew || "- none yet"}\nBy model:\n${top([...models.values()], 6)}${people}\nPer day (for show_data): ${JSON.stringify(days.slice(-31))}`, data: { days } };
     },
   },
   {

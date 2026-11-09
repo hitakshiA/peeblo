@@ -14,8 +14,10 @@ RUN pnpm build
 FROM base
 # QEMU and e2fsprogs run the teammate micro-VMs (Gondolin) and build their image; git keeps company and teammate
 # memory; cpio and lz4 pack the image's initramfs; unzip and curl fetch the computer image's vendored tools and answer the health check.
+# Fonts: the ID cards and faces are drawn from SVG, and text needs a font (DejaVu stands in for Helvetica/Arial).
 RUN apt-get update && apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-arm qemu-utils e2fsprogs cpio lz4 ca-certificates git unzip curl \
- && rm -rf /var/lib/apt/lists/*
+    fontconfig fonts-dejavu-core \
+ && fc-cache -f && rm -rf /var/lib/apt/lists/*
 
 # The Docker CLI (pinned, static) builds the large computer image; only `./peeblo image large` lends it the host's
 # Docker socket, for that one command. Core itself never has the socket.

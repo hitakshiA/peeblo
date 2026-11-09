@@ -27,7 +27,14 @@ function table(a: any): any[] | string {
 function chart(a: any): any[] | string {
   const type = a.chart_type ?? "bar";
   if (!["bar", "line", "area", "pie"].includes(type)) return "chart_type is bar, line, area or pie.";
-  const cats: string[] = (a.categories ?? []).map((c: unknown) => cut(c, 20));
+  // Slack refuses repeated category labels (two $99 charges), so a repeat gets its count: "$99.00 (2)".
+  const seen = new Map<string, number>();
+  const cats: string[] = (a.categories ?? []).map((c: unknown) => {
+    const base = cut(c, 15);
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? cut(c, 20) : `${base} (${n})`;
+  });
   const series: { name: string; values: unknown[] }[] = a.series ?? [];
   if (!cats.length || cats.length > 20) return "A chart needs 1 to 20 categories (labels of 20 characters at most).";
   if (!series.length || series.length > 12) return "A chart needs 1 to 12 series.";
