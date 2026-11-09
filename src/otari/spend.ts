@@ -175,3 +175,10 @@ export async function capCheck(tm: Teammate, endUser: string | null, model: stri
   }
   return null;
 }
+
+// Two "Raise to $N" choices above both the budget and what's already spent, whole dollars, never the same twice.
+export function raiseOptions(budget: number, spent: number): number[] {
+  const base = Math.max(budget, spent);
+  const a = Math.max(Math.ceil(base * 1.5), Math.ceil(budget) + 1);
+  return [a, Math.max(Math.ceil(base * 2), a + 5)];
+}

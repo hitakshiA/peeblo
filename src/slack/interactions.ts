@@ -220,6 +220,7 @@ export function installSlackInteractions(): void {
       return;
     }
     // Out of budget: ask the owner for more, and the owner's raise.
+    if (a.action_id.startsWith("raise_budget")) a.action_id = "raise_budget"; // one per button: Slack needs unique ids
     if (a.action_id === "ask_budget" || a.action_id === "raise_budget") {
       const [slug, amount] = String(a.value).split(":");
       const tm = await getTeammate(slug);
@@ -238,10 +239,11 @@ export function installSlackInteractions(): void {
       if (!owner) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `${tm.config.name} has no owner yet; ask an admin.` }).catch(() => {}));
       const dm: any = await slack(appId, "conversations.open", { users: owner }).catch(() => null);
       const now = tm.config.budget.monthly_usd;
-      const up = [Math.ceil(now * 1.5), now * 2].map((x) => Math.max(x, now + 1));
+      const { raiseOptions, teammateSpend } = await import("../otari/spend.ts");
+      const up = raiseOptions(now, (await teammateSpend(tm).catch(() => null))?.spent ?? 0);
       if (dm?.channel?.id) await slack(appId, "chat.postMessage", { channel: dm.channel.id, text: `${tm.config.name} has used its $${now} for this month.`, blocks: [
         { type: "section", text: { type: "mrkdwn", text: `<@${payload.user.id}> asked for more budget: *${tm.config.name}* has used its $${now} for this month.` } },
-        { type: "actions", elements: up.map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: "raise_budget", value: `${tm.slug}:${x}` })) },
+        { type: "actions", elements: up.map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: `raise_budget:${i}`, value: `${tm.slug}:${x}` })) },
         { type: "context", elements: [{ type: "mrkdwn", text: "Only the owner or an admin can raise it." }] },
       ] }).catch(() => null);
       return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Asked <@${owner}> for more budget.` }).catch(() => {}));

@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; runId?: string; sessionId?: string | null; ready?: Promise<void>; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
+  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; budgetShown?: boolean; runId?: string; sessionId?: string | null; ready?: Promise<void>; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 // The model sometimes writes Slack's <url|text> links or code ticks around a site name; markdown blocks want neither.
@@ -197,6 +197,12 @@ async function ending(runId: string, ok: boolean): Promise<any[]> {
 async function finish(runId: string, v: View, ok: boolean, fallbackText: string | null): Promise<void> {
   await enqueue(v, async () => {
     v.finished = true;
+    // A budget stop says everything on its card: no second "Stopped" message under it.
+    if (v.budgetShown && !ok && !fallbackText && !v.text) {
+      if (v.streamTs && !v.failedStream) await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: "Out of budget" }] }).catch(() => null);
+      if (v.place.direct) { await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes"); await sessionStatus(v, "active"); }
+      return;
+    }
     // Tables, charts and KPI strips (show_data) sit under the answer, before the receipt; at most 2 charts.
     let charts = 0;
     const shown = v.displays.filter((b) => b.type !== "data_visualization" || ++charts <= 2);
@@ -264,15 +270,22 @@ async function budgetCard(v: View, d: any): Promise<void> {
   const tm = await getTeammate(v.slug);
   if (!tm) return;
   const owner = tm.owner_person ? (await pool.query("SELECT slack_user, display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0] : null;
-  const { teammateSpend, usd } = await import("../otari/spend.ts");
+  const { raiseOptions, teammateSpend, usd } = await import("../otari/spend.ts");
   const s = await teammateSpend(tm).catch(() => null);
   const spent = s?.spent ?? Number(d.spent ?? 0);
   const first = (owner?.display_name ?? "the owner").split(" ")[0];
   const ownerName = first === "the" ? "the owner" : first.charAt(0).toUpperCase() + first.slice(1);
+  // The owner or an admin raises it right here; anyone else asks the owner.
+  const asker = (await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [v.place.user])).rows[0];
+  const { mayManageTeammate } = await import("../authority.ts");
+  const buttons = asker && mayManageTeammate(tm, asker)
+    ? raiseOptions(tm.config.budget.monthly_usd, spent).map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: `raise_budget:${i}`, value: `${tm.slug}:${x}` }))
+    : [{ type: "button", style: "primary", text: { type: "plain_text", text: `Ask ${ownerName} for more` }, action_id: "ask_budget", value: tm.slug }];
+  v.budgetShown = true;
   await slack(v.place.app_id, "chat.postMessage", { channel: v.place.channel, thread_ts: v.place.thread_ts, text: `${tm.config.name} has used its budget for this month.`, blocks: [
     { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} has used ${usd(spent)} of ${usd(tm.config.budget.monthly_usd)} this month*, so it stopped before going over.` } },
-    { type: "actions", elements: [{ type: "button", style: "primary", text: { type: "plain_text", text: `Ask ${ownerName} for more` }, action_id: "ask_budget", value: tm.slug }] },
-  ] }).catch(() => null);
+    { type: "actions", elements: buttons },
+  ] }).catch((e) => console.error("budget card:", (e as Error).message));
 }
 
 // The approval card, inline under its step: icon, "Okay to write to Linear?", one quiet line, Approve / Not now.
