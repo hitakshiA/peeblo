@@ -106,7 +106,24 @@ export async function syncRolePolicies(): Promise<boolean> {
   const { session, upsertRoutingPolicy } = await import("./admin.ts");
   if (!(await session())) { policiesReady = false; return false; }
   try {
-    for (const [name, r] of Object.entries(ROLES)) await upsertRoutingPolicy(name, await policySpec(r));
+    // Only what's missing, or what config/model-tiers.json changed since Peeblo last wrote it: an edit made in Otari's
+    // dashboard stays until the file changes that role.
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { createHash } = await import("node:crypto");
+    const { config } = await import("../config.ts");
+    const file = join(config.dataDir, "role-policies.json");
+    let pushed: Record<string, string> = {};
+    try { pushed = JSON.parse(readFileSync(file, "utf8")); } catch { /* first run */ }
+    const have = new Set(await rolePoliciesInOtari());
+    for (const [name, r] of Object.entries(ROLES)) {
+      const hash = createHash("sha256").update(JSON.stringify(r)).digest("hex").slice(0, 16);
+      if (have.has(name) && pushed[name] === hash) continue;
+      if (have.has(name) && !pushed[name]) { pushed[name] = hash; continue; } // made earlier (or by hand): adopt it
+      await upsertRoutingPolicy(name, await policySpec(r));
+      pushed[name] = hash;
+    }
+    writeFileSync(file, JSON.stringify(pushed, null, 2));
     policiesReady = true;
   } catch (e) {
     console.error("otari: role policies:", (e as Error).message.slice(0, 200));

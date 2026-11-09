@@ -25,7 +25,13 @@ type KeyRow = { key_id: string; secret: Buffer; budget_id: string | null; ceilin
 // Sessions of a new teammate can start together, so creation runs one at a time per teammate.
 const making = new Map<string, Promise<{ keyId: string; secret: string } | null>>();
 export async function teammateKey(tm: Teammate): Promise<{ keyId: string; secret: string } | null> {
-  if ((await spendMode()) !== "key") return null;
+  if ((await spendMode()) !== "key") {
+    // No admin session now (it expired, or was never made): a teammate that already has its own key keeps using it,
+    // with the ceiling Otari already holds. Only making a key or changing its ceiling needs the session.
+    const { rows } = await pool.query<KeyRow>("SELECT key_id, secret FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [tm.id]);
+    if (rows[0] && config.teammateSpend !== "tag") return { keyId: rows[0].key_id, secret: unseal<string>(rows[0].secret) };
+    return null;
+  }
   const pending = making.get(tm.id);
   if (pending) return pending;
   const p = teammateKeyOnce(tm).finally(() => making.delete(tm.id));

@@ -17,7 +17,7 @@ export async function ensureEndUser(externalId: string, alias: string | null, bu
   if (existing?.budget_id) { known.set(k, budgetId ?? null); return; }
   // Otari's PUT needs a budget; without one named, the key's default tier.
   const budget = budgetId ?? (await otari<Tier[]>("GET", "/end-user-budgets", undefined, opts)).data.find((t) => t.is_default)?.budget_id;
-  if (!budget) throw new Error("Peeblo's Otari key has no default end-user budget; set OTARI_END_USER_BUDGET_ID or give the key a default tier");
+  if (!budget) throw new Error("Peeblo's Otari key has no default end-user budget; set a default end-user budget on the service key in Otari (Keys), or OTARI_END_USER_BUDGET_ID");
   await otari("PUT", `/end-users/${encodeURIComponent(externalId)}`, { alias: alias ?? externalId, budget_id: budget, metadata: { app: "peeblo" } }, opts);
   known.set(k, budgetId ?? null);
 }
