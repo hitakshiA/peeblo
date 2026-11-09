@@ -275,6 +275,8 @@ export const managerTools: AgentTool[] = [
         : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) }
         : a.field === "budget_usd" ? { budget: { monthly_usd: Number(a.value) } } : { computer: { ...t.config.computer, size: a.value } };
       const next = await updateTeammate(t.slug, patch, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
+      // A budget change reaches the teammate's Otari key ceiling now, not at its next call.
+      if (a.field === "budget_usd") { const { teammateKey } = await import("../otari/spend.ts"); await teammateKey(next as any).catch(() => null); }
       return { text: `${t.config.name} is now at version ${next.version}: ${a.field} = ${a.value}. ${["tools", "connectors"].includes(a.field) ? `Its running conversations pick this up on their next message, ongoing work included; it can check with find_tools. Say "${t.config.name} can use it from its next step", not that it already did something with it.` : "Running conversations keep their setup; new ones use it (a lower mode applies at once)."}` };
     },
   },

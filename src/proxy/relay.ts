@@ -117,7 +117,9 @@ function gatewayTools(tools: any[], web: WebPolicy | null): any[] {
 // write (max_tokens, else 1,000), at catalog prices. Role policies are priced as their default model.
 async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   const j = JSON.parse(raw.toString("utf8"));
-  const tm = await teammateAt(b.teammateId, b.teammateVersion);
+  // Budgets are read fresh (a raise applies to running work); the rest of the setup stays pinned to the session.
+  const { getTeammate } = await import("../store/teammates.ts");
+  const tm = (await getTeammate(b.teammateId)) ?? (await teammateAt(b.teammateId, b.teammateVersion));
   if (!tm) return unchecked("its teammate's setup couldn't be found");
   const model = typeof j.model === "string" ? (j.model in ROLES ? ROLES[j.model].default : j.model) : tm.config.model.default;
   const promptChars = JSON.stringify(j.messages ?? j.input ?? "").length + JSON.stringify(j.tools ?? []).length + String(j.system ?? "").length;
