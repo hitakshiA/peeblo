@@ -65,3 +65,24 @@ export const subagentTool: AgentTool = {
     }
   },
 };
+
+// One approval for a plan a person stated ("push the guard, then merge"): the card lists the steps; once approved,
+// each listed step runs in this job without its own card. Required rules (no force-push, no credentials) still apply.
+export const planApprovalTool: AgentTool = {
+  name: "plan_approval",
+  description: "When a person has asked for several writes as one job (\"push the fix, then merge\"), ask for them together: one card with the steps in plain words, each naming the tool it will use. Once approved, those tools run in this job without another card. Don't use it to bundle steps nobody asked for.",
+  input_schema: object({
+    title: { type: "string", description: "The whole job in words, e.g. \"Push the guard to PR #1, then merge #1\"." },
+    steps: { type: "array", maxItems: 8, items: { type: "object", properties: { action: { type: "string", description: "The step in words: repo, branch, what changes." }, tool: { type: "string", description: "The exact tool name this step uses." } }, required: ["action", "tool"], additionalProperties: false } },
+  }),
+  kind: "write",
+  describe(_ctx, a) {
+    return { kind: "plan", title: String(a.title), summary: (a.steps ?? []).map((x: any, i: number) => `${i + 1}. ${x.action}`).join("\n"), steps: a.steps };
+  },
+  async run(ctx, a) {
+    const tools = [...new Set((a.steps ?? []).map((x: any) => String(x.tool)))];
+    await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "plan.approved", data: { title: a.title, tools } });
+    return { text: `Approved: ${a.title}. Do the steps now, in order; the listed tools (${tools.join(", ")}) run in this job without another card.` };
+  },
+};
+

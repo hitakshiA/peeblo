@@ -66,6 +66,12 @@ export async function approvalTtl(runId: string): Promise<number> {
   return (await isUnattended(runId)) ? 12 * 3600 : config.approvalTtlSeconds;
 }
 
+// A plan a person approved in this job (plan_approval) covers the tools its steps named.
+async function planCovers(runId: string | null, tool: string): Promise<boolean> {
+  if (!runId) return false;
+  return Boolean((await pool.query("SELECT 1 FROM events WHERE run_id = $1 AND type = 'plan.approved' AND data->'tools' ? $2 LIMIT 1", [runId, tool])).rowCount);
+}
+
 async function granted(teammateId: string, runId: string | null, fp: string): Promise<boolean> {
   const { rows } = await pool.query(
     "SELECT 1 FROM grants WHERE teammate_id = $1 AND fingerprint = $2 AND revoked_at IS NULL AND (scope = 'always' OR (scope = 'job' AND run_id = $3)) LIMIT 1",
@@ -276,7 +282,8 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   }
 
   const run = async () => {
-    if (t.kind === "write" || rule?.ask) {
+    if ((t.kind === "write" || rule?.ask) && t.name !== "plan_approval" && await planCovers(ctx.runId, t.name)) { base.plan = true; rule = null; }
+    else if (t.kind === "write" || rule?.ask) {
       // Otari settings always, and anything the rules say to ask about: a person's yes for this one call.
       if (!ctx.runId) return reply({ text: "This needs a person's approval, and there is no run to ask in.", isError: true });
       if (rule?.ask) base.rule = rule.ask;
@@ -334,6 +341,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     // Money, deletions, shipping and posts outside the thread are per action: a grant never covers them.
     const perAction = NEVER_WITHOUT_ASKING.includes(risk);
     if (rule !== "allow" && !perAction && b.runId && (await granted(tm.id, b.runId, toolFp))) rule = "allow";
+    if (rule !== "allow" && b.runId && (await planCovers(b.runId, t.name))) { rule = "allow"; base.plan = true; }
     // An exact repeat of a call a person already approved in this job (e.g. a retry after the service failed)
     // doesn't ask again. Confirmation tokens a service adds don't make it a different call.
     const { human_confirmation: _hc, approval_token: _at, ...core } = args;

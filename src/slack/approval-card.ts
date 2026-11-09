@@ -14,6 +14,7 @@ export function question(a: any, teammate: string): string {
   if (a.kind === "recipe_change") return `Okay to change ${teammate}'s computer setup?`;
   if (a.kind === "company_memory") return "Okay to save this company note?";
   if (a.kind === "teammate_change") return `Okay to change ${a.target_name ?? "this teammate"}'s setup?`;
+  if (a.kind === "plan") return `${String(a.title ?? "This plan").replace(/[.?]$/, "")}?`;
   if (a.risk === "money") {
     const p = a.arguments?.parameters ?? a.arguments ?? {};
     const amount = Number(p.amount);
@@ -57,6 +58,7 @@ export function preview(a: any): string {
 // "Writes 1 comment", "Moves money", "Removes 1 issue": the action in a few words, from the tool's name.
 function what(a: any): string | null {
   if (a.kind === "teammate_change") return String(a.summary ?? "").split("\n")[0] || "Changes a teammate's setup";
+  if (a.kind === "plan") return `${(a.steps ?? []).length} steps, one approval`;
   if (a.risk === "money") return "Moves money";
   if (a.risk === "outside_thread") return "Posts outside this thread";
   if (a.risk === "shipping") return "Ships a change";
@@ -96,7 +98,8 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
       // A hire reads like its ID card: the role, then what it can use, its budget and how it asks.
       ...(a.kind === "hire" && a.hire ? { subtitle: { type: "plain_text", text: cutWord(String(a.hire.role), 150) }, body: { type: "mrkdwn", text: cutWord(`Can use ${a.hire.uses} · ${a.hire.budget} · ${a.hire.asks}`, 200) } }
         : line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
-      ...(a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } }
+      ...(a.kind === "plan" ? { body: { type: "mrkdwn", text: String(a.summary ?? "").slice(0, 600) } }
+        : a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } }
         : a.kind !== "hire" && typeof a.rule === "string" && a.rule ? { body: { type: "mrkdwn", text: cutWord(a.rule.replace(/^The reviewer wants a person to decide: /, "Why I'm asking: "), 200) } } : {}),
       // A card takes only buttons (an overflow menu is refused), so Edit is a plain third button.
       actions: [
