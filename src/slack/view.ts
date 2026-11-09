@@ -420,6 +420,15 @@ export function installSlackView(): void {
       await start(e.run_id, place, s!.teammate_id);
       return;
     }
+    // A paused teammate doesn't work; the person who asked hears it privately, with who can resume it.
+    if (e.type === "run.refused" && (e.data as any).reason === "paused") {
+      const place = await placeOf(e.session_id);
+      const tm = await getTeammate(String((e.data as any).teammate_id));
+      if (!place || !tm) return;
+      const owner = tm.owner_person ? (await pool.query("SELECT slack_user FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.slack_user : null;
+      await slack(place.app_id, "chat.postEphemeral", { channel: place.channel, user: place.user, ...(place.channel_type === "im" ? {} : { thread_ts: place.thread_ts }), text: `${tm.config.name} is paused, so it didn't pick this up. ${owner ? `<@${owner}>` : "Its owner"} or an admin can resume it from its Home tab.` }).catch(() => null);
+      return;
+    }
     // After a restart: a message with an inline card is rebuilt and keeps being redrawn in place.
     if (!v && e.type !== "run.started" && !plain.has(e.run_id)) { v = await revive(e.run_id, e.session_id); if (!v) plain.add(e.run_id); }
     if (!v && e.type === "approval.resolved") return void approvalResolved(undefined, e);

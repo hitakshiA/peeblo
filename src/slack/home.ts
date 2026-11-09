@@ -62,7 +62,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
       blocks.push({ type: "section", text: { type: "mrkdwn", text: `${String(what).slice(0, 280)}${a.action.risk === "money" ? " · moves money" : ""}` } });
       blocks.push({ type: "actions", elements: [
         { type: "button", style: "primary", text: { type: "plain_text", text: "Approve" }, action_id: "approve_once", value: a.id },
-        { type: "button", text: { type: "plain_text", text: "Not now" }, action_id: "deny", value: a.id },
+        { type: "button", text: { type: "plain_text", text: "Not now" }, action_id: "not_now", value: a.id },
       ] });
     }
   }
