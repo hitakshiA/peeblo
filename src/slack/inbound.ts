@@ -41,7 +41,14 @@ export function installSlackInbound(): void {
       // One listener: a message that tags another teammate (and not this one) is that teammate's to answer, in a
       // channel and in a thread this teammate is already in.
       const taggedIds = [...String(ev.text ?? "").matchAll(/<@([A-Z0-9]+)>/g)].map((m) => m[1]);
-      if (taggedIds.length && (await pool.query("SELECT 1 FROM slack_apps WHERE bot_user_id = ANY($1) AND app_id <> $2 LIMIT 1", [taggedIds, appId])).rows.length) return;
+      const others = taggedIds.length ? (await pool.query("SELECT a.app_id, a.bot_user_id, t.slug FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE a.bot_user_id = ANY($1) AND a.app_id <> $2", [taggedIds, appId])).rows : [];
+      if (others.length) {
+        // A teammate tagged where it isn't a member never hears it. Peeblo (a member here) checks a moment later
+        // and, if no tagged teammate got the message, tells the person privately and offers to add it.
+        const isManager = (await pool.query("SELECT slug FROM teammates WHERE id = $1", [teammateId])).rows[0]?.slug === "peeblo";
+        if (isManager) setTimeout(() => void notInChannel(appId, ev, others).catch(() => null), 4000);
+        return;
+      }
       const known = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND kind = 'thread' AND place_key = $2", [teammateId, placeKey])).rows[0];
       inThread = Boolean(known);
       // An untagged reply in a thread belongs to whoever spoke last before it (the one whose question it answers).
@@ -160,4 +167,14 @@ async function lastTeammateSpeaker(appId: string, channel: string, threadTs: str
   const ours = new Set((await pool.query("SELECT app_id FROM slack_apps")).rows.map((x) => String(x.app_id)));
   const before = (r?.messages ?? []).filter((m: any) => Number(m.ts) < Number(beforeTs) && m.app_id && ours.has(m.app_id));
   return before.length ? String(before[before.length - 1].app_id) : null;
+}
+
+// Called on Peeblo's copy of a message that tags other teammates: those that didn't receive it aren't in the channel.
+async function notInChannel(appId: string, ev: any, tagged: { app_id: string; bot_user_id: string; slug: string }[]): Promise<void> {
+  const got = new Set((await pool.query("SELECT data->>'app_id' AS a FROM events WHERE type = 'slack.message' AND data->'event'->>'ts' = $1", [ev.ts])).rows.map((r) => r.a));
+  const missing = tagged.filter((t) => !got.has(t.app_id));
+  if (!missing.length) return;
+  const { slack } = await import("./api.ts");
+  const names = missing.map((t) => `<@${t.bot_user_id}>`).join(" and ");
+  await slack(appId, "chat.postEphemeral", { channel: ev.channel, user: ev.user, ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}), text: `${names} ${missing.length > 1 ? "aren't" : "isn't"} in this channel, so ${missing.length > 1 ? "they" : "it"} didn't see that. Add ${missing.length > 1 ? "them" : "it"} with /invite, or tag me and I'll take it.` });
 }
