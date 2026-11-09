@@ -71,6 +71,26 @@ export function installSlackInbound(): void {
     // The kill switch works where the teammate was asked directly or is in the thread; a "stop" said in a channel
     // Peeblo only reads along in is for the people there.
     if (kindNow !== "channel" && /^(stop|cancel|stop please)[.!]?$/i.test(text)) {
+      // Only the person who asked for the running job, the teammate's owner or an admin can stop it (the stop
+      // tool's rule); anyone else is told whose job it is, privately.
+      const { threadSessions } = await import("../chains.ts");
+      const sids = await threadSessions(session.id).catch(() => [session.id]);
+      const active = (await pool.query(`SELECT r.id, sub.person_id, p.display_name, p.slack_user, s.teammate_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id
+        JOIN sessions s ON s.id = r.session_id LEFT JOIN people p ON p.id = sub.person_id WHERE r.session_id = ANY($1) AND r.status IN ('queued', 'running', 'waiting')`, [sids])).rows;
+      if (active.length) {
+        const me = (await pool.query("SELECT * FROM people WHERE slack_user = $1", [ev.user])).rows[0];
+        const { getTeammate } = await import("../store/teammates.ts");
+        const { mayManageTeammate } = await import("../authority.ts");
+        const allowed = [] as boolean[];
+        for (const r of active) { const tm = await getTeammate(r.teammate_id); allowed.push(Boolean(me && (me.id === r.person_id || (tm && mayManageTeammate(tm, me))))); }
+        if (!allowed.some(Boolean)) {
+          const who = active.find((r) => r.display_name)?.display_name?.split(" ")[0] ?? "someone else";
+          const { slack } = await import("./api.ts");
+          await slack(appId, "chat.postEphemeral", { channel: ev.channel, user: ev.user, ...(threadTs ? { thread_ts: threadTs } : {}), text: `That's ${who}'s job, so I'll keep going. Ask ${who} if it should stop.` }).catch(() => null);
+          await appendEvent({ sessionId: session.id, type: "slack.stop", data: { user: ev.user, stopped: false, refused: "not theirs" } });
+          return;
+        }
+      }
       const stopped = stopHandler ? await stopHandler(session.id) : false;
       await appendEvent({ sessionId: session.id, type: "slack.stop", data: { user: ev.user, stopped } });
       return;

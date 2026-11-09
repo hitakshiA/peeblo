@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; heldTs?: string; heldText?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
+  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 // The model sometimes writes Slack's <url|text> links or code ticks around a site name; markdown blocks want neither.
@@ -199,7 +199,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     // Tables, charts and KPI strips (show_data) sit under the answer, before the receipt; at most 2 charts.
     let charts = 0;
     const shown = v.displays.filter((b) => b.type !== "data_visualization" || ++charts <= 2);
-    const blocks = [...shown, ...(await ending(runId, ok))];
+    const blocks = [...shown, ...(await ending(runId, ok)).filter((b: any) => !v.stoppedBy || (b.type !== "context_actions" && !String(b.block_id ?? "").startsWith("recover:")))];
     // A card still waiting when the answer is done isn't needed any more: it collapses and the approval expires.
     for (const a of v.approvals.filter((x) => !x.done)) {
       a.done = [{ type: "context", elements: [{ type: "mrkdwn", text: "Not needed" }] }];
@@ -210,7 +210,8 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     // A run that answered shows no warning: a step that failed on the way was retried or worked around.
     for (const t of v.tasks.values()) if (t.status === "in_progress" || t.status === "pending" || (ok && t.status === "error")) t.status = ok ? "complete" : "error";
     const declined = v.approvals.some((x) => x.done && JSON.stringify(x.done).includes("Not now"));
-    const summary = summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
+    const summary = v.stoppedBy ? `Stopped by ${v.stoppedBy}` : summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
+    if (v.stoppedBy) fallbackText = `${fallbackText ? `${fallbackText}\n\n` : v.heldText ? `${v.heldText}\n\n` : ""}_Stopped by ${v.stoppedBy}._`;
     if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }
     // The message already on screen keeps its text when the receipt joins it (an alert from a trigger, a schedule).
     else if (v.heldTs && v.heldText && !fallbackText) fallbackText = v.heldText;
@@ -227,14 +228,18 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       const open = [...v.tasks.entries()].map(([id, t]) => ({ type: "task_update", id, title: t.title.slice(0, 120), status: t.status }));
       const finalText = v.text || fallbackText || "";
       const tail = finalText ? [{ type: "markdown_text", text: finalText }] : [];
-      await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async () => {
-        await post(v, fallbackText ?? summary, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
+      await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async (e) => {
+        // The stream couldn't be closed: the answer goes out as its own message, with its text, never just "Done".
+        console.error("slack view: stopStream:", (e as Error).message);
+        await post(v, finalText || summary, [...(finalText ? [{ type: "markdown", text: finalText.slice(0, 11_000) }] : []), ...blocks]);
       });
     } else if (v.privateOnly && !v.posted) {
       // Answered privately: the receipt goes to the asker privately too.
       await slack(v.place.app_id, "chat.postEphemeral", { channel: v.place.channel, user: v.place.user, thread_ts: v.place.channel_type === "im" ? undefined : v.place.thread_ts, text: "Receipt", blocks: blocks.filter((b) => b.type !== "context_actions") }).catch(() => null);
     } else if (v.place.direct || v.posted || fallbackText) {
-      await post(v, fallbackText ?? summary, [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks]);
+      // What it posted is the message's text; the status line is only for a run that said nothing.
+      const said = fallbackText ?? (v.text.trim() ? v.text : null);
+      await post(v, said ?? summary, [...(said ? [{ type: "markdown", text: said.slice(0, 11_000) }] : []), ...blocks]);
     }
     if (v.place.direct) {
       await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes");
@@ -455,7 +460,11 @@ export function installSlackView(): void {
         await unreact(v.place.app_id, v.place.channel, v.place.trigger_ts, "eyes").catch(() => null);
         return;
       }
-      await finish(e.run_id, v, e.type === "run.finished" && !["budget_blocked", "stuck", "guard_unavailable", "error"].includes(stop ?? ""), fallback);
+      // Stopped by a person ("stop" in the thread): say who, and no feedback buttons on a job someone ended.
+      const st = (await pool.query(`SELECT p.display_name FROM events x JOIN runs r ON r.id = $1 LEFT JOIN people p ON p.slack_user = x.data->>'user'
+        WHERE x.session_id = r.session_id AND x.type = 'slack.stop' AND (x.data->>'stopped')::boolean AND x.at >= r.created_at ORDER BY x.id DESC LIMIT 1`, [e.run_id]).catch(() => ({ rows: [] as any[] }))).rows[0];
+      if (st) v.stoppedBy = String(st.display_name ?? "someone").split(" ")[0];
+      await finish(e.run_id, v, e.type === "run.finished" && !["budget_blocked", "stuck", "guard_unavailable", "error"].includes(stop ?? "") && !st, st ? null : fallback);
     }
   });
 }
