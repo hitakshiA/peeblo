@@ -18,8 +18,10 @@ export function question(a: any, teammate: string): string {
   if (a.risk === "money") {
     const p = a.arguments?.parameters ?? a.arguments ?? {};
     const amount = Number(p.amount);
-    const cur = String(p.currency ?? "usd").toUpperCase();
-    return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : "Move"} ${cur === "USD" ? "$" : `${cur} `}${(amount / 100).toFixed(2)}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
+    // No currency in the call (a credit note or refund follows its invoice or charge): no symbol is guessed.
+    const cur = p.currency ? String(p.currency).toUpperCase() : null;
+    const sym = cur ? ({ USD: "$", EUR: "€", GBP: "£" } as Record<string, string>)[cur] ?? `${cur} ` : "";
+    return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : "Move"} ${sym}${(amount / 100).toFixed(2)}${cur ? "" : " (its invoice's currency)"}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
   }
   if (a.server) return a.risk === "read" ? `Okay to look this up in ${serviceName(a.server)}?` : `Okay to write to ${serviceName(a.server)}?`;
   if (a.tool && a.summary && a.kind === "peeblo_tool") return `${String(a.summary).split("\n")[0].replace(/[.?]$/, "")}?`;
