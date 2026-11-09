@@ -15,16 +15,7 @@ ensure_env() {
   set_if_empty PEEBLO_ADMIN_TOKEN "$(openssl rand -hex 24)"
   set_if_empty PEEBLO_SECRET_KEY "$(openssl rand -base64 32)"
   [ $changed = 1 ] && echo "peeblo: generated missing secrets in .env"
-  # Stop until the settings only you can give are filled in, and say which.
-  local missing=""
-  for v in OTARI_SERVICE_KEY PEEBLO_PUBLIC_URL PEEBLO_SLACK_CONFIG_FILE PEEBLO_CONSOLE_PASSWORD PEEBLO_ADMINS; do
-    grep -q "^$v=." .env || { [ "$v" = OTARI_SERVICE_KEY ] && grep -q "^OTARI_API_KEY=." .env; } || missing="$missing $v"
-  done
-  if [ -n "$missing" ]; then
-    echo "peeblo: set these in .env, then run ./peeblo up again:$missing"
-    echo "        (docs/SETUP.md says where each one comes from)"
-    exit 1
-  fi
+  # Everything else (the Otari key, the public address, Slack) is set up in the console after `up`.
   return 0
 }
 load_env() { set -a; . ./.env; set +a; PROJECT="${PEEBLO_PROJECT:-peeblo}"; [ -e /dev/kvm ] && export KVM_GID="$(stat -c %g /dev/kvm 2>/dev/null || echo 994)"; return 0; }
@@ -53,10 +44,11 @@ case "${1:-up}" in
       ls "$PEEBLO_DATA_DIR/images/small-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)"/*/manifest.json >/dev/null 2>&1 || node src/bin.ts image small
       # After an update, a running core is restarted so it runs the new code.
       if pid=$(core_pid) && [ -n "$(find src config skills db -newer "$RUN/core.pid" -type f 2>/dev/null | head -1)" ]; then
-        echo "peeblo: code changed since core started; restarting it"; kill "$pid"; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"
+        echo "peeblo: code changed since core started; restarting it"; kill "$pid"; pkill -TERM -P "$pid" 2>/dev/null; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"
       fi
       if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else
-        nohup node src/bin.ts daemon >> "$RUN/core.log" 2>&1 & echo $! > "$RUN/core.pid"
+        # A small loop restarts core when the console's setup asks it to (exit 75), e.g. after the Otari key is saved.
+        nohup sh -c 'while :; do node src/bin.ts daemon; code=$?; [ "$code" -eq 75 ] || exit "$code"; sleep 1; done' >> "$RUN/core.log" 2>&1 & echo $! > "$RUN/core.pid"
         for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:${PEEBLO_API_PORT:-7340}/healthz" >/dev/null 2>&1 && break; core_pid >/dev/null || break; sleep 1; done
         core_pid >/dev/null || { echo "peeblo: core failed to start; see $RUN/core.log"; tail -20 "$RUN/core.log"; exit 1; }
         echo "peeblo: core running (pid $(cat "$RUN/core.pid")); logs in $RUN/core.log"
@@ -64,16 +56,16 @@ case "${1:-up}" in
     else
       command -v docker >/dev/null && docker compose version >/dev/null 2>&1 || { echo "peeblo: Docker with Compose v2 is required"; exit 1; }
       [ -e /dev/kvm ] || { echo "peeblo: /dev/kvm is missing; teammate computers need KVM (a bare-metal server, or a VM with nested virtualization)"; exit 1; }
-      [ -f "$PEEBLO_SLACK_CONFIG_FILE" ] || { echo "peeblo: PEEBLO_SLACK_CONFIG_FILE ($PEEBLO_SLACK_CONFIG_FILE) doesn't exist (docs/SETUP.md, step 3)"; exit 1; }
       compose --profile linux build peeblo
       # The small computer image, built once into the data volume.
       compose --profile linux run --rm --no-deps --entrypoint sh peeblo -c 'ls /data/images/small-*/*/manifest.json' >/dev/null 2>&1 || compose --profile linux run --rm peeblo image small
       compose --profile linux up -d --wait
     fi
-    echo "peeblo: up. Run ./peeblo check to verify the setup." ;;
+    echo "peeblo: up. Open the console to set up or look around: http://127.0.0.1:${PEEBLO_API_PORT:-7340}/console/"
+    [ "$(uname)" = Darwin ] || echo "        (on a server: ssh -L ${PEEBLO_API_PORT:-7340}:127.0.0.1:${PEEBLO_API_PORT:-7340} <server>, then open that address)" ;;
   down)
     load_env
-    if pid=$(core_pid); then kill "$pid"; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
+    if pid=$(core_pid); then kill "$pid"; pkill -TERM -P "$pid" 2>/dev/null; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || pgrep -P "$pid" >/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
     if [ "$(uname)" = Darwin ]; then mac_compose stop db; else compose --profile linux stop; fi ;;
   backup)
     # The database and the data that can't be rebuilt (memory, settings, workspaces); computer images are rebuilt.

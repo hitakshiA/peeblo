@@ -47,8 +47,8 @@ services:
         condition: service_healthy
     volumes:
       - data:/data
-      # The Slack app configuration token file from .env, read once and then kept sealed in the database.
-      - ${PEEBLO_SLACK_CONFIG_FILE:?set PEEBLO_SLACK_CONFIG_FILE in .env}:/run/peeblo/slack-config.json:ro
+      # Optional: a Slack token file from .env (the console's setup takes the token instead).
+      - ${PEEBLO_SLACK_CONFIG_FILE:-/dev/null}:/run/peeblo/slack-config.json:ro
     read_only: true
     tmpfs:
       - /tmp

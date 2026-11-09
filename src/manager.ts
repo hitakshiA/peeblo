@@ -39,6 +39,12 @@ export function installHireWelcome(): void {
     const tm = await getTeammate(MANAGER);
     const own = tm ? (await pool.query("SELECT 1 FROM slack_apps WHERE app_id = $1 AND teammate_id = $2", [d.app_id, tm.id])).rows.length : 0;
     if (tm && own && d.installed_by) {
+      // The person who adds Peeblo to Slack is its first admin, when no admin is set yet.
+      if (!config.admins.length) {
+        const { saveSettings } = await import("./settings.ts");
+        saveSettings({ PEEBLO_ADMINS: d.installed_by });
+        config.admins.push(d.installed_by);
+      }
       const { welcomeOnce } = await import("./slack/welcome.ts");
       await welcomeOnce(d.app_id, tm.id, d.team_id ?? "", d.installed_by, "installed").catch((err) => console.error("peeblo welcome:", err));
       return;

@@ -19,13 +19,19 @@ import { changeModel, ModelChangeRefused } from "../model-change.ts";
 import { secretNames, setSecret } from "../store/secrets.ts";
 import { readJson, Router, send } from "./http.ts";
 import { addConsoleRoutes, consoleCookie, consolePerson, login, logout, serveConsole } from "./console.ts";
+import { addSetupRoutes } from "./setup.ts";
 
 const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
 const bad = (msg: string) => Object.assign(new Error(msg), { status: 400 });
 
 export const router = new Router()
   .add("GET", "/healthz", async () => ({ ok: true }))
-  .add("GET", "/v1/teammates", async () => ({ teammates: await listTeammates() }))
+  .add("GET", "/v1/teammates", async () => {
+    // Each with its face (shape and color), so the console draws the same live avatar as Slack's ID card.
+    const { pickFace } = await import("../slack/idcard.ts");
+    const faces = new Map((await pool.query("SELECT teammate_id, avatar FROM hires")).rows.map((r) => [r.teammate_id, r.avatar]));
+    return { teammates: (await listTeammates()).map((t) => ({ ...t, face: t.slug === "peeblo" ? { shape: "peeblo", color: "#2E7D5B" } : pickFace(t.slug, faces.get(t.id)?.shape, faces.get(t.id)?.color) })) };
+  })
   .add("POST", "/v1/teammates", async ({ body }) => {
     const { slug, hidden, ...config } = body ?? {};
     const t = await createTeammate(String(slug ?? ""), config, { personId: body?.owner_person ?? null, label: "api" });
@@ -159,6 +165,7 @@ function authorized(header: string | undefined): boolean {
 }
 
 addConsoleRoutes(router);
+addSetupRoutes(router);
 
 export function startApi(): Promise<Server> {
   const server = createServer(async (req, res) => {
@@ -167,9 +174,22 @@ export function startApi(): Promise<Server> {
     try { if (req.method === "GET" && serveConsole(url.pathname, res)) return; } catch { return send(res, 500, { error: "console error" }); }
     if (req.method === "POST" && url.pathname === "/v1/console/login") return void (await login(req, res, await readJson(req).catch(() => ({}))));
     if (req.method === "POST" && url.pathname === "/v1/console/logout") return logout(req, res);
+    // The first visit chooses the console password (only while none is set), and is signed in with it.
+    if (req.method === "POST" && url.pathname === "/v1/setup/password") {
+      if (config.consolePassword) return send(res, 403, { error: "a password is already set; sign in" });
+      const body: any = await readJson(req).catch(() => ({}));
+      const password = String(body?.password ?? "");
+      if (password.length < 8) return send(res, 400, { error: "Use at least 8 characters." });
+      const { saveSettings } = await import("../settings.ts");
+      saveSettings({ PEEBLO_CONSOLE_PASSWORD: password });
+      config.consolePassword = password;
+      return void (await login(req, res, { password }));
+    }
     const route = router.match(req.method ?? "GET", url.pathname);
     if (!route) return send(res, 404, { error: "not found" });
     const viaConsole = consoleCookie(req);
+    // Before sign-in, the setup state says only whether a password exists (so the console knows which screen to show).
+    if (url.pathname === "/v1/setup/state" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 200, { password_set: Boolean(config.consolePassword), mode: config.otariKey ? "running" : "setup", next: config.consolePassword ? "login" : "password" });
     if (url.pathname !== "/healthz" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 401, { error: "sign in, or send the admin token" });
     try {
       let body = req.method === "GET" ? {} : await readJson(req);

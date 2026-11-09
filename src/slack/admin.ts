@@ -27,7 +27,7 @@ async function loadToken(): Promise<ConfigToken | null> {
   if (file?.access_token && (!stored || (file.access_token !== stored.access_token && Number(file.exp) > Number(stored.exp)))) { await storeToken(file); return file; }
   return stored;
 }
-const storeToken = (t: ConfigToken) => pool.query("INSERT INTO slack_config (id, token) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET token = $1, updated_at = now()", [seal(t)]);
+export const storeToken = (t: ConfigToken) => pool.query("INSERT INTO slack_config (id, token) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET token = $1, updated_at = now()", [seal(t)]);
 
 // The token rotates every 12 h. A refresh token works once, so rotation holds a database lock (check and core can
 // both get here) and re-reads the token inside it; the new refresh token is saved before the access token is used.

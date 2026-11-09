@@ -15,6 +15,12 @@ import { installPiExecutor, stopAllPi } from "./pi/supervisor.ts";
 
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
 const applied = await migrate();
+// Setup mode: no Otari key yet. Only the console runs; its setup saves the key and restarts core into full mode.
+if (!config.otariKey) {
+  await startApi();
+  console.log(`peeblo: setup mode. Finish setting up in the console: http://127.0.0.1:${config.apiPort}/console/`);
+  await new Promise(() => {});
+}
 installPiExecutor();
 // Slack: messages → sessions, runs → streamed replies with receipts, clicks → approvals and feedback.
 {

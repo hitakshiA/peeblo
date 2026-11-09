@@ -12,6 +12,7 @@ import type { SlackPlace } from "./inbound.ts";
 
 async function facts(tm: Teammate, who: string, why: "installed" | "opened"): Promise<string> {
   const c = tm.config;
+  if (tm.slug === "peeblo") return peebloFacts(who, why);
   const owner = tm.owner_person ? (await pool.query("SELECT display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.display_name : null;
   return [
     `<peeblo_event>first contact: ${why === "installed" ? `${who} just installed you, so from now on you post as yourself, from your own Slack app.` : `${who} opened your DM for the first time.`}`,
@@ -60,4 +61,21 @@ export async function welcomeOnce(appId: string, teammateId: string, team: strin
   if (!tm) return false;
   await firstContact(tm, appId, team, slackUser, why, where);
   return true;
+}
+
+// Peeblo's first words to a new owner: where setup stands (from Otari and the crew, read now) and the next steps.
+async function peebloFacts(who: string, why: "installed" | "opened"): Promise<string> {
+  const { listTeammates } = await import("../store/teammates.ts");
+  const { serverList } = await import("../connectors/mcp.ts");
+  const { session } = await import("../otari/admin.ts");
+  const { links } = await import("../otari/links.ts");
+  const { serviceName } = await import("./look.ts");
+  const crew = (await listTeammates()).filter((t) => t.slug !== "peeblo" && !(t as any).hidden);
+  const tools = ((await serverList().catch(() => [])) as any[]).map((s) => serviceName(s.name));
+  const connected = Boolean(await session().catch(() => null));
+  return [
+    `<peeblo_event>first contact: ${why === "installed" ? `${who} just added you to Slack` : `${who} opened your DM for the first time`}.`,
+    `Facts: the crew has ${crew.length ? `${crew.length} teammate${crew.length === 1 ? "" : "s"} (${crew.map((t) => t.config.name).join(", ")})` : "no teammates yet"}; connectors in Otari: ${tools.length ? tools.join(", ") : "none yet"}; Otari dashboard ${connected ? "connected (routing, budgets and guardrail are set up)" : "not connected yet (the console's setup does it)"}; add connectors at ${links.mcpServers()}.`,
+    `Write ${who} a short welcome with slack_post, as their new chief of staff: one line on what you do; then where things stand in a line (the tools you can already reach, by name); then, ${crew.length ? "what the crew can do for them" : "as a short numbered list, the next steps: tell you about the company (or let you read the connected tools and draft company notes for their approval), hire a first teammate by describing the job (\"I need a teammate who…\"), and add more connectors in Otari, then give them to a teammate by asking you"}. Plain words, no setup jargon, a few lines.</peeblo_event>`,
+  ].join("\n");
 }

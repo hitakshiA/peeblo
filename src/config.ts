@@ -1,6 +1,10 @@
 // Reads settings from the environment once at startup.
 // Secrets are removed from process.env right away, so child processes never inherit them.
 
+import { loadSettingsIntoEnv } from "./settings.ts";
+// What the console's setup saved (settings.json in the data directory) fills in what the environment leaves empty.
+loadSettingsIntoEnv();
+
 const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY", "OTARI_API_KEY", "OTARI_SERVICE_KEY", "PEEBLO_CONSOLE_PASSWORD"];
 
 function required(name: string): string {
@@ -28,7 +32,8 @@ export const config = {
   vmIdleMs: Number(process.env.PEEBLO_VM_IDLE_MS ?? 5 * 60_000),
   // Hosted Otari. Peeblo uses an org service key (it can name end users); a plain key also works without per-person billing.
   otariBaseUrl: (process.env.OTARI_BASE_URL?.trim() || (process.env.OTARI_REGION === "eu" ? "https://eu.api.otari.ai/api/v1" : "https://api.otari.ai/api/v1")).replace(/\/+$/, ""),
-  otariKey: process.env.OTARI_SERVICE_KEY?.trim() || required("OTARI_API_KEY"),
+  // Empty until it's given (in the console's setup, or .env): core then runs only the console, in setup mode.
+  otariKey: process.env.OTARI_SERVICE_KEY?.trim() || process.env.OTARI_API_KEY?.trim() || "",
   otariKeyKind: (process.env.OTARI_SERVICE_KEY?.trim() ? "service" : "plain") as "service" | "plain",
   // The default budget for a new end user, from the service key's end_user_budget_ids (optional).
   otariEndUserBudget: process.env.OTARI_END_USER_BUDGET_ID?.trim() || "",
