@@ -65,7 +65,7 @@ export const recipeTools: AgentTool[] = [
         await updateTeammate(ctx.teammate.slug, { computer: { ...ctx.teammate.config.computer, recipe } } as any, { label: "recipe_propose (packages only)" }, a.reason);
         const added = ["apk", "apt", "npm", "pip"].map((k) => (action.diff.packages as any)[k]).filter((x: string) => x !== "none").join(", ") || "a package change";
         await appendEvent({ type: "notify.owner", data: { teammate_id: ctx.teammate.id, kind: "recipe_packages", key: `${ctx.teammate.id}:${q.id}`, text: `${ctx.teammate.config.name} added ${added} to its computer for good (${a.reason}). Standard packages don't need your yes; say "remove ${added.split(",")[0]}" to it if you'd rather not.` } });
-        return { text: `Saved: the new setup is built (${action.disk_mb} MB) and becomes active the next time your computer starts with no other conversation open; your owner was told. Until then, keep using what you installed in this session.`, data: { build_id: q.id } };
+        return { text: `Done, no approval needed (standard packages): ${added} is in your permanent setup (built, ${action.disk_mb} MB) and is there after every reset from your next computer start; your owner was told. It's also installed now for this session. Tell the person it's done.`, data: { build_id: q.id } };
       }
       const ok = await askApproval(ctx.runId, ctx.sessionId, action, config.approvalTtlSeconds);
       if (ok.status !== "approved") return { text: ok.status === "expired" ? "Your owner didn't answer in time; the setup is unchanged. The trial build stays ready if they approve later." : "Your owner said no; the setup is unchanged. Don't propose it again in this conversation.", isError: true };

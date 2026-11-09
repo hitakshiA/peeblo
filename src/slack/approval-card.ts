@@ -27,8 +27,10 @@ export function question(a: any, teammate: string): string {
     const digits = minorDigits(cur);
     return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : credit ? "Credit" : "Move"} ${sym}${(amount / 10 ** digits).toFixed(digits)}${cur ? "" : " (its invoice's currency)"}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
   }
-  const svc = a.server === "atlassian" ? atlassianName(String(a.tool ?? "")) : serviceName(a.server);
-  if (a.server) return a.risk === "read" ? `Okay to look this up in ${svc}?` : `Okay to write to ${svc}?`;
+  if (a.server) {
+    const svc = a.server === "atlassian" ? atlassianName(String(a.tool ?? "")) : serviceName(a.server);
+    return a.risk === "read" ? `Okay to look this up in ${svc}?` : `Okay to write to ${svc}?`;
+  }
   if (a.tool && a.summary && a.kind === "peeblo_tool") return `${String(a.summary).split("\n")[0].replace(/[.?]$/, "")}?`;
   // A routine names itself: "Set up “Monday numbers for Tom”?"; a computer command says what it does, not "computer bash".
   if (a.tool === "schedule" && a.arguments?.name) return `${a.arguments.action === "delete" ? "Remove" : a.arguments.action === "update" ? "Change" : "Set up"} “${String(a.arguments.name).slice(0, 80)}”?`;
