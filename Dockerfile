@@ -17,6 +17,10 @@ FROM base
 RUN apt-get update && apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-arm qemu-utils e2fsprogs cpio lz4 ca-certificates git unzip curl \
  && rm -rf /var/lib/apt/lists/*
 
+# The Docker CLI (pinned, static) builds the large computer image; only `./peeblo image large` lends it the host's
+# Docker socket, for that one command. Core itself never has the socket.
+RUN arch="$(uname -m)" && curl -fsSL "https://download.docker.com/linux/static/stable/${arch}/docker-27.3.1.tgz" | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
+
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile --prod && pnpm store prune
