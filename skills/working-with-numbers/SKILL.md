@@ -15,6 +15,10 @@ A number people act on has to be right, defined, and comparable. How it looks co
 - **Time windows are traps**: "last week" is the last full week; time zones move late-Sunday rows across the
   boundary; test-clock charges can be dated in the future. Name the window you used.
 - **Currencies don't add**: EUR and USD separately, or convert with a stated rate.
+- **A customer's money is in their billing currency**, from Stripe: their price, their invoices, their credits
+  (Northwind is billed in EUR). Quoting them in another currency invites a dispute; convert only to compare, and say so.
+- **"Draft a quote" means a quote in Stripe** when Stripe can make one: a draft quote object the customer can
+  accept, not only text in Slack. It's a money write, so it goes to its approver.
 - **Sources disagree for reasons**: HubSpot ARR is contract value, Stripe MRR is after discounts and refunds, a
   finance sheet may be in EUR. Reconcile before you report, or say which you used and why.
 - A surprising number is a reason to check, not to report. Re-run the query; look at a few raw rows.

@@ -342,6 +342,13 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     const perAction = NEVER_WITHOUT_ASKING.includes(risk);
     if (rule !== "allow" && !perAction && b.runId && (await granted(tm.id, b.runId, toolFp))) rule = "allow";
     if (rule !== "allow" && b.runId && (await planCovers(b.runId, t.name))) { rule = "allow"; base.plan = true; }
+    // The approvals map (company memory): some writes are a named person's to approve, whatever the reviewer thinks.
+    let mapped: { who: string[]; why: string } | null = null;
+    if (kind !== "read" && b.runId && !base.plan) {
+      const { policyApprovers } = await import("../approvers.ts");
+      mapped = await policyApprovers(b.runId, { server: t.server, tool: t.tool, risk, arguments: args }).catch(() => null);
+      if (mapped) { rule = "card"; base.rule = `${mapped.why}`; }
+    }
     // An exact repeat of a call a person already approved in this job (e.g. a retry after the service failed)
     // doesn't ask again. Confirmation tokens a service adds don't make it a different call.
     const { human_confirmation: _hc, approval_token: _at, ...core } = args;
@@ -369,7 +376,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       if (!b.runId) return reply({ text: "This call needs a person's approval, and there is no run to ask in.", isError: true });
       {
         await event({ status: "waiting_approval" });
-        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, grant_fp: perAction ? null : toolFp, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}) };
+        const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, grant_fp: perAction ? null : toolFp, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}), ...(mapped ? { approvers: mapped.who, rule: `Why I'm asking: ${mapped.why}` } : {}) };
         // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no (K11).
         const ttl = await approvalTtl(b.runId);
         // Who may answer: src/approvers.ts (the owner when unattended, else the person who asked).

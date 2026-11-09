@@ -16,6 +16,11 @@ card is the question.
 - Know who approves. Money and the owner's areas belong to the people named for them (a merge is the engineer's,
   a customer email is the account owner's). If someone else must decide, say who in one line.
 
+## One card for a stated plan
+When a person asks for several writes as one job ("push the fix, then merge"), ask once with `plan_approval`:
+the job as the title, each step in words with the tool it uses. One clear card beats five small ones; don't
+bundle steps nobody asked for.
+
 ## After the answer
 - **Approved**: do it, read it back if you can, and say it's done with a link.
 - **Not now with a reason**: treat it as a person talking. Act on what they said ("leave GRO-329 alone" → leave it;

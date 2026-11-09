@@ -74,3 +74,36 @@ export async function personWords(runId: string): Promise<{ asks: string[]; agen
   const { rows } = await pool.query("SELECT text FROM submissions WHERE session_id = $1 AND source = ANY($2) AND person_id IS NOT NULL ORDER BY created_at DESC LIMIT 5", [r.session_id, PERSON_SOURCES]);
   return { asks: rows.map((x) => String(x.text).slice(0, 1500)).reverse(), agentWritten: null };
 }
+
+// The approvals map (rail): company memory's product/approvals.md says who must click for which write, before a
+// reviewer's allow counts. Lines like "- money: Hitakshi", "- merges, flags, deploys: Jun", "- marketing sends: Maya",
+// "- account Northwind Trading: Maya". A person who said "I'll approve" or "ask me first" in this job gets the card.
+export async function policyApprovers(runId: string, call: { server?: string; tool?: string; risk?: string; arguments?: unknown }): Promise<{ who: string[]; why: string } | null> {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  let text = "";
+  try { text = readFileSync(join(config.dataDir, "company-memory", "product", "approvals.md"), "utf8"); } catch { /* no map */ }
+  const rules = [...text.matchAll(/^-\s*([^:\n]+):\s*(.+)$/gm)].map((m) => ({ key: m[1].trim().toLowerCase(), names: m[2].split(/,| or | and /).map((x) => x.trim()).filter(Boolean) }));
+  const tool = String(call.tool ?? "").toLowerCase(), server = String(call.server ?? "").toLowerCase();
+  const args = JSON.stringify(call.arguments ?? {}).toLowerCase();
+  const ids = async (names: string[]) => uniq(await Promise.all(names.map(async (n) => (await pool.query(
+    "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1", [n])).rows[0]?.id)));
+  const pick = async (pred: (k: string) => boolean, why: string) => { const r = rules.find((x) => pred(x.key)); if (!r) return null; const who = await ids(r.names); return who.length ? { who, why } : null; };
+  // The requester's own words in this job: "I'll approve", "ask me first", "check with me".
+  const o = await runOrigin(runId);
+  if (o.personId) {
+    const said = (await pool.query(`SELECT sub.text FROM submissions sub JOIN runs r ON r.submission_id = sub.id WHERE r.session_id = (SELECT session_id FROM runs WHERE id = $1) AND sub.person_id = $2 ORDER BY sub.created_at DESC LIMIT 5`, [runId, o.personId])).rows.map((x) => String(x.text)).join("\n");
+    if (/\b(i['’]?ll approve|i will approve|ask me (first|before)|check with me|let me approve|i approve it)\b/i.test(said)) return { who: [o.personId], why: "they said they'd approve it" };
+  }
+  if (call.risk === "money" || (server === "stripe" && /refund|credit|quote|coupon|discount|invoice/.test(tool + args))) { const r = await pick((k) => /money|credit|refund/.test(k), "money goes to its approver"); if (r) return r; }
+  if (/merge|deploy/.test(tool) || ((server === "upstash" || server === "cloudflare") && !/^(get|list|read)/.test(tool))) { const r = await pick((k) => /merge|flag|deploy/.test(k), "merges, flags and deploys go to their approver"); if (r) return r; }
+  if ((server === "resend" && /send|broadcast/.test(tool)) || (server === "sanity" && /publish/.test(tool))) { const r = await pick((k) => /marketing/.test(k), "marketing sends go to their approver"); if (r) return r; }
+  if (server === "hubspot") {
+    for (const r of rules.filter((x) => x.key.startsWith("account "))) {
+      const acct = r.key.slice(8).trim();
+      if (acct && args.includes(acct.split(" ")[0])) { const who = await ids(r.names); if (who.length) return { who, why: `${r.key.slice(8)} is their account` }; }
+    }
+  }
+  return null;
+}
+
