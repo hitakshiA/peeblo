@@ -210,7 +210,7 @@ export const companyMemoryTool: AgentTool = {
   },
   async run(ctx, a) {
     // Approval comes from an admin (the card's approvers default to admins), so whoever asked, the change is approved.
-    const v = writeCompany(a.notes ?? [], ctx.person?.display_name ?? "an admin", (a.remove ?? []).map((r: any) => r.path));
+    const v = writeCompany(a.notes ?? [], `an admin (asked by ${ctx.person?.display_name ?? ctx.teammate?.config?.name ?? "a teammate"})`, (a.remove ?? []).map((r: any) => r.path));
     return { text: `Company memory version ${v} is saved (${(a.notes ?? []).length} added or changed, ${(a.remove ?? []).length} removed). Every teammate reads it from now on.` };
   },
 };
