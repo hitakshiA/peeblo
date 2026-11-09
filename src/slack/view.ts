@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; heldTs?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
+  held?: string; heldTs?: string; heldText?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 // The model sometimes writes Slack's <url|text> links or code ticks around a site name; markdown blocks want neither.
@@ -129,6 +129,7 @@ async function chunks(v: View, c: any[]): Promise<void> {
         ? await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text: v.held, blocks: [{ type: "markdown", text: v.held }] }).catch(() => null)
         : await post(v, v.held, [{ type: "markdown", text: v.held }]).catch(() => null);
       if (r?.ts && !v.heldTs) v.heldTs = r.ts;
+      if (v.heldTs) v.heldText = v.held;
       return;
     }
     await openStream(v);
@@ -144,6 +145,7 @@ async function chunks(v: View, c: any[]): Promise<void> {
     v.held = text;
     if (v.heldTs) await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text, blocks: [{ type: "markdown", text }] }).catch(() => null);
     else { const r: any = await post(v, text, [{ type: "markdown", text }]).catch(() => null); if (r?.ts) v.heldTs = r.ts; }
+    v.heldText = text;
     return;
   }
   if (Date.now() - v.startedAt > HANDOVER_MS) {
@@ -210,6 +212,8 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     const declined = v.approvals.some((x) => x.done && JSON.stringify(x.done).includes("Not now"));
     const summary = summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
     if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }
+    // The message already on screen keeps its text when the receipt joins it (an alert from a trigger, a schedule).
+    else if (v.heldTs && v.heldText && !fallbackText) fallbackText = v.heldText;
     // The reply is already on screen: add the receipt to that message instead of posting a second one.
     if (v.heldTs && !v.frozen && !(v.streamTs && !v.failedStream)) { // the answer is on screen: the receipt joins it
       await slack(v.place.app_id, "chat.update", { channel: v.place.channel, ts: v.heldTs, text: fallbackText ?? summary, blocks: [...(fallbackText ? [{ type: "markdown", text: fallbackText }] : []), ...blocks] }).catch(() => null);

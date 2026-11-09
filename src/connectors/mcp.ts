@@ -177,7 +177,19 @@ export function needsApproval(mode: TeammateConfig["mode"], kind: CallKind): boo
 
 export async function executeTool(t: ConnectorTool, args: Record<string, unknown>): Promise<{ data: any; requestId: string | null }> {
   const body = { mcp_server_id: t.serverId, server_revision: t.revision, tool_name: t.tool, arguments: args, client_execution_id: randomUUID() };
-  return otari("POST", "/mcp/execute", body);
+  try {
+    return await otari("POST", "/mcp/execute", body);
+  } catch (e) {
+    // The server was re-registered under a new id (an admin replaced it): re-read the list and run it there once.
+    if (!/MCP server not found/i.test(String((e as Error).message))) throw e;
+    const { data } = await otari<{ servers: any[] }>("GET", "/mcp/servers");
+    servers = { at: Date.now(), list: data.servers ?? [] }; saveCache();
+    const now = servers.list.find((x) => x.name === t.server);
+    if (!now || now.id === t.serverId) throw e;
+    toolCache.delete(t.serverId);
+    const fresh = await serverTools(now.id, true);
+    return otari("POST", "/mcp/execute", { ...body, mcp_server_id: now.id, server_revision: fresh.revision, client_execution_id: randomUUID() });
+  }
 }
 
 // After a refusal for a stale revision, the catalog is re-read so the next listing is current.

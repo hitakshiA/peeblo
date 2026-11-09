@@ -60,7 +60,7 @@ export const scheduleTools: AgentTool[] = [
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
       const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? 0.05 });
-      return { text: `Scheduled "${a.name}" (${s.id}) ${a.cron ? `on ${a.cron} (UTC)` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? 0.05).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
+      return { text: `Scheduled "${a.name}" (id ${s.id}: for your tools only, never in a reply) ${a.cron ? `on ${a.cron} (UTC)` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? 0.05).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
     },
   },
   {
@@ -85,8 +85,8 @@ export const scheduleTools: AgentTool[] = [
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
       const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? 0.05, filter: { ...(a.filter ?? {}), ...(a.source ? { source: a.source } : {}) } });
-      if (a.source) return { text: `Trigger "${a.name}" (${s.id}) is on: ${a.source} events${a.filter ? ` matching ${JSON.stringify(a.filter)}` : ""} wake you with the event.`, data: { id: s.id } };
-      return { text: `Trigger "${a.name}" (${s.id}) is ready. Give the service this URL: ${hookUrl(ctx.teammate, s.id)}\nIts signing secret is shown to admins in the console (Triggers); for GitHub, use it as the webhook secret.`, data: { id: s.id, url: hookUrl(ctx.teammate, s.id) } };
+      if (a.source) return { text: `Trigger "${a.name}" (id ${s.id}: for your tools only, never in a reply) is on: ${a.source} events${a.filter ? ` matching ${JSON.stringify(a.filter)}` : ""} wake you with the event.`, data: { id: s.id } };
+      return { text: `Trigger "${a.name}" (id ${s.id}: for your tools only, never in a reply) is ready. Give the service this URL: ${hookUrl(ctx.teammate, s.id)}\nIts signing secret is shown to admins in the console (Triggers); for GitHub, use it as the webhook secret.`, data: { id: s.id, url: hookUrl(ctx.teammate, s.id) } };
     },
   },
   {
@@ -113,7 +113,7 @@ export const scheduleTools: AgentTool[] = [
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
       const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "watch", name: a.name, prompt: a.prompt, place: out.place, filter: { every_hours: Math.max(1, a.every_hours ?? 1) }, watch: { server: a.server, tool: a.tool, arguments: a.arguments ?? {} } });
-      return { text: `Watching ${a.server}.${a.tool} every ${Math.max(1, a.every_hours ?? 1)} h as "${a.name}" (${s.id}); you'll be woken only when it changes.`, data: { id: s.id } };
+      return { text: `Watching ${a.server}.${a.tool} every ${Math.max(1, a.every_hours ?? 1)} h as "${a.name}" (id ${s.id}: for your tools only, never in a reply); you'll be woken only when it changes.`, data: { id: s.id } };
     },
   },
 ];
