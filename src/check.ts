@@ -46,6 +46,13 @@ export async function runChecks(): Promise<Result[]> {
     if (!rows[0]) throw new Error("not installed: run ./peeblo slack-app, open the link it prints and click Allow");
     return "installed in your workspace";
   });
+  await check("Slack apps up to date", async () => {
+    // A version that asks for a new scope needs each app added to Slack again; Peeblo DMs the owner the link.
+    const { staleApps } = await import("./slack/profile.ts");
+    const stale = await staleApps();
+    if (stale.length) throw new Error(`${stale.map((s) => s.name).join(", ")} need${stale.length === 1 ? "s" : ""} to be added to Slack again for: ${[...new Set(stale.flatMap((s) => s.missing))].join(", ")}. Peeblo DMs each owner the one-click link.`);
+    return "every installed app has the scopes this version uses";
+  });
   await check("teammates waiting for install", async () => {
     // A teammate works only through its own Slack app; these won't run until someone clicks "Add to Slack".
     const { waitingTeammates } = await import("./slack/install.ts");

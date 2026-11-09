@@ -181,13 +181,15 @@ async function watchFailed(s: Schedule, why: string): Promise<"failed"> {
 // Owner notices go to a person as a DM from Peeblo: the schedule's creator, else the teammate's owner. At most one
 // notice of a kind per thing per hour.
 const noticed = new Map<string, number>();
-async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; kind?: string; text?: string }): Promise<void> {
-  const key = `${d.kind}:${d.schedule_id ?? d.teammate_id}`;
+async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; kind?: string; text?: string; key?: string }): Promise<void> {
+  const key = `${d.kind}:${d.key ?? d.schedule_id ?? d.teammate_id}`;
   if ((noticed.get(key) ?? 0) > Date.now() - 3_600_000) return;
   const row = d.schedule_id
     ? (await pool.query("SELECT s.created_by, t.owner_person, t.id AS teammate_id FROM schedules s JOIN teammates t ON t.id = s.teammate_id WHERE s.id = $1", [d.schedule_id])).rows[0]
     : (await pool.query("SELECT NULL AS created_by, owner_person, id AS teammate_id FROM teammates WHERE id = $1", [d.teammate_id])).rows[0];
-  const personId = row?.created_by ?? row?.owner_person;
+  // No creator or owner (Peeblo's own app, for one): the first admin.
+  const admin = config.admins[0] ? (await pool.query("SELECT id FROM people WHERE slack_user = $1 LIMIT 1", [config.admins[0]])).rows[0]?.id : null;
+  const personId = row?.created_by ?? row?.owner_person ?? admin;
   if (!personId || !d.text) return;
   const { getPerson } = await import("./store/people.ts");
   const who = await getPerson(personId);
@@ -214,6 +216,9 @@ export function installTriggers(): void {
     }
     } finally { ticking = false; }
   })().catch((e) => console.error("triggers:", (e as Error).message)), 60_000).unref();
+
+  // Apps that predate a scope this version needs: ask once at start (and Slack's own answers stay in check).
+  setTimeout(() => void import("./slack/profile.ts").then((p) => p.askForReinstalls()).catch((e) => console.error("reinstall check:", (e as Error).message)), 60_000).unref();
 
   onEvent(async (e) => {
     if (e.type === "notify.owner") await deliverNotice(e.data as any).catch((x) => console.error("notice:", (x as Error).message));

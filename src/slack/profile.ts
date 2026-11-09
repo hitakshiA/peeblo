@@ -134,3 +134,35 @@ export function installProfileSync(): void {
     void syncManifest(id).catch((err) => console.error("manifest sync:", (err as Error).message));
   });
 }
+
+// Apps installed before Peeblo asked for a scope: Slack reports each app's granted scopes on every call
+// (x-oauth-scopes), so missing ones are read live. A stale app gets its manifest updated, and its owner (an admin,
+// for Peeblo's own app) gets the install link, since only a person can grant new scopes.
+export async function staleApps(): Promise<{ appId: string; teammateId: string | null; name: string; missing: string[] }[]> {
+  const { getApp } = await import("../ingress/apps.ts");
+  const rows = (await pool.query("SELECT a.app_id, a.teammate_id FROM slack_apps a LEFT JOIN teammates t ON t.id = a.teammate_id WHERE a.bot_user_id IS NOT NULL AND (t.id IS NULL OR (t.archived_at IS NULL AND NOT t.hidden))")).rows;
+  const out: { appId: string; teammateId: string | null; name: string; missing: string[] }[] = [];
+  for (const r of rows) {
+    const token = (await getApp(r.app_id))?.secrets.bot_token;
+    if (!token) continue;
+    const res = await fetch("https://slack.com/api/auth.test", { method: "POST", headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+    const body: any = await res?.json().catch(() => null);
+    if (!res || !body?.ok) continue;   // an uninstalled or revoked app shows up in the install checks instead
+    const granted = new Set(String(res.headers.get("x-oauth-scopes") ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+    const missing = BOT_SCOPES.filter((s) => !granted.has(s));
+    if (missing.length) out.push({ appId: r.app_id, teammateId: r.teammate_id, name: (r.teammate_id ? (await getTeammate(r.teammate_id))?.config.name : null) ?? "Peeblo", missing });
+  }
+  return out;
+}
+
+export async function askForReinstalls(): Promise<void> {
+  const { getApp } = await import("../ingress/apps.ts");
+  const { installUrl } = await import("./admin.ts");
+  for (const s of await staleApps()) {
+    if (s.teammateId) await syncManifest(s.teammateId).catch(() => null);
+    const app = await getApp(s.appId);
+    if (!app?.secrets.client_id) continue;
+    await appendEvent({ type: "slack.needs_reinstall", data: { app_id: s.appId, teammate_id: s.teammateId, missing: s.missing } });
+    await appendEvent({ type: "notify.owner", data: { teammate_id: s.teammateId, kind: "reinstall", key: s.appId, text: `${s.name} needs one click to keep up with this version of Peeblo: Slack asks you to approve a new permission it uses. <${installUrl(s.appId, app.secrets.client_id)}|Reinstall ${s.name}>` } });
+  }
+}
