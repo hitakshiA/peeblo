@@ -273,7 +273,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   if (turnNo === 1 && !internal) {
     const waiting = (await pool.query(
       `SELECT a.id, a.run_id FROM approvals a JOIN runs r ON r.id = a.run_id
-        WHERE r.session_id = $1 AND a.status = 'pending' AND a.run_id <> $2 AND a.expires_at > now() ORDER BY a.created_at DESC LIMIT 1`, [ctx.session.id, ctx.run.id])).rows[0];
+        WHERE r.session_id = $1 AND a.status = 'pending' AND a.run_id <> $2 AND a.expires_at > now() AND r.status IN ('running', 'waiting') ORDER BY a.created_at DESC LIMIT 1`, [ctx.session.id, ctx.run.id])).rows[0];
     if (waiting) {
       const who = ctx.run.submission_id ? (await pool.query("SELECT p.id, p.display_name FROM submissions s LEFT JOIN people p ON p.id = s.person_id WHERE s.id = $1", [ctx.run.submission_id])).rows[0] : null;
       const name = String(who?.display_name ?? "The person").split(" ")[0];

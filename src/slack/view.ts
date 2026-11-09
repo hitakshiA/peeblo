@@ -203,9 +203,10 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     const blocks = [...shown, ...(await ending(runId, ok)).filter((b: any) => !v.stoppedBy || (b.type !== "context_actions" && !String(b.block_id ?? "").startsWith("recover:")))];
     // A card still waiting when the answer is done isn't needed any more: it collapses and the approval expires.
     for (const a of v.approvals.filter((x) => !x.done)) {
-      a.done = [{ type: "context", elements: [{ type: "mrkdwn", text: "Not needed" }] }];
       const { expireApproval } = await import("../durable/approvals.ts");
-      await expireApproval(a.id).catch(() => null);
+      const r = await expireApproval(a.id).catch(() => null);
+      const st = r?.ok ? "expired" : (await pool.query("SELECT status FROM approvals WHERE id = $1", [a.id])).rows[0]?.status;
+      if (st && st !== "pending") a.done = [{ type: "context", elements: [{ type: "mrkdwn", text: "Not needed" }] }];
     }
     // Open steps close with the run; the plan folds into one line made from the step verbs.
     // A run that answered shows no warning: a step that failed on the way was retried or worked around.

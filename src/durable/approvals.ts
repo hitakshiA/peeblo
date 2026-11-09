@@ -99,8 +99,9 @@ export async function expireApproval(approvalId: string): Promise<{ ok: boolean;
   const row = (await pool.query("SELECT status FROM approvals WHERE id = $1", [approvalId])).rows[0];
   if (!row) return { ok: false, status: "not_found" };
   if (row.status !== "pending") return { ok: false, status: row.status };
-  await DBOS.send(approvalId, null as any, "approval", `expire:${approvalId}`);
-  return { ok: true, status: "expiring" };
+  await DBOS.send(approvalId, { decision: "expired", scope: null, personId: null } as any, "approval", `expire:${approvalId}`).catch(() => null);
+  await pool.query("UPDATE approvals SET status = 'expired', decided_at = now() WHERE id = $1 AND status = 'pending'", [approvalId]);
+  return { ok: true, status: "expired" };
 }
 
 // Delivers an answer to the waiting approval. Refuses answers to approvals that are no longer pending,
