@@ -68,8 +68,21 @@ async function sessionConfig(sessionId: string, runId: string, current: Teammate
     await appendEvent({ sessionId, runId, type: "session.config", data: { version: current.version, model: current.config.model.default, reason: "start" } });
     return { tm: current, note: "" };
   }
-  const pinned = (await teammateAt(current.id, rows[0].data.version)) ?? current;
+  let pinned = (await teammateAt(current.id, rows[0].data.version)) ?? current;
   let note = "";
+  // Tools and connectors granted since the session started reach it now (a grant is meant for the work in hand);
+  // instructions and model stay pinned until a takeover.
+  if (current.version > pinned.version) {
+    const set = (c: any) => new Set<string>([...(c.tools ?? []), ...(c.connectors ?? [])]);
+    const before = set(pinned.config), after = set(current.config);
+    const added = [...after].filter((x) => !before.has(x)), removed = [...before].filter((x) => !after.has(x));
+    if (added.length || removed.length) {
+      pinned = { ...current, config: { ...current.config, instructions: pinned.config.instructions, model: pinned.config.model } } as Teammate;
+      await appendEvent({ sessionId, runId, type: "session.config", data: { version: current.version, model: pinned.config.model.default, reason: "grant", added, removed } });
+      note = `<peeblo_event kind="tools_changed">${added.length ? `You now have: ${added.join(", ")} (find their tools with find_tools).` : ""}${removed.length ? ` No longer available: ${removed.join(", ")}.` : ""}</peeblo_event>\n`;
+      return { tm: pinned, note };
+    }
+  }
   if (rows[0].data.reason === "takeover") {
     const { rows: done } = await pool.query("SELECT 1 FROM events WHERE session_id = $1 AND type = 'turn.finished' AND id > $2 LIMIT 1", [sessionId, rows[0].id]);
     if (!done.length) note = `<peeblo_event kind="model_change">From this message on you run on ${pinned.config.model.default} (changed by ${rows[0].data.by ?? "a person"}${rows[0].data.why ? `: ${rows[0].data.why}` : ""}). Everything earlier in this conversation still stands.</peeblo_event>\n`;

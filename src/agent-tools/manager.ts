@@ -198,6 +198,14 @@ export const managerTools: AgentTool[] = [
       reason: { type: "string" },
     }),
     kind: "local",
+    // The card in plain words: "Okay to change Rivet's setup?" / "Give Rivet: Sentry, Grafana".
+    async describe(_ctx, a) {
+      const t = await getTeammate(String(a.teammate)).catch(() => null);
+      const name = t?.config.name ?? String(a.teammate);
+      const what = a.field === "connectors" || a.field === "tools" ? `Give ${name}: ${String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean).join(", ")}`
+        : a.field === "budget_usd" ? `${name}'s budget: $${a.value} a month` : a.field === "mode" ? `${name}'s mode: ${a.value}` : `${name}'s ${String(a.field).replace(/_/g, " ")}: ${String(a.value).slice(0, 200)}`;
+      return { kind: "teammate_change", target_name: name, summary: `${what}${a.reason ? `\nWhy: ${String(a.reason).slice(0, 200)}` : ""}` };
+    },
     async authorize(ctx, a) {
       const t = await findTeammate(a.teammate);
       if (!t) return `There's no teammate called ${a.teammate}; crew_status lists them.`;
@@ -242,7 +250,7 @@ export const managerTools: AgentTool[] = [
         : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) }
         : a.field === "budget_usd" ? { budget: { monthly_usd: Number(a.value) } } : { computer: { ...t.config.computer, size: a.value } };
       const next = await updateTeammate(t.slug, patch, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
-      return { text: `${t.config.name} is now at version ${next.version}: ${a.field} = ${a.value}. Running conversations keep their setup; new ones use it (a lower mode applies at once).` };
+      return { text: `${t.config.name} is now at version ${next.version}: ${a.field} = ${a.value}. ${["tools", "connectors"].includes(a.field) ? `Its running conversations pick this up on their next message, ongoing work included; it can check with find_tools. Say "${t.config.name} can use it from its next step", not that it already did something with it.` : "Running conversations keep their setup; new ones use it (a lower mode applies at once)."}` };
     },
   },
   {

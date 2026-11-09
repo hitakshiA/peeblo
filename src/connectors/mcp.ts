@@ -131,6 +131,8 @@ function kindOfName(name: string): CallKind {
 function posthogExecKind(command: string): CallKind {
   const [verb, tool] = command.trim().split(/\s+/);
   if (verb !== "call") return ["help", "tools", "search", "info", "schema", "learn"].includes(verb) ? "read" : "write";
+  // PostHog's insight queries (query-trends, query-funnel, query-web-stats, query-retention…) only read.
+  if (/^query-[a-z-]+$/.test(tool ?? "") && !/^query-run$/.test(tool ?? "")) return "read";
   // "call execute-sql {query: SELECT …}" and the query tools only read.
   if (/^(execute-sql|query|query-run|run-query|hogql)/.test(tool ?? "")) return /"query"\s*:\s*"\s*(select|with)\b/i.test(command) && !/\b(insert|update|delete|drop|alter|create)\b/i.test(command.replace(/created?_at|createdAt/gi, "")) ? "read" : "write";
   return tool ? kindOfName(tool) : "write";
@@ -142,6 +144,9 @@ export function classify(t: ConnectorTool, args: Record<string, unknown>): CallK
   if (t.server === "posthog" && t.tool === "exec" && typeof args.command === "string") return posthogExecKind(args.command);
   // Every tool on a read-only server is a read, whatever its name.
   if (t.serverReadOnly) return "read";
+  // Dispatchers that say their kind in their name (Atlassian's executeRead / executeWrite / executeDestructive).
+  const disp = /^execute_?(read|write|destructive)$/i.exec(t.tool)?.[1]?.toLowerCase();
+  if (disp) return disp as CallKind;
   const k = kindOfName(t.tool);
   if (k === "read" && t.readOnlyHint === false) return "write";
   // A name of nouns only ("sentry_projects", "incidents", "deployments", "metrics"): no verb says it writes, so it

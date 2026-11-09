@@ -13,6 +13,7 @@ export function question(a: any, teammate: string): string {
   if (a.kind === "hire") return `Okay to hire ${String(a.summary ?? "").replace(/^Hire /, "").split(":")[0] || "this teammate"}?`;
   if (a.kind === "recipe_change") return `Okay to change ${teammate}'s computer setup?`;
   if (a.kind === "company_memory") return "Okay to save this company note?";
+  if (a.kind === "teammate_change") return `Okay to change ${a.target_name ?? "this teammate"}'s setup?`;
   if (a.risk === "money") {
     const p = a.arguments?.parameters ?? a.arguments ?? {};
     const amount = Number(p.amount);
@@ -34,7 +35,7 @@ function target(a: any): string | null {
 
 // The action in plain words: each argument on its own line, long text quoted, nested values flattened.
 export function preview(a: any): string {
-  if (a.summary && !a.arguments) return String(a.summary);
+  if (a.summary && (!a.arguments || a.kind === "teammate_change")) return String(a.summary);
   if (a.diff) return String(a.diff).slice(0, 2500);
   const args = a.arguments ?? {};
   const lines: string[] = [];
