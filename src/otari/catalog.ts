@@ -75,3 +75,9 @@ export async function estimateCost(model: string, inputTokens: number, outputTok
 
 // A rough token count for estimates (about 4 characters per token for English and code).
 export const roughTokens = (text: string): number => Math.ceil(text.length / 4);
+// The exact count from Otari (/messages/count_tokens) for a price card a person reads; the rough count if it fails.
+// Not used on every model call: it would add a round trip to each.
+export async function countTokens(model: string, text: string): Promise<number> {
+  const r = await otari<{ input_tokens?: number }>("POST", "/messages/count_tokens", { model, messages: [{ role: "user", content: text.slice(0, 400_000) }] }, { retries: 0, timeoutMs: 5000 }).catch(() => null);
+  return r?.data?.input_tokens ?? roughTokens(text);
+}

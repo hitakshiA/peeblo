@@ -6,7 +6,7 @@
 import { config } from "../config.ts";
 import { startRun } from "../durable/runs.ts";
 import { checkModel } from "../model-change.ts";
-import { estimateCost } from "../otari/catalog.ts";
+import { countTokens, estimateCost } from "../otari/catalog.ts";
 import { ROLES } from "../otari/routing.ts";
 import { usd } from "../otari/spend.ts";
 import { appendEvent } from "../store/events.ts";
@@ -44,7 +44,8 @@ export const subagentTool: AgentTool = {
     return a.model ? checkModel(a.model) : null;
   },
   async gate(ctx, a) {
-    const est = await estimateCost(modelFor(a.model, ctx.teammate.config.model.default), 8000 + Math.ceil(a.task.length / 4), 2000);
+    const model = modelFor(a.model, ctx.teammate.config.model.default);
+    const est = await estimateCost(model, 8000 + (await countTokens(model, a.task)), 2000);
     return est !== null && est > config.priceCardUsd ? { ask: `This subagent would cost about ${usd(est)} on ${a.model}.` } : null;
   },
   async run(ctx, a) {
