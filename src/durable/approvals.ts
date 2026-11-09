@@ -116,7 +116,12 @@ export async function answerApproval(approvalId: string, d: Decision): Promise<{
   if (rows[0].expired) return { ok: false, status: "expired" };
   // Every approval names who can answer it; anyone else is refused (an empty list means no one, never anyone).
   const only = (rows[0].action?.approvers as string[] | undefined) ?? [];
-  if (!d.personId || !only.includes(d.personId)) return { ok: false, status: "not_allowed" };
+  // The named approvers answer; a workspace admin (the owner) can always answer too.
+  if (!d.personId) return { ok: false, status: "not_allowed" };
+  if (!only.includes(d.personId)) {
+    const { adminIds } = await import("../approvers.ts");
+    if (!(await adminIds()).includes(d.personId)) return { ok: false, status: "not_allowed" };
+  }
   await DBOS.send(approvalId, d, "approval", `answer:${approvalId}`);
   return { ok: true, status: "sent" };
 }

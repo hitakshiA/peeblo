@@ -11,6 +11,8 @@ export const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:his
 const EVENTS = ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim", "app_home_opened", "member_joined_channel", "agent_session_stopped", "agent_session_title_changed", "app_context_changed"];
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
+// Slack's short description limit counts bytes, so it ends on a word with plain dots, never "…".
+const shortCut = (s: string, n: number) => (Buffer.byteLength(s) <= n ? s : `${s.slice(0, n - 3).replace(/\s+\S*$/, "")}...`);
 
 // The owner, as a person. Peeblo's owner is whoever runs this Peeblo (the first admin), never "no owner yet".
 async function ownerName(tm: Teammate): Promise<string | null> {
@@ -44,7 +46,7 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
   if (long.length < 175) long = `${bio}\nIt works on its own computer and keeps a receipt for every reply.\n\n${await facts(tm)}`;
   const short = cut(c.name, 18);
   return {
-    display_information: { name: cut(c.name, 35), description: cut(c.role, 140), long_description: cut(long, 4000), background_color: color },
+    display_information: { name: cut(c.name, 35), description: shortCut(c.role, 130), long_description: cut(long, 4000), background_color: color },
     features: {
       app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
       bot_user: { display_name: cut(tm.slug, 80), always_online: true },

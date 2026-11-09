@@ -240,6 +240,9 @@ export const managerTools: AgentTool[] = [
     },
     async run(ctx, a) {
       const t = (await findTeammate(a.teammate))!;
+      // A teammate hired without its Slack app (Slack refused the first manifest) gets the app made now, on any change.
+      const appNote = await retryMissingApp(t, ctx).catch(() => "");
+      const r: any = await (async () => {
       const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
       // A model change goes through changeModel: allowlist, authority and budget checked, the fallback kept, and a
       // running session told (K3).
@@ -278,6 +281,8 @@ export const managerTools: AgentTool[] = [
       // A budget change reaches the teammate's Otari key ceiling now, not at its next call.
       if (a.field === "budget_usd") { const { teammateKey } = await import("../otari/spend.ts"); await teammateKey(next as any).catch(() => null); }
       return { text: `${t.config.name} is now at version ${next.version}: ${a.field} = ${a.value}. ${["tools", "connectors"].includes(a.field) ? `Its running conversations pick this up on their next message, ongoing work included; it can check with find_tools. Say "${t.config.name} can use it from its next step", not that it already did something with it.` : "Running conversations keep their setup; new ones use it (a lower mode applies at once)."}` };
+      })();
+      return appNote ? { ...r, text: `${r.text}${appNote}` } : r;
     },
   },
   {
@@ -348,3 +353,14 @@ export const managerTools: AgentTool[] = [
     },
   },
 ];
+
+// Makes the Slack app for a teammate whose hire couldn't make one, and puts the install button on its hire card.
+async function retryMissingApp(t: Teammate, ctx: any): Promise<string> {
+  const h = (await pool.query("SELECT app_id, avatar FROM hires WHERE teammate_id = $1", [t.id])).rows[0];
+  if (!h || h.app_id || !h.avatar) return "";
+  const app = await createTeammateApp(t, h.avatar.color, await facePng(h.avatar));
+  await pool.query("UPDATE hires SET app_id = $2, install_url = $3 WHERE teammate_id = $1", [t.id, app.appId, app.installUrl]);
+  const hired = (await pool.query("SELECT run_id FROM events WHERE type = 'teammate.hired' AND data->>'teammate_id' = $1 ORDER BY id DESC LIMIT 1", [t.id])).rows[0];
+  await offerOnCard(t, hired?.run_id ?? null, app.installUrl, ctx.person?.slack_user ?? null).catch((e) => console.error("install card:", e));
+  return ` Its Slack app is made now; the install button is on its ID card.`;
+}
