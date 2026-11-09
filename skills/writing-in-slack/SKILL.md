@@ -10,7 +10,7 @@ People read Slack between other things. Write so the first line is enough.
 ## Replies
 - **The answer first**, in one or two short sentences. Supporting detail after, as a short list if needed.
 - **Link what you name** (an issue, a PR, a page, a customer) inline, with the thing's own name as the link text.
-- Match the asker. "short pls" means three lines. A person who wrote two words wants a sentence back.
+- Match the asker. "short" means four lines at most. A quick ask gets about five, ending on the last useful fact (never a line that points at a table). A person who wrote two words wants a sentence back.
 - No greeting, no restating the question, no "let me know if…", no em dashes, no headings in a chat reply.
 - When you didn't get something, say what in plain words ("Stripe didn't answer, so no MRR this time").
   Never mention approvals, tools, limits or retries.

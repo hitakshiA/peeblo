@@ -205,7 +205,8 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       await expireApproval(a.id).catch(() => null);
     }
     // Open steps close with the run; the plan folds into one line made from the step verbs.
-    for (const t of v.tasks.values()) if (t.status === "in_progress" || t.status === "pending") t.status = ok ? "complete" : "error";
+    // A run that answered shows no warning: a step that failed on the way was retried or worked around.
+    for (const t of v.tasks.values()) if (t.status === "in_progress" || t.status === "pending" || (ok && t.status === "error")) t.status = ok ? "complete" : "error";
     const declined = v.approvals.some((x) => x.done && JSON.stringify(x.done).includes("Not now"));
     const summary = summaryLine(v.done) || (declined ? "Not now · nothing changed" : ok ? "Done" : "Stopped");
     if (v.held) { fallbackText = `${v.held}${fallbackText ? `\n\n${fallbackText}` : ""}`; v.held = undefined; }

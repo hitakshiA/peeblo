@@ -8,19 +8,22 @@ import type { AgentTool } from "./types.ts";
 
 // Cut at a word boundary with an ellipsis, never mid-word.
 const cut = (s: unknown, n: number) => { const t = String(s ?? "").trim(); if (t.length <= n) return t; const w = t.slice(0, n - 1).replace(/\s+\S*$/, ""); return `${w || t.slice(0, n - 1)}…`; };
+// Record ids mean nothing to a reader: "Atlas Skate Co (id 364419, Felix)" → "Atlas Skate Co (Felix)".
+const noIds = (v: unknown) => String(v).replace(/\bid[:#]?\s*\d{5,}\b,?\s*/gi, "").replace(/\(\s*\)/g, "").replace(/\(\s*,\s*/g, "(").replace(/\s{2,}/g, " ").trim();
 const num = (v: unknown) => (typeof v === "number" ? v : Number(String(v).replace(/[$,%\s]/g, "")));
 
 function table(a: any): any[] | string {
   const cols: string[] = (a.columns ?? []).map((c: unknown) => cut(c, 60));
   const rows: unknown[][] = a.rows ?? [];
-  if (!cols.length || cols.length > 20) return "A table needs 1 to 20 columns.";
+  // Slack's thread pane is narrow: three short columns fit, more get clipped.
+  if (!cols.length || cols.length > 3) return "A table here fits at most 3 short columns (the thread pane is narrow). Merge or drop columns: put the name first, then the one or two numbers or dates that matter.";
   if (!rows.length || rows.length > 200) return "A table needs 1 to 200 rows (split a longer list, or summarise it).";
   if (rows.some((r) => !Array.isArray(r) || r.length !== cols.length)) return `Every row needs exactly ${cols.length} cells, one per column.`;
   // A column is numeric (sorts by value) when every cell in it is a number.
   const numeric = cols.map((_, i) => rows.every((r) => typeof r[i] === "number"));
-  const cell = (v: unknown, i: number) => (numeric[i] ? { type: "raw_number", value: v as number, text: (v as number).toLocaleString("en-US") } : { type: "raw_text", text: cut(v === null || v === "" ? "–" : v, cols.length > 3 ? 32 : 48) });
+  const cell = (v: unknown, i: number) => (numeric[i] ? { type: "raw_number", value: v as number, text: (v as number).toLocaleString("en-US") } : { type: "raw_text", text: cut(v === null || v === "" ? "–" : noIds(v), cols.length > 2 ? 28 : 40) });
   return [{ type: "data_table", caption: cut(a.title || "Table", 150), page_size: Math.min(Math.max(rows.length, 1), rows.length > 10 ? 10 : rows.length),
-    rows: [cols.map((c) => ({ type: "raw_text", text: c || "–" })), ...rows.map((r) => r.map(cell))] }];
+    rows: [cols.map((c) => ({ type: "raw_text", text: cut(c, 20) || "–" })), ...rows.map((r) => r.map(cell))] }];
 }
 
 function chart(a: any): any[] | string {

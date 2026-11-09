@@ -32,5 +32,7 @@ paragraphs, no dashes as punctuation, nothing they didn't ask for. Detail waits 
 - Two to six headline numbers: a KPI strip (`show_data` kind `kpis`), each with a short note ("up 4%").
 - A trend over time or a comparison across a few groups: a chart (`show_data` kind `chart`); bar for categories,
   line for time. Short labels (≤20 characters), one series unless the comparison is the point.
-- Seven or more records people will scan or sort: a table (`show_data` kind `table`), numbers as numbers.
+- Seven or more records people will scan or sort: a table (`show_data` kind `table`), numbers as numbers. At most
+  3 short columns (the thread pane is narrow): the name, then the one or two numbers or dates that matter. No
+  record ids; a name and its owner are enough. Four records or fewer read better as lines in the reply.
 - Never repeat in text what the chart or table shows; say what it means.

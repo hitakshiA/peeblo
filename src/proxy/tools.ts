@@ -404,7 +404,10 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
   try {
     const w = write ? await write.run(ctx, { path, content: r.text }) : { text: "no computer", isError: true };
     if (w.isError) throw new Error(w.text);
-    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo: the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
+    // Otari cuts MCP results at 50,000 characters: say so, or the model works on half a record without knowing.
+    let cut = "";
+    if (chars >= 50_000 && n === null) { try { JSON.parse(r.text); } catch { cut = " Otari cut this result at 50,000 characters, so the file ends mid-record and some records are missing. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything."; } }
+    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo:${cut} the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
   } catch {
     return { ...r, chars, text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]` };
   }

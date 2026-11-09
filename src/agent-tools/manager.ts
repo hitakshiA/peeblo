@@ -180,14 +180,9 @@ export const managerTools: AgentTool[] = [
       } catch (e) { appNote = ` Its Slack app couldn't be made yet (${(e as Error).message.slice(0, 120)}), so it can't work until its app is set up.`; }
       await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "teammate.hired", data: { teammate_id: tm.id, slug, by: ctx.person?.id ?? null, app: Boolean(install) } });
       if (place) {
-        // The install button goes on the ID card it was approved on and on its hello in the thread.
+        // The install button goes on the ID card it was approved on (its own message in the thread); nothing else is posted.
         const slackUser = ctx.person?.slack_user ?? null;
         if (install) await offerOnCard(tm, ctx.runId, install, slackUser).catch((e) => console.error("install card:", e));
-        // Peeblo only hands over the button: the teammate works, and speaks, once its own app is installed.
-        const hello: any = await slack(place.app_id, "chat.postMessage", { channel: place.channel, thread_ts: place.thread_ts, text: `${tm.config.name} is ready. Install it to start working with it.`, blocks: [
-          { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is ready.* Install it to start working with it, with the button on its ID card.` } },
-        ] }).catch(() => null);
-        if (hello?.ts) await pool.query("UPDATE hires SET hello = $2 WHERE teammate_id = $1", [tm.id, { app_id: place.app_id, channel: hello.channel ?? place.channel, ts: hello.ts }]);
       }
       return { text: `Hired ${tm.config.name} (${slug}).${install ? " Its install button is on its ID card in this thread (say 'the button on its ID card'; don't say above or below, the order depends on the screen). It starts working only once it's installed: until then don't delegate to it." : ""}${appNote}`, data: { teammate: slug, install_url: install, app_error: appNote || null } };
     },
