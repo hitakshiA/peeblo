@@ -186,10 +186,11 @@ export function needsApproval(mode: TeammateConfig["mode"], kind: CallKind): boo
   return kind !== "read";
 }
 
-export async function executeTool(t: ConnectorTool, args: Record<string, unknown>): Promise<{ data: any; requestId: string | null }> {
+// With auth, the call runs on that key (a teammate's own, once Otari holds its access: src/otari/mcp-access.ts).
+export async function executeTool(t: ConnectorTool, args: Record<string, unknown>, auth?: { authorization: string }): Promise<{ data: any; requestId: string | null }> {
   const body = { mcp_server_id: t.serverId, server_revision: t.revision, tool_name: t.tool, arguments: args, client_execution_id: randomUUID() };
   try {
-    return await otari("POST", "/mcp/execute", body);
+    return await otari("POST", "/mcp/execute", body, auth ? { auth } : undefined);
   } catch (e) {
     // The server was re-registered under a new id (an admin replaced it): re-read the list and run it there once.
     if (!/MCP server not found/i.test(String((e as Error).message))) throw e;
@@ -199,7 +200,7 @@ export async function executeTool(t: ConnectorTool, args: Record<string, unknown
     if (!now || now.id === t.serverId) throw e;
     toolCache.delete(t.serverId);
     const fresh = await serverTools(now.id, true);
-    return otari("POST", "/mcp/execute", { ...body, mcp_server_id: now.id, server_revision: fresh.revision, client_execution_id: randomUUID() });
+    return otari("POST", "/mcp/execute", { ...body, mcp_server_id: now.id, server_revision: fresh.revision, client_execution_id: randomUUID() }, auth ? { auth } : undefined);
   }
 }
 

@@ -31,6 +31,10 @@ In the Otari dashboard:
    it. Without it, Peeblo uses an open guard model through Otari instead.
 5. **Tools → MCP servers:** add the services your teammates should use (Linear, GitHub, Stripe, Notion, PostHog,
    Intercom, Atlassian, Sanity, Supabase and others with an MCP server). You can add more at any time.
+   For each one, set **default access** to the read tools (`@read`) and give Peeblo's service key the write tools it
+   may use. Each teammate then gets its own key with the same access, minus anything you make read-only, and Otari
+   itself refuses writes a teammate isn't allowed. (With default access left at every tool, Peeblo still keeps
+   read-only teammates from writing, but Otari can't.)
 
 ## 2. Configure
 

@@ -397,8 +397,12 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       }
     }
     const t0 = Date.now();
+    // On the teammate's own key where Otari holds its access (so Otari sees who called), else the core key.
+    const { ownKeyServers } = await import("../otari/mcp-access.ts");
+    const own = b.otariKey && ownKeyServers(tm.id, b.keyId).has(t.server) ? { authorization: `Bearer ${b.otariKey}` } : undefined;
+    base.otari_key = own ? "teammate" : "core";
     try {
-      const { data, requestId } = await executeTool(t, args);
+      const { data, requestId } = await executeTool(t, args, own);
       const r = await capResult(ctx, t, mcpText(data), toolCallIdOf(base));
       // The person changed the call on its card: the model hears what actually ran, so a retry keeps their edits.
       if (base.edited) r.text = `[The approver edited this call before it ran; it ran with: ${JSON.stringify(args).slice(0, 600)}. Keep their values in anything you redo.]\n${r.text}`;
@@ -409,6 +413,8 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       if (e.status === 409 || /revision/i.test(e.message)) forgetServer(t.serverId);
       await event({ status: "failed", request_id: e.requestId ?? null, ms: Date.now() - t0, error: e.message.slice(0, 500), error_code: e.code ?? null });
       if (/403/.test(e.message) && /<html|nginx|403 Forbidden/i.test(e.message)) return reply({ text: firewallHint(t), isError: true });
+      // Otari's own access rule for this teammate's key (set from its connectors and read-only list).
+      if (own && /not allowed for this MCP server/i.test(e.message)) return reply({ text: `Otari doesn't let you use ${t.tool} on ${t.server}: your access there is read-only, set by your owner. Nothing ran. Say so plainly; if they want the write, they can ask Peeblo to change your access.`, isError: true });
       return reply({ text: `The ${t.server} call failed: ${e.message.slice(0, 400)}${base.edited ? ` (It had the approver's edits: ${JSON.stringify(args).slice(0, 400)}. Keep their values if you try another way.)` : ""}`, isError: true });
     }
   };

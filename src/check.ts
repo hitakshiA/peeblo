@@ -166,6 +166,18 @@ export async function runChecks(): Promise<Result[]> {
     if (bad.length) throw new Error(`unhealthy: ${bad.map((s) => `${s.name} (${s.health?.status})`).join(", ")}`);
     return `${all.length} servers, all healthy`;
   });
+  await check("Otari connector access per teammate", async () => {
+    const { session } = await import("./otari/admin.ts");
+    if (!(await session())) return "not checked without a dashboard session (teammates' connector calls use Peeblo's key until then)";
+    const { readOnlyEnforced, ownKeyServers } = await import("./otari/mcp-access.ts");
+    const { listTeammates } = await import("./store/teammates.ts");
+    const crew = (await listTeammates()).filter((t) => t.slug !== "peeblo" && !(t as any).hidden);
+    const keys = (await pool.query("SELECT teammate_id, key_id FROM teammate_keys WHERE retired_at IS NULL")).rows;
+    const own = crew.filter((t) => ownKeyServers(t.id, keys.find((k) => k.teammate_id === t.id)?.key_id ?? null).size).length;
+    const { open } = await readOnlyEnforced();
+    const soft = [...new Set(crew.flatMap((t) => (t.config.read_only ?? []).filter((s) => open.includes(s))))];
+    return `${own} of ${crew.length} teammates call connectors on their own key${soft.length ? `; read-only on ${soft.join(", ")} is kept by Peeblo only (that server's default access in Otari is every tool: set it to read tools to have Otari refuse writes too)` : "; Otari refuses their read-only writes too"}`;
+  });
   await check("Otari rule engine", async () => {
     const { checkAction } = await import("./otari/rules.ts");
     const d = await checkAction({ commands: ["git push --force origin main"] });
