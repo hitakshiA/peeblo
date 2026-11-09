@@ -105,6 +105,12 @@ Teammates use tools through MCP servers stored in Otari. Services with their own
 them in Otari. HubSpot, Google Sheets, Grafana, PagerDuty and Sentry have no MCP server that Otari can reach
 directly yet, so they aren't available out of the box in this release.
 
+**Events from Stripe or PagerDuty** ("if we get a dispute, tell me in #finance"): the service sends its events to
+Peeblo once you set it up. In Stripe (Developers → Webhooks → Add endpoint) or PagerDuty (Integrations → Generic
+Webhooks v3), send events to `https://<your public address>/hooks/source/stripe` (or `/pagerduty`), copy the
+webhook's signing secret into `.env` as `PEEBLO_HOOK_SECRET_STRIPE` (or `_PAGERDUTY`), and restart. Other services
+(GitHub and so on) get their own URL from the teammate when you ask for the trigger.
+
 Stripe: an agent restricted key is subject to Stripe's own approval rules (Settings → Approvals → Rules). If you keep
 the "Refund created" rule on, you approve twice: once on Peeblo's card, then again in Stripe.
 
