@@ -144,6 +144,12 @@ export function classify(t: ConnectorTool, args: Record<string, unknown>): CallK
   if (t.server === "posthog" && t.tool === "exec" && typeof args.command === "string") return posthogExecKind(args.command);
   // Every tool on a read-only server is a read, whatever its name.
   if (t.serverReadOnly) return "read";
+  // Generic SQL runners (Neon run_sql, Supabase execute_sql, run_query…): the statement decides.
+  if (/^(run_?sql|execute_?sql|run_?query|execute_?query|query_?sql|sql)$/i.test(t.tool)) {
+    const q = String(args.sql ?? args.query ?? args.statement ?? args.command ?? "");
+    const bare = q.replace(/--[^\n]*/g, "").replace(/created?_at|createdAt|updated_at/gi, "");
+    if (/^\s*(select|with|explain|show)\b/i.test(bare) && !/\b(insert|update|delete|drop|alter|create|truncate|grant|merge)\b/i.test(bare)) return "read";
+  }
   // Dispatchers that say their kind in their name (Atlassian's executeRead / executeWrite / executeDestructive).
   const disp = /^execute_?(read|write|destructive)$/i.exec(t.tool)?.[1]?.toLowerCase();
   if (disp) return disp as CallKind;

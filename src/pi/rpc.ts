@@ -72,9 +72,16 @@ export class PiRpc {
   }
 
   // Resolves on agent_settled (never agent_end: retries, compaction or follow-ups may still run).
-  settled(timeoutMs: number): Promise<PiEvent> {
+  // waiting: true while the turn is waiting on a person (an approval card); that time doesn't count, so the timer
+  // starts over each time it would fire during a wait.
+  settled(timeoutMs: number, waiting?: () => Promise<boolean>): Promise<PiEvent> {
     return new Promise((resolve, reject) => {
-      const t = setTimeout(() => { off(); reject(new Error("turn timed out")); }, timeoutMs);
+      let t: ReturnType<typeof setTimeout>;
+      const arm = () => { t = setTimeout(async () => {
+        if (waiting && await waiting().catch(() => false)) return arm();
+        off(); reject(new Error("turn timed out"));
+      }, timeoutMs); };
+      arm();
       const off = this.on((e) => {
         if (e.type === "agent_settled") { clearTimeout(t); off(); resolve(e); }
         if (e.type === "pi_exit") { clearTimeout(t); off(); reject(new Error(e.error)); }

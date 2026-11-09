@@ -20,7 +20,7 @@ export function question(a: any, teammate: string): string {
     const cur = String(p.currency ?? "usd").toUpperCase();
     return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : "Move"} ${cur === "USD" ? "$" : `${cur} `}${(amount / 100).toFixed(2)}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
   }
-  if (a.server) return `Okay to write to ${serviceName(a.server)}?`;
+  if (a.server) return a.risk === "read" ? `Okay to look this up in ${serviceName(a.server)}?` : `Okay to write to ${serviceName(a.server)}?`;
   if (a.tool) return `Okay for ${teammate} to ${verb(a.tool)}?`;
   return `Okay for ${teammate} to go ahead?`;
 }
