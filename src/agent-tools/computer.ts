@@ -32,6 +32,7 @@ async function checkout(ctx: ToolContext): Promise<string | null> {
 // (/work/<session>/…, or relative to the open checkout). Anything else is refused.
 type Target = { where: "host"; rel: string; host: string } | { where: "vm"; rel: string; guest: string };
 // Commands whose output comes from the network (a fetch, a clone, a package registry, an API call).
+const SHARED_FILES = /sessions\/[^\s/]+\/files(\/|\b)|(^|[\s"'])files\//;
 const NETWORK = /\b(curl|wget|http|https|git\s+(clone|pull|fetch)|gh\s|npx|pip3?\s+download|npm\s+view|xh\s|nc\s|ssh\s|scp\s)\b/i;
 
 async function target(ctx: ToolContext, p: string): Promise<Target | null> {
@@ -112,7 +113,8 @@ export const computerTools: AgentTool[] = [
       const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${tail(r.stdout)}${r.stderr ? `\n[stderr]\n${tail(r.stderr)}` : ""}${note}`;
       // Untrusted only when it really came from outside: a repo checkout (other people's code) or the
       // network. The teammate's own files and commands in its workspace are its own work.
-      const outside = Boolean(await checkout(ctx)) || NETWORK.test(a.command);
+      // Files people shared (sessions/<id>/files) are outside text too, read any way.
+      const outside = Boolean(await checkout(ctx)) || NETWORK.test(a.command) || SHARED_FILES.test(a.command);
       return { text, isError: r.exitCode !== 0, ...(outside ? { untrusted: "computer:bash" } : {}), data: { exit_code: r.exitCode, ms: r.ms } };
     },
   },
@@ -135,7 +137,7 @@ export const computerTools: AgentTool[] = [
       const lines = body.split("\n");
       const from = (a.offset ?? 1) - 1;
       const part = lines.slice(from, from + (a.limit ?? 2000));
-      return { text: `${part.map((l, i) => `${from + i + 1}\t${l}`).join("\n")}${from + part.length < lines.length ? `\n[${lines.length - from - part.length} more lines]` : ""}`, ...(p.where === "vm" ? { untrusted: `computer:${p.rel}` } : {}) };
+      return { text: `${part.map((l, i) => `${from + i + 1}\t${l}`).join("\n")}${from + part.length < lines.length ? `\n[${lines.length - from - part.length} more lines]` : ""}`, ...(p.where === "vm" ? { untrusted: `computer:${p.rel}` } : SHARED_FILES.test(p.rel) ? { untrusted: `file:${p.rel.split("/").pop()}` } : {}) };
     },
   },
   {
