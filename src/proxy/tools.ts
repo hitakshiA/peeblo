@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { readFileSync } from "node:fs";
 // Peeblo's tool endpoints for Pi, on the same loopback proxy and per-session token as model calls. This is the
 // gate: the model chooses a tool, the harness decides whether and how it runs.
 // GET  /peeblo/tools       → the session's fixed tool list: Peeblo's own tools and the connector tools
@@ -110,7 +112,16 @@ const invalidStreak = new Map<string, number>();
 const TOOL_HINTS: Record<string, string> = {
   "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 8, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
 };
-const hintFor = (server: string, tool: string) => TOOL_HINTS[`${server}:${tool}`] ?? "";
+// Connection facts an admin sets per server (dataDir/server-notes.json, e.g. {"sanity": "projectId uxjk1mer, dataset
+// production"}): ids the model would otherwise guess, and vendors answer a wrong id with a misleading auth error.
+let notes: { at: number; v: Record<string, string> } | null = null;
+function serverNote(server: string): string {
+  if (!notes || Date.now() - notes.at > 60_000) {
+    try { notes = { at: Date.now(), v: JSON.parse(readFileSync(join(config.dataDir, "server-notes.json"), "utf8")) }; } catch { notes = { at: Date.now(), v: {} }; }
+  }
+  return notes.v[server] ?? "";
+}
+const hintFor = (server: string, tool: string) => [serverNote(server) && `This connection: ${serverNote(server)}. Use these exact ids, never a guess.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
 
 type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
 
