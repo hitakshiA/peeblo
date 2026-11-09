@@ -156,7 +156,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const connector = ownTool ? undefined : (await catalogFor(tm.config)).tools.find((x) => x.name === name);
   if (!ownTool && !connector) return json(res, 200, { text: `There is no tool called ${name} in this session. Use one of the tools you were given.`, isError: true });
 
-  const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), asked_by: person?.id ?? null, end_user: b.endUser };
+  const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), args_preview: JSON.stringify(args ?? {}).slice(0, 300), asked_by: person?.id ?? null, end_user: b.endUser };
   const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
   // Loop limits (K14), the same on every model: the 3rd identical call in a run gets a factual note, the 6th
   // stops the run.

@@ -11,8 +11,11 @@ import { appendEvent } from "../store/events.ts";
 export type Decision = { decision: "approved" | "denied"; scope?: "once" | "job" | "always"; personId: string | null; arguments?: Record<string, unknown>; reason?: string; superseded?: boolean };
 export type ApprovalResult = { approvalId: string; status: "approved" | "denied" | "expired"; scope: Decision["scope"] | null; arguments?: Record<string, unknown> | null; reason?: string | null; superseded?: boolean };
 
+// Keys sorted at every level. (A key list passed to JSON.stringify filters nested keys too, which made calls that
+// differ only inside a nested object, like Stripe's params.starting_after, look identical.)
+const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as any)[k])])) : v;
 export function fingerprint(action: Record<string, unknown>): string {
-  const canonical = JSON.stringify(action, Object.keys(action).sort());
+  const canonical = JSON.stringify(canon(action));
   return createHash("sha256").update(canonical).digest("hex").slice(0, 32);
 }
 

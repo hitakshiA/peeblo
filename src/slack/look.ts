@@ -39,12 +39,14 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
   const svc = server === "atlassian" ? atlassianName(action) : serviceName(server);
   if (/pull_request/.test(action) && /^create/.test(action)) return "Opened a pull request";
   if (/^(search|find|query)/.test(action) || /_search$/.test(action)) return `Searched ${svc}`;
-  if (/^(list|get|read|fetch|retrieve|describe|show|view|count|lookup)/.test(action) || action === "exec" && d.kind === "read") return `Read ${svc}`;
+  // A read verb as a whole word anywhere (stripe_api_read, hubspot-list-objects) is a read.
+  if (/^(list|get|read|fetch|retrieve|describe|show|view|count|lookup)/.test(action) || /(^|[_-])(read|list|get|fetch|retrieve)([_-]|$)/.test(action) || action === "exec" && d.kind === "read") return `Read ${svc}`;
   if (/refund/.test(action)) return `Refunded in ${svc}`;
   if (/^(delete|remove|archive|cancel|close)/.test(action)) return `Changed ${svc}`;
   if (/comment/.test(action)) return `Commented in ${svc}`;
   if (/^(send)/.test(action)) return `Sent from ${svc}`;
-  return d.kind === "read" ? `Read ${svc}` : `Updated ${svc}`;
+  // Only a call known to write is labelled a change; a repeat or refusal carries no kind.
+  return d.kind === "write" ? `Updated ${svc}` : d.kind === "read" || !d.kind ? `Read ${svc}` : `Updated ${svc}`;
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 

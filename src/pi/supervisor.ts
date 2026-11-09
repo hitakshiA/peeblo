@@ -354,6 +354,9 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
 // K9: "was the request answered?" is a Stop check in a fresh context (a typed judge from another model family
 // than the worker), and a job with a spec (a delegated objective) gets an outcome grader against that spec. Either
 // may send the teammate back once, with the reason; never more than one continuation.
+// Keys, scopes and permissions in a reply: plumbing the person doesn't need.
+const PLUMBING = /\b(permissions?|scopes?|api[ -]?keys?|the key|key lacks|lacks? (the )?(access|permission|scope)|access to (the |this )?(endpoint|api)|widen|data[ -]quer(y|ies)|not authori[sz]ed|unauthori[sz]ed|forbidden|403)\b/i;
+
 async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string | null }): Promise<{ again: string | null }> {
   // "toolUse": the turn ended on a tool that ends it (a posted answer, a hand-off).
   if (r.stopReason !== "stop" && r.stopReason !== "toolUse") return { again: null };
@@ -376,7 +379,7 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
     return ruled("said noted without saving", "You told them it's noted or saved, but no memory tool saved anything this turn. Save it now (a person's preference: person_note; a fact about the company: company_memory_propose if you're Peeblo with an admin, else memory_write; anything else: memory_write), then correct your reply with slack_post if it said more than you did.");
   }
   // Talking about keys and permissions instead of the answer: say what was done, and use any data a read did return.
-  if (/\b(permissions?|scopes?|api key|the key|widen|data queries)\b/i.test(posted.join("\n"))) {
+  if (PLUMBING.test(posted.join("\n"))) {
     const readOk = calls.some((c) => c.s === "completed" && c.t.includes("__"));
     return ruled("permission talk in the reply", `Your reply talks about keys or permissions. People don't need the plumbing: say what you did in plain words ("Stripe wouldn't give me MRR directly, so I added it up from subscriptions").${readOk ? " A read this turn did return data: use it (get any missing pages first), compute the answer on your computer, and post it." : " If there's another way to get it, use it; otherwise say plainly what you couldn't get."} Then correct your reply with slack_post.`);
   }
@@ -431,7 +434,7 @@ export function installPiExecutor(): void {
         const { allowFinalStatus } = await import("../proxy/relay.ts");
         allowFinalStatus(l.token, ctx.run.id);
         const asker = ctx.run.submission_id ? (await pool.query("SELECT p.display_name FROM submissions s LEFT JOIN people p ON p.id = s.person_id WHERE s.id = $1", [ctx.run.submission_id])).rows[0]?.display_name : null;
-        const note = `<peeblo_event kind="stopped">This job has stopped here. Post your status for ${String(asker ?? "them").split(" ")[0]} with slack_post, in two or three short lines: what's done, what still fails and why, and what you'd do next. Your work is saved; say they can tell you to continue. No other tools.</peeblo_event>`;
+        const note = `<peeblo_event kind="stopped">This job has stopped here. Post your status for ${String(asker ?? "them").split(" ")[0]} with slack_post, in two or three short lines: what's done, what still fails and why, and what you'd do next. Plain words: never mention keys, scopes or permissions. Your work is saved; say they can tell you to continue. No other tools.</peeblo_event>`;
         await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 2, final_status: true } }), { name: "turn-start-status" });
         const s2 = await DBOS.runStep(() => turn(ctx, 2, note), { name: "turn-status" });
         await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 2, text: s2.text, stop_reason: s2.stopReason } }), { name: "turn-finish-status" });
