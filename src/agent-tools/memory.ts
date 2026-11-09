@@ -115,7 +115,7 @@ async function search(ctx: ToolContext, notes: Note[], query: string): Promise<{
   return { text: `${r.hits.map((h) => `${show(notes[h.index])}\n  ${notes[h.index].body.slice(0, 500).replace(/\n/g, " ")}`).join("\n")}${r.reranked ? "" : "\n(ranked by keywords and meaning; Otari's reranker was unavailable)"}` };
 }
 
-// A person by Slack id (also inside "Hitakshi (U0…)" or <@U0…>), full name or first name.
+// A person by Slack id (also inside "Maya (U0…)" or <@U0…>), full name or first name.
 const findPerson = async (who: string) => {
   const id = /\b(U[A-Z0-9]{6,})\b/.exec(String(who))?.[1];
   const name = String(who).replace(/<@[^>]+>|\(.*?\)/g, "").replace(/^@/, "").trim();
