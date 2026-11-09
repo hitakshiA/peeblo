@@ -44,6 +44,12 @@ export function installSlackInbound(): void {
       if (taggedIds.length && (await pool.query("SELECT 1 FROM slack_apps WHERE bot_user_id = ANY($1) AND app_id <> $2 LIMIT 1", [taggedIds, appId])).rows.length) return;
       const known = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND kind = 'thread' AND place_key = $2", [teammateId, placeKey])).rows[0];
       inThread = Boolean(known);
+      // An untagged reply in a thread belongs to whoever spoke last before it (the one whose question it answers).
+      // This teammate takes it only if it spoke last, or no other teammate has spoken in the thread.
+      if (known && ev.thread_ts) {
+        const last = await lastTeammateSpeaker(appId, ev.channel, ev.thread_ts, ev.ts);
+        if (last && last !== appId) return;
+      }
       if (!known) {
         const isManager = (await pool.query("SELECT slug FROM teammates WHERE id = $1", [teammateId])).rows[0]?.slug === "peeblo";
         const attention = (await pool.query("SELECT attention FROM channel_settings WHERE team_id = $1 AND channel = $2", [teamId, ev.channel])).rows[0]?.attention ?? "mentions";
@@ -121,4 +127,13 @@ async function saveFiles(appId: string, teammateId: string, sessionId: string, f
   }
   await appendEvent({ sessionId, type: "slack.files_saved", data: { files: saved } });
   return `[files from the person, saved on your computer: ${saved.join("; ")}]`;
+}
+
+// The app of the last teammate (any Peeblo app) that posted in a thread before a message, or null if none has.
+async function lastTeammateSpeaker(appId: string, channel: string, threadTs: string, beforeTs: string): Promise<string | null> {
+  const { slack } = await import("./api.ts");
+  const r: any = await slack(appId, "conversations.replies", { channel, ts: threadTs, limit: 200 }).catch(() => null);
+  const ours = new Set((await pool.query("SELECT app_id FROM slack_apps")).rows.map((x) => String(x.app_id)));
+  const before = (r?.messages ?? []).filter((m: any) => Number(m.ts) < Number(beforeTs) && m.app_id && ours.has(m.app_id));
+  return before.length ? String(before[before.length - 1].app_id) : null;
 }
