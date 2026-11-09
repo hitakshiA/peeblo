@@ -32,7 +32,7 @@ installPiExecutor();
   (await import("./slack/profile.ts")).installProfileSync();
   (await import("./connectors/mcp.ts")).warmCatalog();
   // Warm what the first model call would otherwise wait for: catalog prices.
-  void import("./otari/catalog.ts").then((c) => c.estimateCost("deepseek/deepseek-v4.1-flash-1017", 1000, 100)).catch(() => null);
+  void import("./otari/catalog.ts").then((c) => import("./otari/routing.ts").then((r) => c.estimateCost(r.ROLES["peeblo-worker"].default, 1000, 100))).catch(() => null);
   void import("./proxy/tools.ts").then((t) => t.warmGithubVisible()).catch(() => null);
 }
 // Receipts need to know whether Otari's org guardrail is on (Otari doesn't report it on streams).

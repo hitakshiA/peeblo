@@ -113,8 +113,7 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   const { getTeammate } = await import("../store/teammates.ts");
   const tm = (await getTeammate(b.teammateId)) ?? (await teammateAt(b.teammateId, b.teammateVersion));
   if (!tm) return unchecked("its teammate's setup couldn't be found");
-  const { jobModel } = await import("../agent-tools/effort.ts");
-  const sent = (b.runId && jobModel.get(b.runId)) || (typeof j.model === "string" ? j.model : tm.config.model.default);
+  const sent = typeof j.model === "string" ? j.model : tm.config.model.default;
   const model = sent in ROLES ? ROLES[sent].default : sent;
   const promptChars = JSON.stringify(j.messages ?? j.input ?? "").length + JSON.stringify(j.tools ?? []).length + String(j.system ?? "").length;
   // Agents send the model's whole output limit as max_tokens; a turn rarely writes more than 8k, so the estimate
@@ -254,11 +253,7 @@ export function startProxy(): Promise<Server> {
 
     const abort = new AbortController();
     res.on("close", () => abort.abort());
-    // A job routed by pick_model (Otari's recommender) runs the rest of its calls on that model.
-    const { jobModel } = await import("../agent-tools/effort.ts");
-    const routed = isInference && path === "/chat/completions" && b.runId ? jobModel.get(b.runId) : undefined;
     const attempt = async (model?: string, sandbox?: string) => {
-      model ??= routed;
       sandbox ??= isInference && b.code ? await sandboxFor(b.sessionId) : undefined;
       const p = isInference && raw ? prepare(path, raw, b, model, sandbox, await sessionLabel(b).catch(() => undefined)) : { buf: raw, model: null, stream: false };
       const t0 = Date.now();

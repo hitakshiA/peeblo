@@ -36,7 +36,7 @@ export const subagentTool: AgentTool = {
   description: "Hand a self-contained piece of read-only side work (research, reading, comparing) to a fresh session of yourself, and get its answer back. Say what you need and why, not how. It can look things up but not change anything.",
   input_schema: object({
     task: { type: "string", description: "What to find out, and what the answer should look like." },
-    model: { type: ["string", "null"], description: "A catalog model id or role policy for this work, or null for your own model. See routing_recommend." },
+    model: { type: ["string", "null"], description: "A catalog model id or role policy for this work, or null for your own model (pick_model asks Otari's router)." },
   }),
   kind: "local",
   async authorize(ctx, a) {

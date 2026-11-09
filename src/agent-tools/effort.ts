@@ -1,34 +1,40 @@
-// Smart routing for one job: everyday work runs on the teammate's role policy (DeepSeek Flash,
-// MiMo fallback, in Otari). When a job is unusual, the teammate asks Otari's recommender which model fits this work,
-// and the rest of the job runs on the answer. Only budgets limit it (the per-teammate and total caps), never a
-// count of calls, so nothing stops mid-job.
+// Routing at the boundary (how pi-otari routes subagents): when one part of a job is clearly harder than everyday
+// work, the teammate asks Otari's recommender which model fits that part. If it picks a stronger or different model,
+// that part runs as a subagent on the pick and its answer comes back; the job itself never switches model mid-way.
+// The candidates are Peeblo's role policies (config/model-tiers.json), so nothing here names a model. Only budgets
+// limit it.
 import type { AgentTool } from "./types.ts";
 import { object } from "./schema.ts";
 
-// runId → the model the rest of that job runs on (read by the relay).
-export const jobModel = new Map<string, string>();
-
-const CANDIDATES: Record<string, string> = {
-  "deepseek/deepseek-v4.1-flash-1017": "everyday work: lookups, summaries, drafts, routine tool use; fast and cheap",
-  "moonshotai/kimi-k3.1-pro": "the strongest open model, about 20x the price: hard reasoning, reconciling sources that disagree, long dependent plans, subtle code bugs, careful money math",
-  "minimax/minimax-m3.1-flash": "a different model family at a similar price: a second opinion or a check on another model's work",
-};
+async function candidates(): Promise<{ everyday: string; list: Record<string, string> }> {
+  const { ROLES } = await import("../otari/routing.ts");
+  const everyday = ROLES["peeblo-worker"].default;
+  return { everyday, list: {
+    [everyday]: "everyday work: lookups, summaries, drafts, routine tool use; fast and cheap",
+    [ROLES["peeblo-heavy"].default]: "the strongest open model, many times the price: hard reasoning, reconciling sources that disagree, long dependent plans, subtle code bugs, careful money math",
+    [ROLES["peeblo-reviewer"].default]: "a different model family at a similar price: a second opinion or a check on another model's work",
+  } };
+}
 
 export const pickModelTool: AgentTool = {
   name: "pick_model",
-  description: "Rarely: when a job is clearly harder than everyday work, ask Otari's router which model fits it, and run the rest of this job on its pick. The strong model costs about 20x the everyday one, so almost every job, including most analysis, stays on the everyday model; use this only when getting it wrong would be costly and the everyday model is likely to. Typical reasons: sources that disagree and must be reconciled, a long plan with dependent steps, a subtle bug, careful money math, or a second opinion from another model family. Describe the work in a line or two.",
-  input_schema: object({ work: { type: "string", description: "What the rest of this job has to do, and what makes it hard." } }),
+  description: "Rarely: when one part of a job is clearly harder than everyday work, ask Otari's router which model fits that part. If it picks a stronger model (or another family for a second opinion), that part runs on its pick as a read-only helper and you get the answer back; the strong model costs many times the everyday one. Almost every job, including most analysis, doesn't need this. Typical reasons: sources that disagree and must be reconciled, a long plan with dependent steps, a subtle bug, careful money math, a second opinion. Give the self-contained task, with the facts it needs.",
+  input_schema: object({
+    work: { type: "string", description: "Why this part is hard, in a line." },
+    task: { type: "string", description: "The self-contained task for the chosen model, with the facts and numbers it needs; it can look things up but changes nothing." },
+  }),
   kind: "local",
   async run(ctx, a) {
     if (!ctx.runId) return { text: "There's no job to route.", isError: true };
     const { recommend } = await import("../otari/routing.ts");
-    const r = await recommend({ sessionId: ctx.sessionId, toolUseId: ctx.toolCallId, agentType: "analysis", description: String(a.work).slice(0, 200), prompt: String(a.work), parentModel: "deepseek/deepseek-v4.1-flash-1017", candidates: CANDIDATES, endUser: ctx.endUser ?? undefined });
-    if (r.fallback || r.model === "deepseek/deepseek-v4.1-flash-1017") {
-      jobModel.delete(ctx.runId);
-      return { text: r.fallback ? "Otari's router didn't answer; staying on the everyday model." : `Otari's router says the everyday model fits this${r.reason ? ` (${r.reason})` : ""}; staying on it.`, data: r };
-    }
-    jobModel.set(ctx.runId, r.model);
-    const name = r.model.includes("kimi") ? "Kimi K3.1 Pro" : r.model.includes("minimax") ? "MiniMax M3.1 Flash" : r.model;
-    return { text: `Otari's router picked ${name} for the rest of this job${r.reason ? ` (${r.reason})` : ""}. Say in your answer which model did the hard part and why.`, data: r };
+    const { readableModel } = await import("../slack/look.ts");
+    const c = await candidates();
+    const r = await recommend({ sessionId: ctx.sessionId, toolUseId: ctx.toolCallId, agentType: "analysis", description: String(a.work).slice(0, 200), prompt: `${a.work}\n\n${a.task}`.slice(0, 4000), parentModel: c.everyday, candidates: c.list, endUser: ctx.endUser ?? undefined });
+    if (r.fallback || r.model === c.everyday) return { text: r.fallback ? "Otari's router didn't answer; do it yourself on your own model." : `Otari's router says the everyday model fits this${r.reason ? ` (${r.reason})` : ""}; do it yourself.`, data: r };
+    const { subagentTool } = await import("./work.ts");
+    const name = readableModel(r.model).name;
+    const out = await subagentTool.run(ctx, { task: a.task, model: r.model });
+    if (out.isError) return { text: `Otari's router picked ${name}, but that run didn't finish (${out.text}); do it yourself.`, isError: true, data: r };
+    return { text: `Otari's router picked ${name}${r.reason ? ` (${r.reason})` : ""}; its answer:\n${out.text}\n\nCheck it against what you know, and say in your reply that ${name} did this part.`, untrusted: out.untrusted, data: { ...r, ...(out.data as object) } };
   },
 };

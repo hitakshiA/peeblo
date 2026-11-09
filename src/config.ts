@@ -45,7 +45,7 @@ export const config = {
   decisionModel: process.env.PEEBLO_DECISION_MODEL ?? "typesafe:jev-latest",   // used when Otari has a decision provider
   judgeModel: process.env.PEEBLO_JUDGE_MODEL ?? "peeblo-judge",                 // the judge-role routing policy
   guardProfile: process.env.PEEBLO_GUARD_PROFILE ?? "peeblo-lakera",  // the org guardrail's profile in Otari
-  guardProbeModel: process.env.PEEBLO_GUARD_PROBE_MODEL ?? "deepseek/deepseek-v4.1-flash-1017", // one-token calls that ask Otari's guardrail
+  guardProbeModel: process.env.PEEBLO_GUARD_PROBE_MODEL ?? "peeblo-worker", // one-token calls that ask Otari's guardrail
   lakeraProject: process.env.PEEBLO_LAKERA_PROJECT ?? "",              // Lakera project whose policy the org guardrail uses
   guardModel: process.env.PEEBLO_GUARD_MODEL ?? "alibaba/qwen3guard-gen-8b",
   managerAppId: process.env.PEEBLO_SLACK_APP_ID?.trim() || "",   // Peeblo's own Slack app

@@ -136,8 +136,9 @@ export function addConsoleRoutes(router: Router): void {
         session: s ? { signed_in_as: s.signedInAs, expires_at: s.expiresAt } : null,
         web_search: { enabled: ws?.enabled ?? null },
         guardrail: { enabled: g?.enabled ?? null, profile: config.guardProfile, mode: config.guard },
+        trace_content: config.traceContent,
         routing_policies: s ? await rolePoliciesInOtari().catch(() => []) : [], roles: Object.keys(ROLES), policies_ready: rolePoliciesReady(),
-        links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), routing: links.routing(), web_search: links.webSearch(), mcp: links.mcpServers() },
+        links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), routing: links.routing(), web_search: links.webSearch(), mcp: links.mcpServers(), sessions: links.sessionsFor({ q: "peeblo" }) },
       };
     })
     // Connect Otari: the admin signs in once (the password is used for this call only, never stored); Peeblo keeps

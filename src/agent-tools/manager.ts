@@ -43,7 +43,7 @@ const hireSpec = {
   name: { type: "string", description: "A short first name, e.g. Ledger." },
   role: { type: "string", description: "What it does, for whom, e.g. 'Watches Stripe refunds for the finance lead'." },
   instructions: { type: ["string", "null"], description: "Standing instructions, in the person's words." },
-  model: { type: ["string", "null"], description: "An open-weight model id from routing_recommend; empty for the worker default." },
+  model: { type: ["string", "null"], description: "An open-weight model id from models_list; empty for the worker default." },
   budget_usd: { type: "number", minimum: 0, maximum: 500, description: "Monthly budget in USD." },
   tools: { type: "array", items: { type: "string", enum: ["web", "code", "computer"] }, maxItems: 3 },
   connectors: { type: "array", items: { type: "string" }, maxItems: 10, description: "Otari MCP server names, e.g. linear, posthog, stripe." },

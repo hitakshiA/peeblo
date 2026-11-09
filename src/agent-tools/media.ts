@@ -20,8 +20,8 @@ const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg
 // best quality tier first. MiMo V2.6 Flash lists audio but answers it with empty text, so it comes last.
 const PREFERRED: Record<Kind, string[]> = {
   audio: ["xiaomi/mimo-v2.6-pro"],
-  pdf: ["deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flash", "mistralai/mistral-small-latest"],
-  image: ["deepseek/deepseek-v4.1-flash", "moonshotai/kimi-k3.1-pro", "z-ai/glm-5.3-flash"],
+  pdf: [],
+  image: [],
 };
 const LAST = new Set(["xiaomi/mimo-v2.6-flash"]);
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -41,11 +41,13 @@ async function catalogModels() {
   catalog = { at: Date.now(), models };
   return models;
 }
-export async function modelsFor(kind: Kind): Promise<string[]> {
+// PDFs: Otari reads them for any model, so the teammate's own role comes first. Images: the vision role.
+export async function modelsFor(kind: Kind, own: string): Promise<string[]> {
+  const first = kind === "pdf" ? [own] : kind === "image" ? ["peeblo-vision"] : [];
   const rank = (id: string) => "SABCDE".indexOf(tierOf(id)?.tier ?? "E");
   const able = (await catalogModels()).filter((m) => !m.deprecated && isOpenWeight(m.id) && (m.input_modalities ?? []).includes(kind)).map((m) => m.id);
   const rest = able.filter((id) => !PREFERRED[kind].includes(id) && !LAST.has(id)).sort((a, b) => rank(a) - rank(b));
-  return [...PREFERRED[kind].filter((id) => able.includes(id) || kind === "pdf"), ...rest, ...able.filter((id) => LAST.has(id))].slice(0, 4);
+  return [...new Set([...first, ...PREFERRED[kind].filter((id) => able.includes(id)), ...rest, ...able.filter((id) => LAST.has(id))])].slice(0, 4);
 }
 
 // A file on the teammate's computer: the shared /workspace folder is read directly; anything else (e.g. a saved
@@ -96,7 +98,7 @@ export const understandFileTool: AgentTool = {
     const ask = kind === "audio" && /transcri/i.test(a.question) ? `Transcribe this word for word. Reply with the transcript only.${names ? ` Names you may hear: ${names}.` : ""}` : `${a.question}${names ? `\nNames you may hear: ${names}.` : ""}\nAnswer from the file only; say plainly if it doesn't show it.`;
     const auth = ctx.otariKey ? { auth: { authorization: `Bearer ${ctx.otariKey.secret}` } } : {};
     const tried: string[] = [];
-    for (const model of await modelsFor(kind).catch(() => PREFERRED[kind])) {
+    for (const model of await modelsFor(kind, ctx.teammate.config.model.default).catch(() => [ctx.teammate.config.model.default])) {
       tried.push(model);
       try {
         const r = await otari<any>("POST", "/chat/completions", { model, max_tokens: 1500, temperature: 0, ...(ctx.endUser ? { user: ctx.endUser } : {}), messages: [{ role: "user", content: [{ type: "text", text: ask }, part] }] }, { ...auth, timeoutMs: 90_000, retries: 0 });

@@ -8,7 +8,7 @@ import { estimateCost, isOpenWeight, modelFacts, models, openWeightModels, tierF
 import { otari } from "../otari/client.ts";
 import { links } from "../otari/links.ts";
 import { tiers } from "../otari/people.ts";
-import { policySpec, recommend, ROLES, waitUntilServing } from "../otari/routing.ts";
+import { policySpec, ROLES, waitUntilServing } from "../otari/routing.ts";
 import { personSpend, teammateSpend, usd } from "../otari/spend.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
@@ -44,28 +44,6 @@ export const otariTools: AgentTool[] = [
       const lines = list.slice(0, 30).map((m) => `${tierLabel(m.id)} ${m.id} · ${m.context_window ? `${Math.round(m.context_window / 1000)}k` : "?"} context · ${price(m.pricing?.input_price_per_million)} in / ${price(m.pricing?.output_price_per_million)} out per 1M · ${modelFacts(m.id)}`);
       const roles = [...Object.entries(ROLES).map(([n, r]) => `${n}: ${r.default} (${tierOf(r.default)?.tier ?? "unscored"}) → ${r.fallback.join(", ")} (${r.purpose})`), `heavy work (not a policy; a price card first): ${tierFile.heavy.model} (${tierOf(tierFile.heavy.model)?.tier}) — ${tierFile.heavy.purpose}`];
       return { text: `${list.length} open-weight chat models${list.length > 30 ? " (first 30 shown)" : ""}. Tier: S best → E; "—" means no score yet.\n${lines.join("\n")}\n\nRole policies (use the name as a model):\n${roles.join("\n")}` };
-    },
-  },
-  {
-    name: "routing_recommend",
-    description: "Ask Otari which model fits a piece of work, before it starts (a new job, a subagent, or a teammate being set up). Not for switching models in the middle of a conversation.",
-    input_schema: object({
-      task: { type: "string", description: "What the work is, in a sentence or two." },
-      kind: { type: "string", enum: ["research", "coding", "writing", "analysis", "judgment", "other"] },
-    }),
-    kind: "read",
-    async run(ctx, a) {
-      // The role defaults and the S/A tier, each described with its tier so the recommender and the agent can weigh it.
-      const ids = [...new Set([...Object.values(ROLES).map((r) => r.default), tierFile.heavy.model, ...Object.entries(tierFile.models).filter(([, t]) => t.tier === "S" || t.tier === "A").map(([m]) => m)])];
-      const candidates = Object.fromEntries(ids.map((m) => [m, `${modelFacts(m)}; ${m === tierFile.heavy.model ? tierFile.heavy.purpose : Object.values(ROLES).find((r) => r.default === m)?.purpose ?? "general work"}`]));
-      const r = await recommend({ sessionId: ctx.sessionId, toolUseId: ctx.toolCallId, agentType: a.kind, description: a.task.slice(0, 200), prompt: a.task, parentModel: ctx.teammate.config.model.default, candidates, endUser: ctx.endUser ?? undefined });
-      const probs = Object.entries(r.probabilities).sort((x, y) => y[1] - x[1]).map(([m, p]) => `${m} ${tierLabel(m)} ${(p * 100).toFixed(0)}%`).join(", ");
-      return {
-        text: r.fallback
-          ? `Otari's recommender didn't answer, so stay on ${r.model} ${tierLabel(r.model)}.`
-          : `Otari recommends ${r.model}: ${modelFacts(r.model)}${probs ? ` (all: ${probs})` : ""}. A change of this teammate's own model applies from its next session and needs its owner or an admin.`,
-        data: r,
-      };
     },
   },
   {

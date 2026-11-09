@@ -290,6 +290,9 @@ function Otari() {
       <div className="card stack"><h3>Guardrail</h3><div>{pill(data.guardrail.enabled, "org-wide", "outside text only")} <span className="muted">{data.guardrail.profile}</span></div>
         <div className="muted">Peeblo checks text from outside the company (tickets, chats, web pages, files) with your Lakera guardrail in Otari. To screen every call instead, turn on the org guardrail in Otari → Guardrails.</div>
         <a href={data.links.guardrails} target="_blank" rel="noreferrer">Open guardrails in Otari</a></div>
+      <div className="card stack"><h3>Traces</h3><div>{pill(data.trace_content, "content kept", "metadata only")}</div>
+        <div className="muted">Every job shows in Otari → Sessions under its Slack place. With PEEBLO_TRACE_CONTENT=keep in .env, Otari also keeps each call's prompt and answer, for debugging; off by default.</div>
+        <a href={data.links.sessions} target="_blank" rel="noreferrer">Open sessions in Otari</a></div>
       <div className="card stack"><h3>Web search</h3><div>{pill(data.web_search.enabled)}</div>
         <div className="muted">Teammates with the web tool search and read pages only when they choose to. Turn it on in Otari → Tools → Web search.</div>
         <a href={data.links.web_search} target="_blank" rel="noreferrer">Open web search in Otari</a></div>
