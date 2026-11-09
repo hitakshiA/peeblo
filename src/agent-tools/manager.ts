@@ -191,7 +191,7 @@ export const managerTools: AgentTool[] = [
   },
   {
     name: "teammate_update",
-    description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, the GitHub repos it works in (github_repos: the full list as owner/repo, comma-separated), budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it. Access is given with these fields, never by writing it into instructions. A teammate whose Slack app couldn't be made at hire gets it made by any change here (re-setting its role is enough), and its install button goes on its ID card.",
+    description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, read_only (the connectors it may only read: enforced, so \"read only on X\" means adding X here, one call per field, after adding the connector), the GitHub repos it works in (github_repos: the full list as owner/repo, comma-separated), budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it. Access is given with these fields, never by writing it into instructions. A teammate whose Slack app couldn't be made at hire gets it made by any change here (re-setting its role is enough), and its install button goes on its ID card.",
     input_schema: object({
       teammate: { type: "string" },
       field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "read_only", "github_repos", "budget_usd", "computer_size", "profile"] },
