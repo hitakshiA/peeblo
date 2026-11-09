@@ -278,7 +278,11 @@ export function startProxy(): Promise<Server> {
 
     const abort = new AbortController();
     res.on("close", () => abort.abort());
+    // A job routed by pick_model (Otari's recommender) runs the rest of its calls on that model.
+    const { jobModel } = await import("../agent-tools/effort.ts");
+    const routed = isInference && path === "/chat/completions" && b.runId ? jobModel.get(b.runId) : undefined;
     const attempt = async (model?: string, sandbox?: string) => {
+      model ??= routed;
       sandbox ??= isInference && b.code ? await sandboxFor(b.sessionId) : undefined;
       const p = isInference && raw ? prepare(path, raw, b, model, sandbox) : { buf: raw, model: null, stream: false };
       const t0 = Date.now();

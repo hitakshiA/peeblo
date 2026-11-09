@@ -104,27 +104,37 @@
   "roles": {
     "peeblo-manager": {
       "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [],
+      "fallback": [
+        "minimax/minimax-m3.1-flash"
+      ],
       "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap)"
     },
     "peeblo-worker": {
       "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [],
+      "fallback": [
+        "minimax/minimax-m3.1-flash"
+      ],
       "purpose": "teammates' everyday work"
     },
     "peeblo-reviewer": {
-      "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [],
-      "purpose": "the approval gate's review (fast, a different family from the worker)"
+      "default": "minimax/minimax-m3.1-flash",
+      "fallback": [
+        "deepseek/deepseek-v4.1-flash-1017"
+      ],
+      "purpose": "the approval gate's review: a different family (MiniMax) from the worker (DeepSeek), so a second model really checks"
     },
     "peeblo-grader": {
-      "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [],
+      "default": "minimax/minimax-m3.1-flash",
+      "fallback": [
+        "deepseek/deepseek-v4.1-flash-1017"
+      ],
       "purpose": "output review and eval grading (best points per dollar; off the hot path)"
     },
     "peeblo-judge": {
-      "default": "deepseek/deepseek-v4.1-flash-1017",
-      "fallback": [],
+      "default": "minimax/minimax-m3.1-flash",
+      "fallback": [
+        "deepseek/deepseek-v4.1-flash-1017"
+      ],
       "purpose": "short typed judgments at hook points"
     },
     "peeblo-vision": {
@@ -133,6 +143,13 @@
         "alibaba/qwen3-vl-30b-a3b-instruct"
       ],
       "purpose": "look: one question about a screenshot, answered in text"
+    },
+    "peeblo-heavy": {
+      "default": "moonshotai/kimi-k3.1-pro",
+      "fallback": [
+        "deepseek/deepseek-v4.1-flash-1017"
+      ],
+      "purpose": "rare hard work a teammate chooses to switch to for one job (reconciling conflicting sources, long multi-step plans, hard code): the strongest open model, priced before it's used"
     }
   },
   "heavy": {

@@ -8,6 +8,8 @@ const NAMED = /kimi-k3|glm-5\.3(?!-flash)|glm-5p3(?!-flash)|muse-spark-open|mist
 
 export async function overBuildCap(model: unknown): Promise<string | null> {
   if (config.buildPriceCap.length !== 2 || typeof model !== "string") return null;
+  // The heavy role is only used when a teammate chose it for one hard job (heavy_model, priced and capped per job).
+  if (model === "peeblo-heavy") return null;
   const id = tierFile.roles[model]?.default ?? model;
   if (NAMED.test(id)) return `${model} is one of the big models tested at the end, not during the build`;
   const all = await models();
