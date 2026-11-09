@@ -23,7 +23,9 @@ export function question(a: any, teammate: string): string {
     // No currency in the call (a credit note or refund follows its invoice or charge): no symbol is guessed.
     const cur = p.currency ? String(p.currency).toUpperCase() : null;
     const sym = cur ? ({ USD: "$", EUR: "€", GBP: "£" } as Record<string, string>)[cur] ?? `${cur} ` : "";
-    return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : credit ? "Credit" : "Move"} ${sym}${(amount / 100).toFixed(2)}${cur ? "" : " (its invoice's currency)"}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
+    // Stripe amounts are in the currency's smallest unit: cents, but whole yen or won (no decimals).
+    const digits = minorDigits(cur);
+    return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : credit ? "Credit" : "Move"} ${sym}${(amount / 10 ** digits).toFixed(digits)}${cur ? "" : " (its invoice's currency)"}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
   }
   if (a.server) return a.risk === "read" ? `Okay to look this up in ${serviceName(a.server)}?` : `Okay to write to ${serviceName(a.server)}?`;
   if (a.tool && a.summary && a.kind === "peeblo_tool") return `${String(a.summary).split("\n")[0].replace(/[.?]$/, "")}?`;
@@ -159,7 +161,7 @@ export function editModal(a: any, id: string, teammate: string): any {
   const cents = a.server === "stripe" || /stripe/.test(String(a.tool ?? ""));
   const inputs = Object.entries(a.arguments ?? {}).filter(([k]) => !/operation_id$/.test(k)).flatMap(([k, v]) =>
     v && typeof v === "object" && !Array.isArray(v)
-      ? Object.entries(v as Record<string, unknown>).map(([k2, v2]) => field(`${k}.${k2}`, `${human(k2)}${cents && k2 === "amount" ? " (in cents: 3700 is 37.00)" : ""}`, v2))
+      ? Object.entries(v as Record<string, unknown>).map(([k2, v2]) => field(`${k}.${k2}`, `${human(k2)}${cents && k2 === "amount" ? (minorDigits(String((v as any).currency ?? "").toUpperCase() || null) ? " (in cents: 3700 is 37.00)" : " (in whole units: this currency has no cents)") : ""}`, v2))
       : [field(k, human(k), v)]).slice(0, 20);
   return {
     type: "modal", callback_id: "edit_approval", private_metadata: id,
@@ -189,4 +191,10 @@ export function editedArgs(original: Record<string, unknown>, values: Record<str
     } else out[k] = typed(original[k], raw);
   }
   return out;
+}
+
+// Decimal places of a currency's smallest unit (2 for USD, 0 for JPY), from the platform's currency data.
+export function minorDigits(cur: string | null): number {
+  if (!cur) return 2;
+  try { return new Intl.NumberFormat("en", { style: "currency", currency: cur }).resolvedOptions().maximumFractionDigits ?? 2; } catch { return 2; }
 }

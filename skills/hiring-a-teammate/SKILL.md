@@ -26,7 +26,7 @@ work, out loud to yourself:
   Never ask what you can decide (its name, its face).
 
 ## Shaping the rest
-- **Name**: short, after its job (Patch for bugs, Ledger for finance, Beacon for campaigns).
+- **Name**: short, after its job (a word that hints at bugs, finance or campaigns), not a name already on the crew.
 - **Role**: one line, "<what> for <whom>".
 - **Budget**: small (5–20 USD a month) unless the work is heavy; `price_estimate` helps.
 - **Mode**: auto (asks before writes that matter) unless they want more caution.

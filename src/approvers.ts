@@ -76,14 +76,17 @@ export async function personWords(runId: string): Promise<{ asks: string[]; agen
   return { asks: rows.map((x) => String(x.text).slice(0, 1500)).reverse(), agentWritten: null };
 }
 
-// The approvals map (rail): company memory's product/approvals.md says who must click for which write, before a
-// reviewer's allow counts. Lines like "- money: Hitakshi", "- merges, flags, deploys: Jun", "- marketing sends: Maya",
-// "- account Northwind Trading: Maya". A person who said "I'll approve" or "ask me first" in this job gets the card.
+// The approvals map (rail): company memory's company/approvals note says who must click for which kind of write,
+// before a reviewer's allow counts. Lines like "- money: <name>", "- merges, flags, deploys: <name>", "- marketing
+// sends: <name>", "- account <customer name>: <name>". An admin sets it by telling Peeblo (company memory). A person
+// who said "I'll approve" or "ask me first" in this job gets the card. With no map, the teammate's owner or an admin.
 export async function policyApprovers(runId: string, call: { server?: string; tool?: string; risk?: string; arguments?: unknown }): Promise<{ who: string[]; why: string } | null> {
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   let text = "";
-  try { text = readFileSync(join(config.dataDir, "company-memory", "product", "approvals.md"), "utf8"); } catch { /* no map */ }
+  for (const at of [["company", "approvals.md"], ["product", "approvals.md"]]) {
+    try { text = readFileSync(join(config.dataDir, "company-memory", ...at), "utf8"); break; } catch { /* not here */ }
+  }
   const rules = [...text.matchAll(/^-\s*([^:\n]+):\s*(.+)$/gm)].map((m) => ({ key: m[1].trim().toLowerCase(), names: m[2].split(/,| or | and /).map((x) => x.trim()).filter(Boolean) }));
   const tool = String(call.tool ?? "").toLowerCase(), server = String(call.server ?? "").toLowerCase();
   const args = JSON.stringify(call.arguments ?? {}).toLowerCase();
@@ -96,14 +99,15 @@ export async function policyApprovers(runId: string, call: { server?: string; to
     const said = (await pool.query(`SELECT sub.text FROM submissions sub JOIN runs r ON r.submission_id = sub.id WHERE r.session_id = (SELECT session_id FROM runs WHERE id = $1) AND sub.person_id = $2 ORDER BY sub.created_at DESC LIMIT 5`, [runId, o.personId])).rows.map((x) => String(x.text)).join("\n");
     if (/\b(i['’]?ll approve|i will approve|ask me (first|before)|check with me|let me approve|i approve it)\b/i.test(said)) return { who: [o.personId], why: "they said they'd approve it" };
   }
-  if (call.risk === "money" || (server === "stripe" && /refund|credit|quote|coupon|discount|invoice/.test(tool + args))) { const r = await pick((k) => /money|credit|refund/.test(k), "money goes to its approver"); if (r) return r; }
-  if (/merge|deploy/.test(tool) || ((server === "upstash" || server === "cloudflare") && !/^(get|list|read)/.test(tool))) { const r = await pick((k) => /merge|flag|deploy/.test(k), "merges, flags and deploys go to their approver"); if (r) return r; }
-  if ((server === "resend" && /send|broadcast/.test(tool)) || (server === "sanity" && /publish/.test(tool))) { const r = await pick((k) => /marketing/.test(k), "marketing sends go to their approver"); if (r) return r; }
-  if (server === "hubspot") {
-    for (const r of rules.filter((x) => x.key.startsWith("account "))) {
-      const acct = r.key.slice(8).trim();
-      if (acct && args.includes(acct.split(" ")[0])) { const who = await ids(r.names); if (who.length) return { who, why: `${r.key.slice(8)} is their account` }; }
-    }
+  // By what the call does, on any service: money, shipping (merges, deploys, flags, releases), sends to customers.
+  const reads = /^(get|list|read|search|fetch|describe)/.test(tool);
+  if (call.risk === "money" || (!reads && /refund|credit|quote|coupon|discount|invoice|payout|charge/.test(tool))) { const r = await pick((k) => /money|credit|refund/.test(k), "money goes to its approver"); if (r) return r; }
+  if (call.risk === "shipping" || (!reads && /merge|deploy|release|rollout|flag/.test(tool))) { const r = await pick((k) => /merge|flag|deploy|release/.test(k), "merges, flags and deploys go to their approver"); if (r) return r; }
+  if (!reads && /send|broadcast|publish|campaign/.test(tool)) { const r = await pick((k) => /marketing|send|publish/.test(k), "marketing sends go to their approver"); if (r) return r; }
+  // A named customer account: its owner, wherever the call touches it (the whole account name appears in the call).
+  for (const r of rules.filter((x) => x.key.startsWith("account "))) {
+    const acct = r.key.slice(8).trim();
+    if (acct.length > 2 && args.includes(acct)) { const who = await ids(r.names); if (who.length) return { who, why: `${r.key.slice(8)} is their account` }; }
   }
   return null;
 }

@@ -55,7 +55,7 @@ async function vectors(slug: string, notes: Note[], endUser?: string): Promise<n
 export const memoryTools: AgentTool[] = [
   {
     name: "memory_write",
-    description: "Remember something for later: a fact, a decision, a person's preference or a correction. Write or replace one note (a path like customers/acme-billing). It is kept for this conversation's place (this DM, this private channel, or the team). Keep memory tidy the way a careful person would: grep first and update the existing note on the same thing instead of adding another; when a note turns out wrong, write the right one and memory_forget the old; one fact per note, with where it came from. Things every teammate should know go to company memory (company_memory_propose) instead.",
+    description: "Remember something for later: a fact, a decision, a person's preference or a correction. Write or replace one note (a path like customers/example-co-billing). It is kept for this conversation's place (this DM, this private channel, or the team). Keep memory tidy the way a careful person would: grep first and update the existing note on the same thing instead of adding another; when a note turns out wrong, write the right one and memory_forget the old; one fact per note, with where it came from. Things every teammate should know go to company memory (company_memory_propose) instead.",
     input_schema: object({ path: { type: "string" }, title: { type: "string" }, body: { type: "string", description: "The note, in plain words. Say where it came from." } }),
     kind: "local",
     async run(ctx, a) {

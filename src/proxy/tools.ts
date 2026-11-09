@@ -130,7 +130,7 @@ function serverNote(server: string): string {
   notes.v[server] = [shipped, company].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   return notes.v[server];
 }
-const hintFor = (server: string, tool: string) => [serverNote(server) && `This connection (company memory connections/${server}): ${serverNote(server)} Use these exact ids, never a guess; if you learn something lasting about it, propose a change to that note.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
+const hintFor = (server: string, tool: string) => [serverNote(server) && `About this connection: ${serverNote(server)} Use any ids given here exactly, never a guess; if you learn something lasting about it, propose it for company memory connections/${server}.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
 
 type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
 

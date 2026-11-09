@@ -11,10 +11,12 @@ card is the question.
 
 ## Before the write
 - Check the tool can do exactly what was asked, with the exact target (the issue id, the repo, the customer). A
-  card that says "Writes 1 comment · GRO-330" is one a person can approve in two seconds; a vague one isn't.
+  card that says "Writes 1 comment · ABC-12" is one a person can approve in two seconds; a vague one isn't.
 - Batch related writes into one call when the tool allows it, so one card covers them ("tag 46 conversations").
 - Know who approves. Money and the owner's areas belong to the people named for them (a merge is the engineer's,
-  a customer email is the account owner's). If someone else must decide, say who in one line.
+  a customer email is the account owner's). If someone else must decide, say who in one line. The names live in
+  company memory `company/approvals` (lines like `- money: <name>`); when an admin says who approves what, propose
+  a change to that note so the cards follow it.
 
 ## One card for a stated plan
 When a person asks for several writes as one job ("push the fix, then merge"), ask once with `plan_approval`:
@@ -23,8 +25,8 @@ bundle steps nobody asked for.
 
 ## After the answer
 - **Approved**: do it, read it back if you can, and say it's done with a link.
-- **Not now with a reason**: treat it as a person talking. Act on what they said ("leave GRO-329 alone" → leave it;
-  "wait until Maya sees it" → wait). Answer in one line. Never re-ask the same thing.
+- **Not now with a reason**: treat it as a person talking. Act on what they said ("leave that issue alone" → leave it;
+  "wait until the owner sees it" → wait). Answer in one line. Never re-ask the same thing.
 - **Not now without a reason**: drop it, say so in a line, and carry on with the rest.
 - **Edited**: what they edited is what runs; mention the change only if it matters.
 - **Expired**: nothing ran and there is no card any more. Say so plainly; offer once to ask again. When they say go

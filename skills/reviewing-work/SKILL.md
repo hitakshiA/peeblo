@@ -10,7 +10,7 @@ hard you worked.
 
 ## 1. Restate the spec
 Before you start a job, write down in one or two lines what done looks like: the question, the shape of the answer
-and any constraint ("3 newest GRO issues, titles and links"). If the job came from `delegate`, its Objective and
+and any constraint ("3 newest open bugs, titles and links"). If the job came from `delegate`, its Objective and
 Hand back lines are the spec.
 
 ## 2. Check the result against it

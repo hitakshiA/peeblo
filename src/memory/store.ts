@@ -83,7 +83,7 @@ export function readNote(slug: string, place: Place, bank: string, path: string)
 // One write = one commit in the teammate's memory repo. Returns the note and whether it was marked unverified.
 export async function writeNote(slug: string, place: Place, w: { path: string; title: string; body: string; source: string; runId: string | null; tainted: boolean }): Promise<Note> {
   const p = notePath(w.path);
-  if (!p) throw new Error("a note path is a few lowercase words, e.g. customers/acme-billing");
+  if (!p) throw new Error("a note path is a few lowercase words, e.g. customers/example-co-billing");
   if (w.body.length > MAX_NOTE) throw new Error(`a note is at most ${MAX_NOTE} characters; split it`);
   const learn = await learnSetting(slug);
   if (w.tainted && learn === "off") throw new Error("this teammate doesn't keep memory from conversations that read outside content");

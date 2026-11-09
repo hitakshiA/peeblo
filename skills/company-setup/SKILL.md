@@ -15,6 +15,9 @@ the admin what you can't tell. The admin approves the finished version once.
    everything.
 2. Write down what you learn as short notes, one topic each: `company/overview`, `company/people`,
    `company/products`, `company/tools`, `company/glossary`, `company/how-we-work`. Say where each fact came from.
+   Add `company/approvals` (ask the admin if no source says): who must approve each kind of write, one line each,
+   in this shape, because Peeblo routes approval cards by it:
+   `- money: <name>` · `- merges, flags, deploys: <name>` · `- marketing sends: <name>` · `- account <customer>: <name>`.
 3. Ask the admin only about what you're unsure of or what conflicts (at most 2 questions at a time, with
    `ask_human`). Their answers go in the notes.
 4. Call `company_memory_propose` once with all the notes. The admin sees every note and approves the version.

@@ -155,7 +155,7 @@ export const otariTools: AgentTool[] = [
     description: "The exact Otari dashboard page, field and value for a change to web search, the guardrail or a routing policy, without changing anything. Use it whenever someone asks how to change one of these or what to set, rather than answering from memory: dashboard pages change.",
     input_schema: object({
       what: { type: "string", enum: ["web_search", "guardrail", "routing_policy"] },
-      value: { type: "string", description: "The wanted value, e.g. \"on\", \"off\", or for a routing policy \"peeblo-worker: deepseek/deepseek-v4.1-flash-1017 then moonshotai/kimi-k2.6\"." },
+      value: { type: "string", description: "The wanted value, e.g. \"on\", \"off\", or for a routing policy \"peeblo-worker: <default model id> then <fallback model id>\" (ids from models_list)." },
     }),
     kind: "read",
     async run(ctx, a) {

@@ -40,7 +40,7 @@ async function ownApp(teammateId: string, team?: string): Promise<string | null>
 const slugOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 31) || "teammate";
 const placeOf = async (ctx: ToolContext): Promise<SlackPlace | null> => ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
 const hireSpec = {
-  name: { type: "string", description: "A short first name, e.g. Ledger." },
+  name: { type: "string", description: "A short first name after its job, not one already on the crew." },
   role: { type: "string", description: "What it does, for whom, e.g. 'Watches Stripe refunds for the finance lead'." },
   instructions: { type: ["string", "null"], description: "Standing instructions, in the person's words." },
   model: { type: ["string", "null"], description: "An open-weight model id from models_list; empty for the worker default." },
@@ -341,7 +341,7 @@ export const managerTools: AgentTool[] = [
       context: { type: ["string", "null"], description: "Links and facts it needs." },
       constraints: { type: ["string", "null"] },
       output_shape: { type: ["string", "null"], description: "What to hand back, e.g. 'a 3-line summary with a table'." },
-      announce: { type: "string", description: "The one line you post in this thread so people see the hand-off, in your words, e.g. 'Asked Grove to pull this week's GRO issues for standup.'" },
+      announce: { type: "string", description: "The one line you post in this thread so people see the hand-off, in your words, e.g. 'Asked <teammate> to pull this week's open bugs for standup.'" },
     }),
     kind: "local",
     // Handing a job on acts through another teammate: the mode rule and the reviewer apply (Ask mode cards it).

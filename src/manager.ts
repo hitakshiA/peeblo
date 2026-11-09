@@ -2,7 +2,7 @@
 // made on first start and linked to PEEBLO_SLACK_APP_ID; its owner can change its instructions like any teammate's.
 import { config } from "./config.ts";
 import { pool } from "./db.ts";
-import { createTeammate, getTeammate, updateTeammate } from "./store/teammates.ts";
+import { createTeammate, getTeammate } from "./store/teammates.ts";
 
 export const MANAGER = "peeblo";
 const ROLE = "Chief of staff for the team and its AI crew";
@@ -18,39 +18,15 @@ const PROFILE = {
 };
 
 export async function ensureManager(): Promise<void> {
+  // Peeblo on a first start: every connector the workspace has in Otari (reads are free; writes go through the gate
+  // like anyone's), the web, code execution and a small computer for files people share. Its owner can change any of it.
   if (!(await getTeammate(MANAGER))) {
     await createTeammate(MANAGER, {
       name: "Peeblo", role: ROLE, instructions: "", profile: PROFILE, model: { default: "peeblo-manager" },
-      budget: { monthly_usd: 20 }, tools: ["web", "code"], connectors: ["all"], mode: "auto",
+      budget: { monthly_usd: 20 }, tools: ["web", "code", "computer"], connectors: ["all"], mode: "auto",
     }, { personId: null, label: "Peeblo's first start" });
   }
-  let tm = (await getTeammate(MANAGER))!;
-  // Peeblo reads the team's sources for company setup (reads are free; writes go through the gate like anyone's).
-  // Seeded once, on the first start; after that the owner's choice stands, even an empty list.
-  const seeded = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.seed_connectors' LIMIT 1")).rows.length > 0;
-  if (!seeded) {
-    if (!tm.config.connectors.length) tm = await updateTeammate(MANAGER, { connectors: ["linear", "github", "posthog"] } as any, { label: "Peeblo: read sources for company setup" }, "company setup reads the connected sources");
-    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.seed_connectors', $1, '{}')", [tm.id]);
-  }
-  // R1′ (Nov 8): Peeblo is the chief of staff. An older Peeblo gets the role and instructions once, as a new version
-  // (an owner's later edits stand).
-  const cos = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.chief_of_staff' LIMIT 1")).rows.length > 0;
-  if (!cos) {
-    tm = await updateTeammate(MANAGER, { role: ROLE, connectors: ["all"], tools: [...new Set([...tm.config.tools, "web", "computer"])] } as any, { label: "Peeblo becomes the chief of staff (R1′)" }, "Peeblo helps directly, owns company memory and manages the crew");
-    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.chief_of_staff', $1, '{}')", [tm.id]);
-  }
-  // The identity moved into code (supervisor.ts PEEBLO_IDENTITY, Nov 9): an owner's instructions only add to it.
-  const moved = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.identity_in_code' LIMIT 1")).rows.length > 0;
-  if (!moved) {
-    if (tm.config.instructions.startsWith("You are Peeblo")) tm = await updateTeammate(MANAGER, { instructions: "" } as any, { label: "Peeblo's identity is part of the product now" }, "identity in code; owner instructions start empty");
-    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.identity_in_code', $1, '{}')", [tm.id]);
-  }
-  // Peeblo's Slack profile (SLACK_UX_SPEC §5.4): its own bio and the chief-of-staff starter prompts, set once.
-  const profiled = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.profile_v2' LIMIT 1")).rows.length > 0;
-  if (!profiled) {
-    tm = await updateTeammate(MANAGER, { role: ROLE, profile: PROFILE } as any, { label: "Peeblo's profile" }, "bio, agent description and starter prompts for the chief of staff");
-    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.profile_v2', $1, '{}')", [tm.id]);
-  }
+  const tm = (await getTeammate(MANAGER))!;
   if (config.managerAppId) await pool.query("UPDATE slack_apps SET teammate_id = $2 WHERE app_id = $1 AND teammate_id IS DISTINCT FROM $2", [config.managerAppId, tm.id]);
 }
 

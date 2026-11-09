@@ -13,7 +13,7 @@ prompt has to carry the judgement.
   or `once_at`). Convert the person's time zone and say the UTC time back to them.
 - **An event a service sends** ("after every deploy", "when a PR merges"): `webhook_trigger`, with a filter so only
   the events they mean wake you. Give them the URL and tell them where to paste it.
-- **A change in something you can read** ("when a new GRO issue is urgent"): `watch`. It wakes you only when the
+- **A change in something you can read** ("when a new bug is marked urgent"): `watch`. It wakes you only when the
   result changes.
 
 ## 2. Write the prompt for your future self
@@ -23,7 +23,7 @@ Include, in plain words:
 - what the post should look like, and where it goes (this conversation, or a public channel you're in);
 - when to stop or ask (a write that needs approval waits for the owner; silence means no).
 
-Good: "Read the GRO issues created since the last run. If any is labelled urgent or mentions an outage, post a
+Good: "Read the bugs created since the last run. If any is labelled urgent or mentions an outage, post a
 two-line summary per issue with its link. If none, post nothing."
 Bad: "Check Linear and report." (No bar for what matters, so it posts every time.)
 

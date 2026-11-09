@@ -60,7 +60,7 @@ function kpis(a: any): any[] | string {
 
 export const showDataTool: AgentTool = {
   name: "show_data",
-  description: "Show numbers in your reply as Slack draws them: a sortable table (7+ records, or anything people will compare), a chart (bar, line, area or pie; a trend or a comparison), or a KPI strip (2–6 headline numbers). Give the data; Peeblo draws it under your answer. The visualizing-data skill says which to pick.",
+  description: "Show numbers in your reply as Slack draws them: a sortable table (7+ records, or anything people will compare), a chart (bar, line, area or pie; a trend or a comparison), or a KPI strip (2–6 headline numbers). Give the data; Peeblo draws it under your answer. The working-with-numbers skill says which to pick.",
   input_schema: object({
     kind: { type: "string", enum: ["table", "chart", "kpis"] },
     title: { type: "string", description: "A short title (a chart's is at most 50 characters)." },

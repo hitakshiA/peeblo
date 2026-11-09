@@ -10,8 +10,8 @@ A number people act on has to be right, defined, and comparable. How it looks co
 ## Getting it right
 - **Compute with code, never in your head**, where the data is (below).
 - **Say the definition** in a few words: "completed signups per person, Nov 2–8 UTC, test rows excluded".
-- **People, not events**, unless events are the question. Events double-fire (PostHog fires `signup_completed`
-  twice on some browsers), bots inflate starts (`HeadlessChrome`), internal test rows (`test+…` addresses, your own domain) pollute.
+- **People, not events**, unless events are the question. Events can fire twice for one action (check for
+  duplicates per person), bots inflate starts (`HeadlessChrome`), internal test rows (`test+…` addresses, your own domain) pollute.
 - **Time windows are traps**: "last week" is the last full week; time zones move late-Sunday rows across the
   boundary; test-clock charges can be dated in the future. Name the window you used.
 - **Currencies don't add**: EUR and USD separately, or convert with a stated rate.
@@ -26,7 +26,7 @@ A number people act on has to be right, defined, and comparable. How it looks co
   won't answer: list subscriptions with status active, 8 at a time (bigger pages get cut), following
   `starting_after` until `has_more` is false. The call: `stripe_api_read` with `stripe_api_operation_id`
   "GetSubscriptions" and `parameters` {"status": "active", "limit": 8, "starting_after": "<last id of the page
-  before>"} (leave starting_after out for the first page). 30 active subscriptions are 4 pages. Each line shows price (in cents), currency, interval, quantity and
+  before>"} (leave starting_after out for the first page). Each line shows price (in cents), currency, interval, quantity and
   any percent_off: MRR is price × quantity ÷ 100, divided by 12 for yearly, less the discount, summed per currency
   on your computer. Trials aren't MRR.
 - **A list that says it's cut or has more isn't the total.** Get every page before you add anything up.
@@ -35,7 +35,7 @@ A number people act on has to be right, defined, and comparable. How it looks co
 
 ## Where to run the numbers
 - Numbers or a small table in the conversation: `run_code`. Put them in the code; print the answer and its parts.
-  "7 stores × 15% of $249 × 3 months + 4 stores × 10% of $79 × 2 months" is one run_code call.
+  "7 seats × 15% of $40 × 3 months + 4 seats × 10% of $25 × 2 months" is one run_code call.
 - A small shared CSV or spreadsheet, or a saved result, for a quick exact answer: `run_code` with `files`.
 - Big files, a repo, data from several sources to join, or many steps: your computer (`computer_bash`).
 - A source that can total it (SQL, HogQL, a Stripe list you page through): ask the source.
