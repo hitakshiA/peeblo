@@ -64,6 +64,17 @@ export const scheduleTools: AgentTool[] = [
     },
   },
   {
+    name: "schedule_list",
+    description: "List your schedules, triggers and watches: name, when it runs, and whether it's on.",
+    input_schema: object({}),
+    kind: "read",
+    async run(ctx) {
+      const rows = (await pool.query("SELECT kind, name, cron, run_at, enabled, filter AS source FROM schedules WHERE teammate_id = $1 ORDER BY created_at DESC LIMIT 20", [ctx.teammate.id])).rows;
+      if (!rows.length) return { text: "You have no schedules, triggers or watches." };
+      return { text: rows.map((r: any) => `- ${r.name ?? "(unnamed)"}: ${r.kind === "cron" ? `${r.cron} (UTC)` : r.kind === "once" ? `once at ${new Date(r.run_at).toISOString().slice(0, 16)} UTC` : r.kind}${r.enabled ? "" : " (paused)"}`).join("\n") };
+    },
+  },
+  {
     name: "webhook_trigger",
     description: "Run a job when a service sends an event, when a person asks (\"if we get a dispute, tell me in #finance\"). For Stripe and PagerDuty set source (they already send events to Peeblo) and a filter on the event type, e.g. {type: 'charge.dispute.created'} or {event: 'incident.triggered'}; for others (GitHub) you get a URL to give the service. Tag only the people the person asked you to.",
     input_schema: object({
