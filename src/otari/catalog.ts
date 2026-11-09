@@ -1,7 +1,8 @@
 // The model catalog from Otari's /models: context windows, prices, and which models have open weights.
-// /models has no open-weight flag, so Peeblo keeps its own allowlist of open-weight families
-// (reviewed against the catalog and Artificial Analysis's open-weights list in Nov 2026; anything unmatched
-// counts as closed). Quality tiers live in config/model-tiers.json.
+// /models has no open-weight flag, and /catalog/models' open_weights is wrong for several models (Nov 2026: open
+// embedding models marked closed, Kimi K3.1 Pro closed, a model with unreleased weights open), so Peeblo keeps its
+// own allowlist of open-weight families, reviewed against Artificial Analysis's open-weights list; anything
+// unmatched counts as closed. Quality tiers live in config/model-tiers.json.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { otari } from "./client.ts";

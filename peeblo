@@ -51,6 +51,10 @@ case "${1:-up}" in
       native_env
       # The small computer image, built once (a build lands in images/small-<arch>/<build id>/).
       ls "$PEEBLO_DATA_DIR/images/small-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)"/*/manifest.json >/dev/null 2>&1 || node src/bin.ts image small
+      # After an update, a running core is restarted so it runs the new code.
+      if pid=$(core_pid) && [ -n "$(find src config skills db -newer "$RUN/core.pid" -type f 2>/dev/null | head -1)" ]; then
+        echo "peeblo: code changed since core started; restarting it"; kill "$pid"; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"
+      fi
       if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else
         nohup node src/bin.ts daemon >> "$RUN/core.log" 2>&1 & echo $! > "$RUN/core.pid"
         for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:${PEEBLO_API_PORT:-7340}/healthz" >/dev/null 2>&1 && break; core_pid >/dev/null || break; sleep 1; done

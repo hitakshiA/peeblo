@@ -225,6 +225,9 @@ export async function queueIfNeeded(teammateId: string): Promise<void> {
   await queueBuild(tm.id, size, "config");
 }
 export async function queueMissingBuilds(): Promise<void> {
-  const { rows } = await pool.query("SELECT id FROM teammates");
+  // At start nothing is building: a build left queued or building was cut by the restart, and would block a new
+  // build of the same setup. It ends as failed, and the setup is queued again below.
+  await pool.query("UPDATE recipe_builds SET status = 'failed', finished_at = now(), error = 'interrupted by a restart' WHERE status IN ('queued', 'building')");
+  const { rows } = await pool.query("SELECT id FROM teammates WHERE archived_at IS NULL");
   for (const r of rows) await queueIfNeeded(r.id).catch(() => {});
 }

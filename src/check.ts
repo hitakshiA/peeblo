@@ -20,6 +20,20 @@ export async function runChecks(): Promise<Result[]> {
     const applied = await migrate();
     return `Postgres ${rows[0].server_version}; migrations ${applied.length ? `applied now: ${applied.join(", ")}` : "up to date"}`;
   });
+  await check("Peeblo core", async () => {
+    // check runs on its own; this asks the running core.
+    const r = await fetch(`http://127.0.0.1:${config.apiPort}/healthz`).catch(() => null);
+    if (!r?.ok) throw new Error("not running: start it with ./peeblo up (logs: ./peeblo logs)");
+    return "running";
+  });
+  await check("secret key", async () => {
+    // PEEBLO_SECRET_KEY seals tokens in the database; a changed key can't open them (Slack, teammate keys).
+    const { unseal } = await import("./crypto.ts");
+    const row = (await pool.query("SELECT secrets FROM slack_apps LIMIT 1")).rows[0] ?? (await pool.query("SELECT token AS secrets FROM slack_config WHERE id = 1")).rows[0];
+    if (!row) return "nothing sealed yet";
+    try { unseal(row.secrets); } catch { throw new Error("PEEBLO_SECRET_KEY doesn't open the secrets in the database; put back the key this database was made with (never regenerate it over an existing database)"); }
+    return "opens the stored secrets";
+  });
   await check("durable execution", async () => {
     const { rows } = await pool.query("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'dbos'");
     return rows.length ? "DBOS schema present" : "DBOS schema not created yet (it appears on the first daemon start)";
@@ -121,7 +135,14 @@ export async function runChecks(): Promise<Result[]> {
     const have = await rolePoliciesInOtari();
     const missing = Object.keys(ROLES).filter((n) => !have.includes(n));
     if (missing.length) throw new Error(`missing ${missing.join(", ")}; Peeblo creates them when an admin signs in`);
-    return `${have.length} role policies (${have.join(", ")})`;
+    // Every model a role names must still be in Otari's catalog.
+    const { models } = await import("./otari/catalog.ts");
+    const catalog = await models();
+    const named = [...new Set(Object.values(ROLES).flatMap((r) => [r.default, ...r.fallback, ...(r.step_down ? [r.step_down.model] : [])]))];
+    const gone: string[] = [];
+    for (const m of named) if (!catalog.has(m)) gone.push(m);
+    if (gone.length) throw new Error(`Otari's catalog no longer has ${gone.join(", ")}; change config/model-tiers.json`);
+    return `${have.length} role policies (${have.join(", ")}); all ${named.length} models in the catalog`;
   });
   await check("Otari guardrail", async () => {
     const { guardMode, lakeraMandate } = await import("./guard.ts");
