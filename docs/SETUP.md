@@ -40,7 +40,7 @@ Open `.env` and set:
 | `PEEBLO_CONSOLE_PASSWORD` | the console's password |
 | `PEEBLO_SLACK_CONFIG_FILE` | a JSON file with your Slack app configuration token (step 3) |
 
-Point the public address at the ingress port (`8788` by default). Everything else (the API on `7340`, the console)
+Point the public address at the ingress port (`8787` by default). Everything else (the API on `7340`, the console)
 stays on the machine.
 
 ## 3. Slack

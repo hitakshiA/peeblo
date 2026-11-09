@@ -15,6 +15,16 @@ ensure_env() {
   set_if_empty PEEBLO_ADMIN_TOKEN "$(openssl rand -hex 24)"
   set_if_empty PEEBLO_SECRET_KEY "$(openssl rand -base64 32)"
   [ $changed = 1 ] && echo "peeblo: generated missing secrets in .env"
+  # Stop until the settings only you can give are filled in, and say which.
+  local missing=""
+  for v in OTARI_SERVICE_KEY PEEBLO_PUBLIC_URL PEEBLO_SLACK_CONFIG_FILE PEEBLO_CONSOLE_PASSWORD PEEBLO_ADMINS; do
+    grep -q "^$v=." .env || { [ "$v" = OTARI_SERVICE_KEY ] && grep -q "^OTARI_API_KEY=." .env; } || missing="$missing $v"
+  done
+  if [ -n "$missing" ]; then
+    echo "peeblo: set these in .env, then run ./peeblo up again:$missing"
+    echo "        (docs/SETUP.md says where each one comes from)"
+    exit 1
+  fi
   return 0
 }
 load_env() { set -a; . ./.env; set +a; PROJECT="${PEEBLO_PROJECT:-peeblo}"; }
