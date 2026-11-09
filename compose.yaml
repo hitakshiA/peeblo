@@ -36,6 +36,8 @@ services:
     group_add:
       - "${KVM_GID:-994}"
     stop_grace_period: 30s
+    # An init process reaps the computers' QEMU processes when they exit.
+    init: true
     # The core API stays on loopback; the ingress is what a reverse proxy or tunnel points at.
     ports:
       - "127.0.0.1:${PEEBLO_API_PORT:-7340}:7340"
