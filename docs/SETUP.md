@@ -1,6 +1,6 @@
 # Setting up Peeblo
 
-From a fresh machine to a teammate answering in Slack, in about half an hour.
+From a fresh machine to a teammate answering in Slack: one command, then your browser.
 
 ## What you need
 
@@ -18,77 +18,42 @@ From a fresh machine to a teammate answering in Slack, in about half an hour.
   zrok share, reserve it and turn off its warning page (`zrok reserve public … --skip-interstitial`), or Slack's
   install link stops on that page.
 
-## 1. Otari
+Everything else is set up in your browser.
 
-In the Otari dashboard:
-
-1. **Keys:** create an org **service key**. It lets Peeblo name each person (an end user) and cap them.
-2. **Budgets:** make an end-user budget tier (for example $2 a day), then open the service key and set that tier as
-   its **default end-user budget**. Without a default tier, every message to Peeblo fails.
-3. **Tools:** turn on **web search** and **code execution**. Teammates use them only when they choose to.
-4. **Guardrails (recommended):** add a Lakera Guard guardrail with the profile name **`peeblo-lakera`**. Peeblo
-   uses it to check text from outside your company (customer tickets, web pages, files) before a teammate acts on
-   it. Without it, Peeblo uses an open guard model through Otari instead.
-5. **Tools → MCP servers:** add the services your teammates should use (Linear, GitHub, Stripe, Notion, PostHog,
-   Intercom, Atlassian, Sanity, Supabase and others with an MCP server). You can add more at any time.
-   For each one, set **default access** to the read tools (`@read`) and give Peeblo's service key the write tools it
-   may use. Each teammate then gets its own key with the same access, minus anything you make read-only, and Otari
-   itself refuses writes a teammate isn't allowed. (With default access left at every tool, Peeblo still keeps
-   read-only teammates from writing, but Otari can't.)
-
-## 2. Configure
+## 1. Start it
 
 ```bash
 git clone <this repo> peeblo && cd peeblo
-./peeblo up          # writes .env with random secrets, then stops and lists what you still need to set
+./peeblo up
 ```
 
-Open `.env` and set the five required settings (the file explains each one):
+It prints the console's address: `http://127.0.0.1:7340/console/`. Open it in your browser (on a server, first
+`ssh -L 7340:127.0.0.1:7340 <server>`). The console stays on this machine; it's never on the public address.
 
-| Setting | |
-|---|---|
-| `OTARI_SERVICE_KEY` | the key from step 1 |
-| `PEEBLO_PUBLIC_URL` | your public HTTPS address, e.g. `https://peeblo.example.com` |
-| `PEEBLO_SLACK_CONFIG_FILE` | a JSON file with your Slack app configuration token (step 3) |
-| `PEEBLO_CONSOLE_PASSWORD` | the console's password |
-| `PEEBLO_ADMINS` | Slack user ids of the admins (comma-separated) |
+## 2. Follow the setup in the console
 
-Point the public address at the ingress port (`8787` by default). Everything else (the API on `7340`, the console)
-stays on this machine.
+The console walks you through six steps and checks each one live. What you'll need for each:
 
-## 3. Slack token
+1. **A console password** you choose.
+2. **An Otari service key.** In Otari: Keys → New key → Service key, and give it a default end-user budget (a tier
+   in Budgets, for example $2 a day; every person in Slack gets one). Paste it in.
+3. **Your Otari dashboard login**, once, so Peeblo can set itself up in your Otari: a routing policy per role, a key
+   and spend ceiling per teammate, the guardrail screening, connector access. The password isn't stored.
+4. **The Otari checklist.** The console checks what Peeblo needs and links each fix in Otari's dashboard: web search
+   and code execution on (Tools), a Lakera guardrail named **`peeblo-lakera`** (Guardrails), and your connectors
+   (Tools → MCP servers: Linear, GitHub, Stripe, Notion, PostHog, Intercom, … any service with an MCP server).
+5. **A public address** Slack can reach: a domain with HTTPS in front of port `8787`, or a tunnel to it.
+6. **Slack.** At [api.slack.com/apps](https://api.slack.com/apps), under **Your App Configuration Tokens**, generate
+   a token for your workspace and paste both parts. Then **Create Peeblo's Slack app** and **Add Peeblo to Slack**.
+   Whoever adds it becomes Peeblo's first admin.
 
-At [api.slack.com/apps](https://api.slack.com/apps), under **Your App Configuration Tokens**, generate a token for
-your workspace and save it as `{"access_token": "...", "refresh_token": "...", "exp": <unix time>}` in the file
-named by `PEEBLO_SLACK_CONFIG_FILE`. Peeblo stores it sealed and rotates it every 12 hours.
+`./peeblo check` shows the same checks in the terminal, any time.
 
-## 4. Start
+## 3. Say hello
 
-```bash
-./peeblo up          # first start builds the console and the small computer image (a minute)
-./peeblo check       # every line should say ok, or say exactly what to fix
-```
+Peeblo DMs you in Slack: what it can already reach and what to do next.
 
-## 5. Peeblo's Slack app
-
-```bash
-./peeblo slack-app   # makes Peeblo's app and prints an install link: open it and click Allow
-```
-
-Run it again any time: it prints the link until Peeblo is installed. Peeblo greets you in a DM.
-
-## 6. Connect Otari (once)
-
-Open the console at `http://127.0.0.1:7340/console/` (from this machine, or through an SSH tunnel), sign in with
-the console password, and on **Setup** click **Connect Otari**. Sign in with your Otari dashboard login: the
-password is used for that one sign-in and never stored.
-
-With that session, Peeblo sets itself up in Otari: a routing policy for each role (a model, Otari's fallback, and a
-cheaper model when a teammate's budget is mostly used), and its own key with a spend ceiling for every teammate.
-The session lasts about a week; connect again when `./peeblo check` says it has expired. Teammates keep their own
-keys in the meantime.
-
-## 7. Your first teammate
+## 4. Your first teammate
 
 In Slack, DM Peeblo:
 
@@ -105,24 +70,63 @@ with Docker running).
 
 ## On a Linux server
 
-Everything runs in Docker Compose. The server needs `/dev/kvm` (bare metal, or a VM with nested virtualization)
-for teammate computers.
+Everything runs in Docker Compose. Teammate computers are small virtual machines, so the server needs `/dev/kvm`:
+bare metal, or a cloud VM with nested virtualization.
 
-```bash
-sudo apt install docker.io docker-compose-v2 git      # or Docker's own packages
-sudo usermod -aG docker $USER                          # then log in again
-git clone <this repo> peeblo && cd peeblo
-./peeblo up                                            # writes .env, then stops: fill in the five settings
-./peeblo up                                            # builds the image and the small computer image, starts
-./peeblo check
-./peeblo slack-app
-./peeblo image large                                   # only for teammates that browse (it lends Docker for this command)
+### The network, in one picture
+
+```
+Slack ──HTTPS 443──▶ Caddy (TLS) ──▶ 127.0.0.1:8787  Peeblo ingress (events, clicks, sign-in callback)
+you   ──SSH 22 ───▶ tunnel      ──▶ 127.0.0.1:7340  Peeblo console + API (never public)
+Peeblo ──HTTPS out──▶ otari.ai, slack.com (and package registries for teammate computers)
 ```
 
-- `PEEBLO_SLACK_CONFIG_FILE` is a path on the server; Peeblo reads it once and keeps the token sealed.
-- Put a reverse proxy with TLS (Caddy, nginx) in front of the ingress port (`8787`) for `PEEBLO_PUBLIC_URL`. Keep
-  `7340` (the console and API) private: open it with `ssh -L 7340:127.0.0.1:7340 <server>`.
-- `./peeblo logs`, `./peeblo backup`, `./peeblo upgrade` work the same as on a Mac.
+Open to the internet: **443** (and **80**, so Caddy can get its certificate). Open to you only: **22**. Never open:
+7340 (console), 8787 (Caddy fronts it), 55432 (database: it isn't published on Linux at all).
+
+### Example: AWS (what we run, about $85 a month)
+
+1. **Instance:** `m8i.large` (2 vCPU, 8 GB; the c8i, m8i and r8i families support nested virtualization), Ubuntu
+   24.04, a 40 GB gp3 disk. Turn nested virtualization on at launch:
+   ```bash
+   aws ec2 run-instances --instance-type m8i.large --image-id <ubuntu-24.04-ami> --key-name <your-key> \
+     --security-group-ids <sg> --cpu-options NestedVirtualization=enabled \
+     --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=40,VolumeType=gp3}'
+   ```
+   Check after login: `ls -l /dev/kvm` must exist.
+2. **Security group:** inbound TCP 22 from your IP only; TCP 80 and 443 from anywhere. Nothing else.
+3. **A name for the server:** point a DNS A record (e.g. `peeblo.example.com`) at its public IP. To try it without
+   a domain, `<ip-with-dashes>.sslip.io` (e.g. `44-200-237-52.sslip.io`) resolves to that IP and gets a real certificate.
+
+### Install
+
+```bash
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 git caddy
+sudo usermod -aG docker $USER && exit                     # log in again so the docker group applies
+git clone <this repo> peeblo && cd peeblo
+./peeblo up                                               # builds the image and the small computer image, then starts
+```
+
+HTTPS: write `/etc/caddy/Caddyfile` with your name, reload, and check it answers:
+
+```
+peeblo.example.com {
+  reverse_proxy 127.0.0.1:8787
+}
+```
+```bash
+sudo systemctl reload caddy
+curl -I https://peeblo.example.com/                      # a certificate and any answer from Peeblo means it works
+```
+
+The console, from your laptop:
+
+```bash
+ssh -L 7340:127.0.0.1:7340 ubuntu@<server>              # keep it open, then browse http://127.0.0.1:7340/console/
+```
+
+In the console's setup, the public address is `https://peeblo.example.com`. Then follow [step 2](#2-follow-the-setup-in-the-console).
+`./peeblo image large` builds the browser computer, only if a teammate needs to browse websites.
 
 ## Connectors
 

@@ -27,16 +27,17 @@ The models are open-weight. How it all fits: [docs/OTARI.md](docs/OTARI.md).
 
 ## Run it
 
-On a Mac with Apple silicon (Linux with KVM is coming next):
+On a Mac with Apple silicon, or a Linux server with KVM (an AWS `m8i.large` works):
 
 ```bash
 ./peeblo up       # Postgres, core, the teammate computers, the console
-./peeblo check    # says what's missing, and how to fix it
 ```
 
-The full setup (Otari, Slack, a public URL): [docs/SETUP.md](docs/SETUP.md).
+Then open `http://127.0.0.1:7340/console/` and follow the setup there: your Otari key, Slack, a public address.
+Everything after `up` happens in the browser. The console is never on the public address.
 
-The console is at `http://127.0.0.1:7340/console/`. It's never on the public URL.
+The full guide, with the server's network (ports, HTTPS, DNS, the SSH tunnel to the console):
+[docs/SETUP.md](docs/SETUP.md).
 
 `./peeblo backup` saves the database and memory. `./peeblo upgrade` waits until no job is running.
 
