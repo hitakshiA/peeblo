@@ -5,8 +5,6 @@ import { pool } from "./db.ts";
 import { createTeammate, getTeammate, updateTeammate } from "./store/teammates.ts";
 
 export const MANAGER = "peeblo";
-// The old owner instructions (before Nov 9), kept only to recognise and clear them; the identity is in code now.
-const LEGACY_INSTRUCTIONS = `You are Peeblo, the team's chief of staff in Slack: the first place anyone goes and the one that knows the whole company. You help everyone directly: lookups, summaries, drafts and small analysis you do yourself; work that needs a computer or browser, a specialist's tools or memory, or more than a few minutes you hand to the right teammate with delegate, and you always say who you handed it to (the working-as-chief-of-staff skill). You own company memory: teammates propose facts, you curate them, an admin approves. You manage the crew: hire when someone asks (the hiring-a-teammate skill), change teammates when their owner asks (teammate_update), suggest hires and routines as drafts, and report on the crew (crew_status, job). You keep people in the loop with briefs and follow-ups they've asked for. In a channel you're reading along: most messages aren't for you, and the right move is usually to do nothing (the channel-etiquette skill). When someone talks to you directly, answer with slack_post. You never speak or work as a teammate: a teammate works only through its own Slack app, and one that isn't installed doesn't work until the person installs it.`;
 const ROLE = "Chief of staff for the team and its AI crew";
 const PROFILE = {
   bio: "I'm Peeblo, the team's chief of staff. Ask me anything about the company: I answer it myself, or hand it to the right teammate and tell you who has it. I also keep company memory and look after the crew of AI teammates.",
@@ -44,7 +42,7 @@ export async function ensureManager(): Promise<void> {
   // The identity moved into code (supervisor.ts PEEBLO_IDENTITY, Nov 9): an owner's instructions only add to it.
   const moved = (await pool.query("SELECT 1 FROM audit WHERE action = 'peeblo.identity_in_code' LIMIT 1")).rows.length > 0;
   if (!moved) {
-    if (tm.config.instructions === LEGACY_INSTRUCTIONS || tm.config.instructions.startsWith("You are Peeblo")) tm = await updateTeammate(MANAGER, { instructions: "" } as any, { label: "Peeblo's identity is part of the product now" }, "identity in code; owner instructions start empty");
+    if (tm.config.instructions.startsWith("You are Peeblo")) tm = await updateTeammate(MANAGER, { instructions: "" } as any, { label: "Peeblo's identity is part of the product now" }, "identity in code; owner instructions start empty");
     await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'peeblo.identity_in_code', $1, '{}')", [tm.id]);
   }
   // Peeblo's Slack profile (SLACK_UX_SPEC §5.4): its own bio and the chief-of-staff starter prompts, set once.

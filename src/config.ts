@@ -46,8 +46,6 @@ export const config = {
   guardProbeModel: process.env.PEEBLO_GUARD_PROBE_MODEL ?? "deepseek/deepseek-v4.1-flash-1017", // one-token calls that ask Otari's guardrail
   lakeraProject: process.env.PEEBLO_LAKERA_PROJECT ?? "",              // Lakera project whose policy the org guardrail uses
   guardModel: process.env.PEEBLO_GUARD_MODEL ?? "alibaba/qwen3guard-gen-8b",
-  // A spend guard for building and testing: model calls to anything priced above these (USD per 1M tokens
-  // in,out) are refused before they leave Peeblo. Unset in production.
   managerAppId: process.env.PEEBLO_SLACK_APP_ID?.trim() || "",   // Peeblo's own Slack app
   consolePassword: process.env.PEEBLO_CONSOLE_PASSWORD ?? "",   // the console's one password
   admins: (process.env.PEEBLO_ADMINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),   // Slack user ids of Otari admins

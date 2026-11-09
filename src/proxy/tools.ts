@@ -129,7 +129,7 @@ const body = (file: string) => { try { return readFileSync(file, "utf8").replace
 function serverNote(server: string): string {
   if (Date.now() - notes.at > 60_000) notes = { at: Date.now(), v: {} };
   if (notes.v[server] !== undefined) return notes.v[server];
-  const shipped = body(join(process.cwd(), "config", "connections", `${server}.md`));
+  const shipped = body(join(import.meta.dirname, "..", "..", "config", "connections", `${server}.md`));
   const company = body(join(companyDir(), "connections", `${server}.md`));
   notes.v[server] = [shipped, company].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   return notes.v[server];
