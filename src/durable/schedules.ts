@@ -17,11 +17,12 @@ async function tickFn(scheduledAt: Date, scheduleId: string): Promise<void> {
 }
 const tick = DBOS.registerWorkflow(tickFn, { name: "schedule-tick" });
 
-// Makes the DBOS schedules match the table: adds or updates enabled ones, removes the rest.
+// Makes the DBOS schedules match the table: adds or updates enabled ones, removes the rest. Every cron is UTC (agents
+// write it in UTC and tell people the local time), whatever the machine's own time zone is.
 export async function syncSchedules(): Promise<number> {
   const { rows } = await pool.query<ScheduleRow & { enabled: boolean }>("SELECT id, session_id, cron, prompt, created_by, enabled FROM schedules WHERE kind = 'cron'");
   const enabled = rows.filter((r) => r.enabled);
-  await DBOS.applySchedules(enabled.map((r) => ({ scheduleName: `schedule:${r.id}`, workflowFn: tick, schedule: r.cron, context: r.id, automaticBackfill: false })));
+  await DBOS.applySchedules(enabled.map((r) => ({ scheduleName: `schedule:${r.id}`, workflowFn: tick, schedule: r.cron, cronTimezone: "UTC", context: r.id, automaticBackfill: false })));
   for (const r of rows.filter((r) => !r.enabled)) await DBOS.deleteSchedule(`schedule:${r.id}`).catch(() => {});
   return enabled.length;
 }

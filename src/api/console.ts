@@ -72,7 +72,10 @@ export function addConsoleRoutes(router: Router): void {
       const { createTeammateApp } = await import("../slack/admin.ts");
       const { facePng, pickFace } = await import("../slack/idcard.ts");
       const { slug, person_id, ...cfg } = body ?? {};
-      const tm = await createTeammate(String(slug ?? ""), cfg, { personId: person_id ?? null, label: "hired in the console" });
+      // Like a hire through Peeblo: the worker role policy (unless a model was named), its own computer, and its own Otari
+      // key with a spend ceiling.
+      const tm = await createTeammate(String(slug ?? ""), { ...cfg, model: cfg.model?.default ? cfg.model : { default: "peeblo-worker" }, tools: [...new Set([...(cfg.tools ?? []), "computer"])] }, { personId: person_id ?? null, label: "hired in the console" });
+      void import("../otari/spend.ts").then((m) => m.teammateKey(tm)).catch(() => null);
       const face = pickFace(tm.slug);
       await pool.query("INSERT INTO hires (teammate_id, hired_by, avatar) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [tm.id, person_id ?? null, face]);
       try {

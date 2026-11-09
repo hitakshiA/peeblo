@@ -167,7 +167,10 @@ export function installSlackInteractions(): void {
       const { mayManageTeammate } = await import("../authority.ts");
       let tmId: string | null = null;
       if (a.action_id === "stop_run") {
-        const r = (await pool.query("SELECT r.session_id, s.teammate_id FROM runs r JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.value])).rows[0];
+        const r = (await pool.query("SELECT r.session_id, s.teammate_id, sub.person_id FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [a.value])).rows[0];
+        // The same rule as a typed "stop": the person who asked, the teammate's owner, or an admin.
+        const owner = r ? await getTeammate(r.teammate_id) : null;
+        if (r && !(r.person_id === who.id || (owner && mayManageTeammate(owner, who)))) return void (await respond(payload.response_url, { response_type: "ephemeral", text: "Only the person who asked for this job, its teammate's owner or an admin can stop it." }).catch(() => {}));
         if (r) { tmId = r.teammate_id; const { stopSession } = await import("../pi/supervisor.ts"); await stopSession(r.session_id); await appendEvent({ sessionId: r.session_id, type: "slack.stop", data: { user: payload.user.id, from: "home" } }); }
       } else if (a.action_id.endsWith("_schedule")) {
         const sc = (await pool.query("SELECT teammate_id, created_by FROM schedules WHERE id = $1", [a.value])).rows[0];
@@ -289,7 +292,13 @@ export function installSlackInteractions(): void {
       const channel = event.channel_id ?? event.channel ?? event.session?.channel_id;
       const thread = event.thread_ts ?? event.session?.thread_ts;
       const s = (await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND place_key = $2 ORDER BY last_active_at DESC NULLS LAST LIMIT 1", [teammateId, `${channel}:${thread}`])).rows[0];
-      if (s) {
+      // Slack shows this Stop in the asker's own session view; it still follows the stop rule.
+      const asker = s ? (await pool.query("SELECT sub.person_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.session_id = $1 AND r.status IN ('queued', 'running', 'waiting') ORDER BY r.created_at DESC LIMIT 1", [s.id])).rows[0] : null;
+      const who = event.user ? (await pool.query("SELECT * FROM people WHERE slack_user = $1", [event.user])).rows[0] : null;
+      const tm = await getTeammate(teammateId);
+      const { mayManageTeammate } = await import("../authority.ts");
+      const allowed = !asker || (who && (asker.person_id === who.id || (tm && mayManageTeammate(tm, who))));
+      if (s && allowed) {
         const { stopSession } = await import("../pi/supervisor.ts");
         const stopped = await stopSession(s.id);
         await appendEvent({ sessionId: s.id, type: "slack.stop", data: { user: event.user ?? null, from: "agent_session_stopped", stopped } });

@@ -100,7 +100,7 @@ function Hire({ onDone }: { onDone: () => void }) {
   const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
   const submit = () => {
     const slug = f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    post("/v1/console/hire", { slug, name: f.name, role: f.role, instructions: f.instructions, model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" }, budget: { monthly_usd: Number(f.budget) }, mode: f.mode, tools: f.tools.split(",").map((x) => x.trim()).filter(Boolean), connectors: f.connectors.split(",").map((x) => x.trim()).filter(Boolean), computer: { size: f.size } }).then(onDone, (e) => setErr(e.message));
+    post("/v1/console/hire", { slug, name: f.name, role: f.role, instructions: f.instructions, model: { default: "peeblo-worker" }, budget: { monthly_usd: Number(f.budget) }, mode: f.mode, tools: f.tools.split(",").map((x) => x.trim()).filter(Boolean), connectors: f.connectors.split(",").map((x) => x.trim()).filter(Boolean), computer: { size: f.size } }).then(onDone, (e) => setErr(e.message));
   };
   return (
     <div className="card stack" style={{ marginBottom: 20 }}>
@@ -191,11 +191,11 @@ function Settings({ t, onSaved }: { t: Teammate; onSaved: () => void }) {
   const [f, setF] = useState({ instructions: t.config.instructions, model: t.config.model.default, budget: t.config.budget.monthly_usd, mode: t.config.mode, connectors: t.config.connectors.join(", "), tools: t.config.tools.join(", "), size: t.config.computer?.size ?? "small", note: "" });
   const [msg, setMsg] = useState<string | null>(null);
   const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
-  const save = () => api("PATCH", `/v1/teammates/${t.slug}`, { instructions: f.instructions, model: { default: f.model }, budget: { monthly_usd: Number(f.budget) }, mode: f.mode, connectors: f.connectors.split(",").map((x) => x.trim()).filter(Boolean), tools: f.tools.split(",").map((x) => x.trim()).filter(Boolean), computer: { size: f.size }, note: f.note || "changed in the console" }).then((r: any) => { setMsg(`Saved as version ${r.version}. Running conversations keep their setup; new ones use this.`); onSaved(); }, (e) => setMsg(e.message));
+  const save = () => api("PATCH", `/v1/teammates/${t.slug}`, { instructions: f.instructions, budget: { monthly_usd: Number(f.budget) }, mode: f.mode, connectors: f.connectors.split(",").map((x) => x.trim()).filter(Boolean), tools: f.tools.split(",").map((x) => x.trim()).filter(Boolean), computer: { size: f.size }, note: f.note || "changed in the console" }).then((r: any) => { setMsg(`Saved as version ${r.version}. Running conversations keep their setup; new ones use this.`); onSaved(); }, (e) => setMsg(e.message));
   return (
     <div className="card stack">
       <div className="form">
-        <label>Model<input value={f.model} onChange={set("model")} /></label>
+        <label>Model<input value={f.model} disabled title="Teammates run on their role policy in Otari (see the Otari page)" /></label>
         <label>Budget (USD a month)<input type="number" value={f.budget} onChange={set("budget")} /></label>
         <label>Approvals<select value={f.mode} onChange={set("mode")}><option value="ask">Ask</option><option value="auto">Auto</option><option value="trusted">Trusted</option><option value="yolo">YOLO (admin)</option></select></label>
         <label>Connectors<input value={f.connectors} onChange={set("connectors")} /></label>
