@@ -238,8 +238,12 @@ async function personNote(ctx: RunContext, tm: Teammate, person: { id: string; d
   const { placeOfSession } = await import("../memory/store.ts");
   const card = personCard(person.id);
   const open = openPromises(tm.slug, placeOfSession(ctx.session), person.display_name);
-  if (!card && !open.length) return "";
-  return `<peeblo_event kind="person">${card ? `How ${person.display_name ?? "they"} like answers:\n${card.slice(0, 800)}\n` : ""}${open.length ? `You promised ${person.display_name ?? "them"}: ${open.map((n) => `${n.title} (${n.path})`).join("; ")}.` : ""}</peeblo_event>\n`;
+  // Their time zone (from Slack): times are said in it; schedules are stored in UTC.
+  const tz = (await pool.query<{ tz: string | null }>("SELECT tz FROM people WHERE id = $1", [person.id])).rows[0]?.tz ?? null;
+  const local = tz ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date()) : null;
+  const zone = tz && local ? `${person.display_name ?? "They"} ${person.display_name ? "is" : "are"} on ${tz} (it's ${local} there now). Say times in their time zone; schedules are set in UTC.\n` : "";
+  if (!card && !open.length && !zone) return "";
+  return `<peeblo_event kind="person">${zone}${card ? `How ${person.display_name ?? "they"} like answers:\n${card.slice(0, 800)}\n` : ""}${open.length ? `You promised ${person.display_name ?? "them"}: ${open.map((n) => `${n.title} (${n.path})`).join("; ")}.` : ""}</peeblo_event>\n`;
 }
 
 async function feedbackNote(sessionId: string, runId: string, teammateId: string): Promise<string> {

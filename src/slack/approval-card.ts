@@ -66,6 +66,13 @@ export function preview(a: any): string {
 
 // "Writes 1 comment", "Moves money", "Removes 1 issue": the action in a few words, from the tool's name.
 function what(a: any): string | null {
+  // Peeblo's own tools: the title already says it in words; the reason, if any, is the line.
+  if (a.kind === "peeblo_tool") return a.reason ? `Why: ${String(a.reason)}`.slice(0, 120) : null;
+  if (a.kind === "recipe_change") {
+    const p = a.diff?.packages ?? {};
+    const added = ["apk", "npm", "pip"].map((k) => p[k]).filter((x) => x && x !== "none").join(", ");
+    return `${added ? `Adds ${added}` : "Changes its setup"}${a.disk_mb ? ` · ${a.disk_mb} MB` : ""}${a.new_build_hosts?.length ? ` · new sites: ${a.new_build_hosts.join(", ")}` : ""}`;
+  }
   if (a.kind === "teammate_change") return String(a.summary ?? "").split("\n")[0] || "Changes a teammate's setup";
   if (a.kind === "plan") return `${(a.steps ?? []).length} steps, one approval`;
   if (a.risk === "money") return "Moves money";

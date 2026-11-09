@@ -171,7 +171,7 @@ export const otariTools: AgentTool[] = [
     input_schema: object({ enabled: { type: "boolean" }, reason: { type: "string" } }),
     kind: "write",
     authorize: (ctx) => adminOnly(ctx),
-    async describe(_ctx, a) { return { setting: "web_search", from: (await webSearch()).enabled, to: a.enabled, reason: a.reason }; },
+    async describe(_ctx, a) { return { summary: `Turn ${a.enabled ? "on" : "off"} web search in Otari`, setting: "web_search", from: (await webSearch()).enabled, to: a.enabled, reason: a.reason }; },
     async run(_ctx, a) {
       const before = (await webSearch()).enabled;
       await setWebSearch(a.enabled);
@@ -186,7 +186,7 @@ export const otariTools: AgentTool[] = [
     input_schema: object({ enabled: { type: "boolean" }, reason: { type: "string" } }),
     kind: "write",
     authorize: (ctx) => adminOnly(ctx) ?? (guardMode() === "lakera" ? null : `Peeblo's guard setting is "${guardMode()}", not Otari's org guardrail; it is changed by an operator, not here.`),
-    async describe(_ctx, a) { return { setting: "guardrail", from: (await lakeraMandate())?.enabled ?? null, to: a.enabled, reason: a.reason }; },
+    async describe(_ctx, a) { return { summary: `Turn ${a.enabled ? "on" : "off"} Otari's guardrail for every call in the org`, setting: "guardrail", from: (await lakeraMandate())?.enabled ?? null, to: a.enabled, reason: a.reason }; },
     async run(_ctx, a) {
       const before = (await lakeraMandate())?.enabled ?? null;
       await setLakera(a.enabled);
@@ -211,7 +211,11 @@ export const otariTools: AgentTool[] = [
       for (const m of [a.default_model, ...a.fallback_models]) { const bad = await chatModel(m); if (bad) return bad; }
       return null;
     },
-    async describe(_ctx, a) { return { setting: "routing_policy", name: a.name, default: a.default_model, fallbacks: a.fallback_models, reason: a.reason }; },
+    async describe(_ctx, a) {
+      const { readableModel } = await import("../slack/look.ts");
+      const role = String(a.name).replace(/^peeblo-/, "");
+      return { summary: `Run the ${role} role on ${readableModel(a.default_model).name}${a.fallback_models.length ? `, falling back to ${a.fallback_models.map((m: string) => readableModel(m).name).join(", ")}` : ""}`, setting: "routing_policy", name: a.name, default: a.default_model, fallbacks: a.fallback_models, reason: a.reason };
+    },
     async run(_ctx, a) {
       // Keeps the role's budget step-down. Start-up leaves this change in place until config/model-tiers.json changes.
       const spec = await policySpec({ ...ROLES[a.name], default: a.default_model, fallback: a.fallback_models });

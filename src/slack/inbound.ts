@@ -122,6 +122,7 @@ async function flush(key: string): Promise<void> {
   pending.delete(key);
   const { session, place, teamId, appId, user } = p.ctx;
   const person = await personForSlack(teamId, user, { displayName: (await displayName(appId, user)) ?? undefined });
+  void import("./api.ts").then((a) => a.personTz(appId, user)).then((tz) => (tz ? pool.query("UPDATE people SET tz = $2 WHERE id = $1 AND tz IS DISTINCT FROM $2", [person.id, tz]) : null)).catch(() => null);
   const last = p.parts.at(-1)!;
   // The latest message is the trigger the view reacts to and threads under.
   const placeNow = { ...place, trigger_ts: last.ts };

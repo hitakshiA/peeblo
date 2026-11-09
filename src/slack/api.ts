@@ -53,3 +53,11 @@ export async function displayName(appId: string, user: string): Promise<string |
 
 export const react = (appId: string, channel: string, ts: string, name: string) => slack(appId, "reactions.add", { channel, timestamp: ts, name }).catch(() => null);
 export const unreact = (appId: string, channel: string, ts: string, name: string) => slack(appId, "reactions.remove", { channel, timestamp: ts, name }).catch(() => null);
+
+// A person's time zone (IANA, e.g. "Asia/Kolkata") from their Slack profile, cached for a day.
+const zones = new Map<string, { tz: string | null; at: number }>();
+export async function personTz(appId: string, user: string): Promise<string | null> {
+  const c = zones.get(user);
+  if (c && Date.now() - c.at < 86_400_000) return c.tz;
+  try { const j = await slack(appId, "users.info", { user }); const tz = j.user?.tz ?? null; zones.set(user, { tz, at: Date.now() }); return tz; } catch { return null; }
+}
