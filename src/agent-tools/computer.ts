@@ -94,7 +94,7 @@ const tail = (s: string) => (s.length > MAX_OUT ? `[first ${s.length - MAX_OUT} 
 export const computerTools: AgentTool[] = [
   {
     name: "computer_bash",
-    description: "Run a shell command on your own Linux computer (Alpine). The working directory is your open repo checkout (see repo_open), else your session's folder. For git, builds, tests and scripts. Commands stop after the timeout.",
+    description: "Run a shell command on your own Linux computer (python3, duckdb, sqlite, jq, ripgrep, git, pdftotext, ffmpeg, imagemagick, node). Free, but it can take a few seconds to wake. The working directory is your open repo checkout (see repo_open), else your session's folder. Use it where your files are: repos, git, builds and tests; files people shared and long tool results Peeblo saved here; joining data from several sources; work with many steps or longer than 30 seconds; installs; anything you or a person will need later. For a quick exact calculation on numbers already in the conversation, run_code is faster. Commands stop after the timeout.",
     input_schema: object({
       command: { type: "string" },
       timeout_seconds: { type: ["integer", "null"], minimum: 1, maximum: 600, description: "Default 120." },

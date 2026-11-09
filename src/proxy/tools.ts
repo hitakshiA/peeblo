@@ -544,4 +544,4 @@ function firewallHint(t: { server: string; tool: string }): string {
 }
 
 // Sources whose text comes from outside the company, so a guard model checks it for injected instructions.
-const OUTSIDE = /^(web:|computer:bash|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot)\.)/;
+const OUTSIDE = /^(web:|file:|computer:bash|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot)\.)/;

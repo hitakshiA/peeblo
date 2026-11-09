@@ -35,6 +35,7 @@
       "uv",
       "typst",
       "poppler-utils",
+      "ffmpeg",
       "qpdf",
       "py3-pypdf",
       "py3-openpyxl",

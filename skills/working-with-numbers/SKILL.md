@@ -8,8 +8,7 @@ description: Getting numbers right and showing them well: counts, rates, totals,
 A number people act on has to be right, defined, and comparable. How it looks comes after.
 
 ## Getting it right
-- **Compute with code**, never in your head: the source's own query (SQL, HogQL), your computer for files and
-  many steps, or `run_code` for one exact calculation in a conversation (a refund, a credit, a percentage).
+- **Compute with code, never in your head**, where the data is (below).
 - **Say the definition** in a few words: "completed signups per person, Nov 2–8 UTC, test rows excluded".
 - **People, not events**, unless events are the question. Events double-fire (PostHog fires `signup_completed`
   twice on some browsers), bots inflate starts (`HeadlessChrome`), internal test rows (`test+…` addresses, your own domain) pollute.
@@ -33,6 +32,16 @@ A number people act on has to be right, defined, and comparable. How it looks co
 - **A list that says it's cut or has more isn't the total.** Get every page before you add anything up.
 - **Say what you did, not the plumbing**: "Stripe wouldn't give me MRR directly, so I added it up from
   subscriptions." Never name keys, scopes or permissions in a reply.
+
+## Where to run the numbers
+- Numbers or a small table in the conversation: `run_code`. Put them in the code; print the answer and its parts.
+  "7 stores × 15% of $249 × 3 months + 4 stores × 10% of $79 × 2 months" is one run_code call.
+- A small shared CSV or spreadsheet, or a saved result, for a quick exact answer: `run_code` with `files`.
+- Big files, a repo, data from several sources to join, or many steps: your computer (`computer_bash`).
+- A source that can total it (SQL, HogQL, a Stripe list you page through): ask the source.
+- No code: a figure a source already states, a one-step count, words.
+The sandbox and your computer share nothing: pass what the next step needs in the call. If run_code fails twice,
+do it on your computer.
 
 ## When they say "short"
 Four lines at most: the numbers on one or two lines, then the top three issues, one line each, linked. No

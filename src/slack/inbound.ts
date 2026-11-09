@@ -157,7 +157,7 @@ async function saveFiles(appId: string, teammateId: string, sessionId: string, f
     saved.push(`/workspace/sessions/${sessionId}/files/${name} (${f.filetype ?? "file"}, ${Math.max(1, Math.round(Number(f.size ?? 0) / 1024))} KB)`);
   }
   await appendEvent({ sessionId, type: "slack.files_saved", data: { files: saved } });
-  return `[files from the person, saved on your computer: ${saved.join("; ")}]`;
+  return `[files from the person, saved on your computer: ${saved.join("; ")}. A voice note, PDF or image: understand_file reads it; a table: run_code with files, or your computer.]`;
 }
 
 // The app of the last teammate (any Peeblo app) that posted in a thread before a message, or null if none has.
