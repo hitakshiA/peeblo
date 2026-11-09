@@ -92,7 +92,7 @@ export const createKeyCeiling = (keyId: string, budgetId: string, name: string) 
   admin<{ id: string }>("POST", "/organizations/me/spend-ceilings", { scope_type: "api_token", scope_id: keyId, budget_id: budgetId, name }, `capping the key ${name}`, links.budgets());
 export const deleteCeiling = (id: string) => admin("DELETE", `/organizations/me/spend-ceilings/${id}`, undefined, "removing a spend ceiling", links.budgets());
 
-export type PolicySpec = { select: { default: string }[]; on_failure?: string[] };
+export type PolicySpec = { select: ({ default: string } | { when: Record<string, unknown>; target: string })[]; on_failure?: string[] };
 export async function upsertRoutingPolicy(name: string, spec: PolicySpec): Promise<void> {
   const s = await session();
   const body = { name, spec, workspace_id: s?.workspaceId };

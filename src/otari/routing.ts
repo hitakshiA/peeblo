@@ -1,3 +1,4 @@
+import type { PolicySpec } from "./admin.ts";
 // Routing. A teammate's model is either a catalog id (Otari picks the cheapest healthy provider and fails
 // over between providers of that model) or a routing policy name (cross-model fallback, set up per role).
 // Policies and /routing/recommend want pinned names (provider:native-name), not catalog ids, and nothing
@@ -23,7 +24,7 @@ export async function pinnedName(catalogId: string): Promise<string> {
 
 // One policy per role, all open-weight: the default model first, then what Otari falls back to.
 // (from config/model-tiers.json, with the quality tiers they were picked from).
-export const ROLES: Record<string, { default: string; fallback: string[]; purpose: string }> = tierFile.roles;
+export const ROLES: Record<string, { default: string; fallback: string[]; purpose: string; step_down?: { at_budget_pct: number; model: string } }> = tierFile.roles;
 
 // A policy Otari just stored is unknown to some of its servers for several seconds (calls alternate between
 // "unknown model" and answers), so wait until it answers several times in a row.
@@ -47,10 +48,10 @@ export async function waitUntilServing(name: string, timeoutMs = 60_000, inARow 
 }
 
 // Creates or replaces the role policies in Otari (needs the dashboard session). Returns what was set.
-export async function ensureRolePolicies(): Promise<Record<string, { select: { default: string }[]; on_failure: string[] }>> {
-  const out: Record<string, { select: { default: string }[]; on_failure: string[] }> = {};
+export async function ensureRolePolicies(): Promise<Record<string, PolicySpec>> {
+  const out: Record<string, PolicySpec> = {};
   for (const [name, r] of Object.entries(ROLES)) {
-    const spec = { select: [{ default: await pinnedName(r.default) }], on_failure: await Promise.all(r.fallback.map(pinnedName)) };
+    const spec = await policySpec(r);
     await upsertRoutingPolicy(name, spec);
     await waitUntilServing(name);
     out[name] = spec;
@@ -83,4 +84,12 @@ export async function recommend(q: { sessionId: string; toolUseId: string; agent
     console.error(`otari: /routing/recommend failed (${err.status ?? "?"} ${err.requestId ?? "no request id"}): ${String(err.message).slice(0, 200)}`);
     return { model: q.parentModel, probabilities: {}, reason: null, requestId: err.requestId ?? null, fallback: true };
   }
+}
+
+// A role's policy in Otari: the default model, Otari's fallback, and a step-down to a cheaper model once the calling
+// key's budget is mostly used ("when" is checked by Otari against the key's own ceiling, so each teammate steps
+// down on its own budget, and the receipt shows the model that served).
+export async function policySpec(r: (typeof ROLES)[string]): Promise<PolicySpec> {
+  const step = r.step_down ? [{ when: { budget_used_pct: { gte: r.step_down.at_budget_pct } }, target: await pinnedName(r.step_down.model) }] : [];
+  return { select: [...step, { default: await pinnedName(r.default) }], on_failure: await Promise.all(r.fallback.map(pinnedName)) };
 }

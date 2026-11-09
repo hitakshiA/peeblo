@@ -107,14 +107,22 @@
       "fallback": [
         "minimax/minimax-m3.1-flash"
       ],
-      "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap)"
+      "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap)",
+      "step_down": {
+        "at_budget_pct": 80,
+        "model": "openai/gpt-oss-120b"
+      }
     },
     "peeblo-worker": {
       "default": "deepseek/deepseek-v4.1-flash-1017",
       "fallback": [
         "minimax/minimax-m3.1-flash"
       ],
-      "purpose": "teammates' everyday work"
+      "purpose": "teammates' everyday work",
+      "step_down": {
+        "at_budget_pct": 80,
+        "model": "openai/gpt-oss-120b"
+      }
     },
     "peeblo-reviewer": {
       "default": "minimax/minimax-m3.1-flash",
@@ -149,7 +157,11 @@
       "fallback": [
         "deepseek/deepseek-v4.1-flash-1017"
       ],
-      "purpose": "rare hard work a teammate chooses to switch to for one job (reconciling conflicting sources, long multi-step plans, hard code): the strongest open model, priced before it's used"
+      "purpose": "rare hard work a teammate chooses to switch to for one job (reconciling conflicting sources, long multi-step plans, hard code): the strongest open model, priced before it's used",
+      "step_down": {
+        "at_budget_pct": 50,
+        "model": "deepseek/deepseek-v4.1-flash-1017"
+      }
     }
   },
   "heavy": {
