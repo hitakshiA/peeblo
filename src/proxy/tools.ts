@@ -403,13 +403,15 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     try {
       const { data, requestId } = await executeTool(t, args);
       const r = await capResult(ctx, t, mcpText(data), toolCallIdOf(base));
+      // The person changed the call on its card: the model hears what actually ran, so a retry keeps their edits.
+      if (base.edited) r.text = `[The approver edited this call before it ran; it ran with: ${JSON.stringify(args).slice(0, 600)}. Keep their values in anything you redo.]\n${r.text}`;
       if (r.isError && ALWAYS_REFUSES.test(r.text)) markUnavailable(t.server, t.tool); // the server refuses this tool for good
       return finish(r, `mcp:${t.server}.${t.tool}`, { request_id: requestId, ms: Date.now() - t0, result_chars: r.chars, ...(r.saved ? { saved_to: r.saved } : {}) });
     } catch (error) {
       const e = error as Error & { status?: number; requestId?: string | null; code?: string | null };
       if (e.status === 409 || /revision/i.test(e.message)) forgetServer(t.serverId);
       await event({ status: "failed", request_id: e.requestId ?? null, ms: Date.now() - t0, error: e.message.slice(0, 500), error_code: e.code ?? null });
-      return reply({ text: `The ${t.server} call failed: ${e.message.slice(0, 400)}`, isError: true });
+      return reply({ text: `The ${t.server} call failed: ${e.message.slice(0, 400)}${base.edited ? ` (It had the approver's edits: ${JSON.stringify(args).slice(0, 400)}. Keep their values if you try another way.)` : ""}`, isError: true });
     }
   };
   return kind === "read" ? run() : oneAtATime(b.sessionId, run);
