@@ -34,8 +34,17 @@ export async function ensureManager(): Promise<void> {
 export function installHireWelcome(): void {
   void import("./store/events.ts").then(({ onEvent }) => onEvent(async (e) => {
     if (e.type !== "slack.installed") return;
+    const d = e.data as { app_id: string; team_id?: string; installed_by?: string };
+    // Peeblo's own app: it greets the person who installed it, in its DM.
+    const tm = await getTeammate(MANAGER);
+    const own = tm ? (await pool.query("SELECT 1 FROM slack_apps WHERE app_id = $1 AND teammate_id = $2", [d.app_id, tm.id])).rows.length : 0;
+    if (tm && own && d.installed_by) {
+      const { welcomeOnce } = await import("./slack/welcome.ts");
+      await welcomeOnce(d.app_id, tm.id, d.team_id ?? "", d.installed_by, "installed").catch((err) => console.error("peeblo welcome:", err));
+      return;
+    }
     const { switchToOwnApp } = await import("./slack/install.ts");
-    await switchToOwnApp(String((e.data as any).app_id)).catch((err) => console.error("install switch:", err));
+    await switchToOwnApp(String(d.app_id)).catch((err) => console.error("install switch:", err));
   }));
 }
 
