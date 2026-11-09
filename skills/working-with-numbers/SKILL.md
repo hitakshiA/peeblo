@@ -8,7 +8,8 @@ description: Getting numbers right and showing them well: counts, rates, totals,
 A number people act on has to be right, defined, and comparable. How it looks comes after.
 
 ## Getting it right
-- **Compute with code** on your computer or with the source's own query (SQL, HogQL), never in your head.
+- **Compute with code**, never in your head: the source's own query (SQL, HogQL), your computer for files and
+  many steps, or `run_code` for one exact calculation in a conversation (a refund, a credit, a percentage).
 - **Say the definition** in a few words: "completed signups per person, Nov 2–8 UTC, test rows excluded".
 - **People, not events**, unless events are the question. Events double-fire (PostHog fires `signup_completed`
   twice on some browsers), bots inflate starts (`HeadlessChrome`), internal test rows (`test+…` addresses, your own domain) pollute.

@@ -111,6 +111,8 @@ const invalidStreak = new Map<string, number>();
 // Where a vendor tool is the wrong road for a common question, the right one, in front of the model: in the tool's
 // description and in its error. (Stripe's analytics needs Sigma access many accounts don't have.)
 const TOOL_HINTS: Record<string, string> = {
+  "apify:apify--web-search": "For a plain web search, web_search is cheaper and screened; use this only for what it can't do (many results, a specific engine).",
+  "apify:apify--web-fetch": "For one public page, web_fetch is cheaper and screened; use this only to scrape many pages or a page web_fetch can't read.",
   "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 8, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
 };
 // Connection facts per server: ids the model would otherwise guess (vendors answer a wrong id with a misleading
