@@ -54,7 +54,7 @@ export const config = {
   admins: (process.env.PEEBLO_ADMINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),   // Slack user ids of Otari admins
   priceCardUsd: Number(process.env.PEEBLO_PRICE_CARD_USD ?? 0.5),                           // above this a run needs a price card
   teammateSpend: process.env.PEEBLO_TEAMMATE_SPEND ?? "auto",       // auto | key | tag (see src/otari/spend.ts)
-  approvalTtlSeconds: Number(process.env.PEEBLO_APPROVAL_TTL_S ?? 300),
+  approvalTtlSeconds: Number(process.env.PEEBLO_APPROVAL_TTL_S ?? 1800),
   turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 10 * 60_000),
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
 };

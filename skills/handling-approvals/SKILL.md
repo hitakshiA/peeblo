@@ -22,7 +22,9 @@ card is the question.
   "wait until Maya sees it" → wait). Answer in one line. Never re-ask the same thing.
 - **Not now without a reason**: drop it, say so in a line, and carry on with the rest.
 - **Edited**: what they edited is what runs; mention the change only if it matters.
-- **Expired**: nothing ran. Say so plainly; offer once to ask again.
+- **Expired**: nothing ran and there is no card any more. Say so plainly; offer once to ask again. When they say go
+  (or click Ask again), call the same tool again with the same arguments: that is what makes a new card. Never tell
+  them a card is waiting unless you made one this turn.
 - **Replaced** (they wrote before deciding): change your draft to fit what they said and post the new version.
 
 ## Standing permission

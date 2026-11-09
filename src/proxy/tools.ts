@@ -261,7 +261,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       if (a.status !== "approved") {
         await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
         if (a.superseded) return reply({ text: `${a.reason} Nothing ran yet; the old card is closed.`, isError: true });
-        return reply({ text: a.status === "expired" ? "No one approved this in time, so nothing changed." : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
+        return reply({ text: a.status === "expired" ? `Nobody answered the card in time, so ${t.name} did not run and there is no card now. Say so in one line. If they ask again (or say go, approve, do it), call ${t.name} again with the same arguments: that makes a new card. Never say a card is waiting unless you just made one.` : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
       }
       base.approval_id = a.approvalId;
       if (a.arguments) { args = a.arguments; base.edited = true; }
@@ -343,7 +343,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
           if (a.superseded) return reply({ text: `${a.reason} Nothing ran yet; the old card is closed.`, isError: true });
-          return reply({ text: a.status === "expired" ? "No one approved this in time, so it did not run. Say so, and offer to try again." : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
+          return reply({ text: a.status === "expired" ? `Nobody answered the card in time, so ${t.tool} did not run and there is no card now. Say so in one line. If they ask again (or say go, approve, do it), call ${t.tool} again with the same arguments: that makes a new card. Never say a card is waiting unless you just made one.` : (a.reason ? `They said not now: "${a.reason}". Nothing ran. Answer them in one short line like a colleague who heard them (e.g. "Okay, leaving GRO-329 alone."), and don't retry.` : "They said not now, so nothing ran. Say so in one short line and don't retry."), isError: true });
         }
         if (!perAction && (a.scope === "always" || a.scope === "job")) {
           await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);

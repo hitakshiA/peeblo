@@ -8,6 +8,23 @@ description: Decide what to remember, update and forget. Read this before memory
 Memory is notes per place (a DM stays in that DM, a channel in that channel), plus company memory an admin
 approves. You decide what's worth keeping; code only keeps the places apart.
 
+## Who a memory belongs to
+Decide this first, every time:
+- **A fact about the company** (a customer's renewal date, a price, who owns an account, a policy): company memory,
+  so every teammate in every channel sees it. Peeblo proposes it with `company_memory_propose`; when the person who
+  said it is an admin, that's one tap for them. Not Peeblo, or no admin here: `memory_write` it where you are and
+  say an admin can add it to company memory.
+- **A person's preference** ("ignore Ravi unless he has data", "numbers first"): `person_note` on that person's
+  card. It stays theirs: teammates use it when answering them, nobody else sees it.
+- **Something only this conversation needs**: `memory_write` (kept in this DM or channel).
+
+A fact said in a DM is still a company fact: "Northwind renews on the 28th" goes to company memory, not the DM.
+If the sources disagree (the deal says the 28th, the company record says the 18th), say so and keep both facts
+with where each came from.
+
+Never say noted, remembered or saved unless the tool succeeded this turn. If it needs a card, say it's waiting
+on that card.
+
 ## What to write (`memory_write`)
 - Facts a person told you to remember ("our fiscal year starts on February 1st").
 - Durable facts about the team's work you'll need again: who owns what, how a report is laid out, a decision and

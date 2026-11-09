@@ -42,7 +42,7 @@ function systemPrompt(tm: Teammate, secretList: { name: string; hosts: string[] 
     // How you sound (research/harness-behaviour-nov8.md §4, kept short).
     "How you sound: a sharp colleague, not a help desk. Reply with slack_post (your final text isn't shown). Lead with the answer in one or two short sentences; at most a short list after it. Link what you name (an issue, a PR, a page) inline. No em dashes, no greeting, no preamble, no restating the ask, no \"let me know if…\". A caveat only if it changes what the person should do, in one short line; at most one next step. A greeting or small talk gets one line and no tools. A yes/no question (\"anything on fire?\", \"are we up?\") gets the verdict first (\"Nothing on fire.\" or \"Yes: …\"), then at most two short lines of why. When someone asks for short, three lines at most. Never talk about Peeblo's plumbing (approvals, tools, retries, limits); if something is missing, say what in plain words (\"Stripe didn't answer, so no MRR this time.\"). Don't offer a read you could just do: do it. If a tool fails, say what failed in plain words, as the error said (\"Hiring Patch failed: the name is taken\"); never guess or invent a cause. Your answer ends your turn, so never say \"still working\" or \"I'll keep going\" in it: say what's done and what isn't.",
     // How you work.
-    "How you work: if you can name the most likely reading of an ask, act on it and say which reading you took; ask (one question, with your recommendation) only when you can't. Look first: recall, your notes, the connected sources. Never ask permission in your text: Peeblo shows the right person a card when a write needs a yes, and a no means take another route or say what's blocked. Before a write, check the tool can do what was asked; never call a write to find out. Finish what you can this turn; if you say you'll do something later, record it with promise (or a schedule) before you stop.",
+    "How you work: if you can name the most likely reading of an ask, act on it and say which reading you took; ask (one question, with your recommendation) only when you can't. Look first: recall, your notes, the connected sources. Never ask permission in your text: Peeblo shows the right person a card when a write needs a yes, and a no means take another route or say what's blocked. Before a write, check the tool can do what was asked; never call a write to find out. Finish what you can this turn; if you say you'll do something later, record it with promise (or a schedule) before you stop. Never say noted, remembered or saved unless a memory tool saved it this turn. Never say a card is waiting unless you made one this turn and it's still open.",
     tm.slug === "peeblo" ? "" : "If a request is outside your role, say so in one line and tell them Peeblo can route it.",
     // Open models (every model tonight): the careful-work rules.
     "Working carefully: do counts, totals and arithmetic with code, never in your head. Copy ids, names, numbers and links exactly as tools return them. After creating or changing something outside Slack, read it back before saying it's done. For anything that changes (statuses, prices, today's date), use a tool. If something fails, try another way before reporting it; never fill a gap with something that only looks right.",
@@ -359,12 +359,32 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
   if (r.stopReason !== "stop" && r.stopReason !== "toolUse") return { again: null };
   const src = (await pool.query("SELECT source FROM submissions WHERE id = $1", [ctx.run.submission_id])).rows[0]?.source;
   const place = (ctx.session.place as any)?.slack;
-  // Only direct asks and delegated jobs: a channel it reads along in, a welcome or an unattended run may end quietly.
-  if (!["slack", "api", "teammate"].includes(src) || (place && !place.direct)) return { again: null };
+  if (!["slack", "api", "teammate"].includes(src)) return { again: null };
   const posted = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' ORDER BY id", [ctx.run.id])).rows.map((x) => String(x.t));
   // Each tool call's latest status only (an approved write logs "waiting_approval", then "completed").
   const calls = (await pool.query(`SELECT DISTINCT ON (coalesce(data->>'id', id::text)) data->>'tool' AS t, data->>'status' AS s FROM events
     WHERE run_id = $1 AND type = 'tool.call' ORDER BY coalesce(data->>'id', id::text), id DESC`, [ctx.run.id])).rows as { t: string; s: string }[];
+  const said = [...posted, r.text].join("\n");
+  const ok = (names: string[]) => calls.some((c) => names.includes(c.t) && c.s === "completed");
+  const ruled = async (rule: string, again: string) => {
+    await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "stop_check.decided", data: { verdict: "continue", reason: rule, via: "rule" } });
+    return { again: `<peeblo_event kind="stop_check">${again}</peeblo_event>` };
+  };
+  // Saying it was noted or saved when no memory tool saved anything this turn.
+  if (/(^|[.!?:]\s+|\n)\s*(got it[,.]?\s*)?noted\b|\bi['’]?ve noted\b|\bi['’]?ll (remember|keep that in mind)\b|\bi will remember\b|\bi['’]?ve (saved|remembered)\b|\b(saved|remembered) (it|that|this)\b|\bmade a note\b/i.test(said)
+    && !ok(["memory_write", "person_note", "company_memory_propose", "promise", "memory_forget", "skill_save"])) {
+    return ruled("said noted without saving", "You told them it's noted or saved, but no memory tool saved anything this turn. Save it now (a person's preference: person_note; a fact about the company: company_memory_propose if you're Peeblo with an admin, else memory_write; anything else: memory_write), then correct your reply with slack_post if it said more than you did.");
+  }
+  // Saying an approval card is waiting when none is.
+  const pendingCard = (await pool.query("SELECT 1 FROM approvals a JOIN runs r ON r.id = a.run_id WHERE r.session_id = $1 AND a.status = 'pending' AND a.expires_at > now() LIMIT 1", [ctx.session.id])).rowCount;
+  if (!pendingCard && /\b(card|approv\w*)\b/i.test(said) && /\b(is|it['’]s|card['’]s|still) (waiting|pending|up)\b|\bneeds you to approve\b|\bwaiting (on|for) (you|your)\b|\bpending (your )?approval\b|\b(approve|tap) (it|that|the card) (above|when|and)\b/i.test(said)) {
+    return ruled("claimed a card that doesn't exist", "You said an approval card is waiting, but there is no card: the last one expired or was answered. If they already told you to go ahead, call the tool again now (that makes a new card). Otherwise correct your reply with slack_post: nothing is waiting, and they can say go.");
+  }
+  // An "Ask again" turn has to make the call again.
+  const asked = /^Ask again: I'm here now\. Call ([a-z0-9_]+)/.exec(ctx.text)?.[1];
+  if (asked && !calls.some((c) => c.t === asked)) return ruled("ask again without the call", `They clicked Ask again: call ${asked} now with the same arguments as before, so they get a new card. Don't describe it; make the call.`);
+  // Only direct asks and delegated jobs: a channel it reads along in, a welcome or an unattended run may end quietly.
+  if (place && !place.direct) return { again: null };
   // A plain reply (it posted, and used no other tool) has nothing left half-done: no judge call for a greeting.
   if (src !== "teammate" && (posted.length || r.text.trim()) && calls.every((c) => c.t === "slack_post")) return { again: null };
   // A job handed to a teammate is done for this turn: the teammate posts the result itself.

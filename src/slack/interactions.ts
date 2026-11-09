@@ -186,6 +186,24 @@ export function installSlackInteractions(): void {
       if (tmId && payload.view?.type === "home") { const { publishHome } = await import("./home.ts"); await publishHome(appId, tmId, payload.user.id, await homeExtra(appId, tmId, payload.user.id)).catch(() => {}); }
       return;
     }
+    // "Ask again" on an expired card: a new turn in the same conversation that makes the same call again (a new card).
+    // Older expired cards carry the run id; their latest expired approval is the one to re-ask.
+    if (a.action_id === "ask_again" || a.action_id === "retry_run") {
+      const ap = (await pool.query(`SELECT a.id, a.action, a.run_id, r.session_id FROM approvals a JOIN runs r ON r.id = a.run_id
+        WHERE (a.id = $1 OR (a.run_id = $1 AND $2)) AND (a.status = 'expired' OR (a.status = 'pending' AND a.expires_at < now())) ORDER BY a.created_at DESC LIMIT 1`, [a.value, a.action_id === "retry_run"])).rows[0];
+      if (ap) {
+        const act = ap.action ?? {};
+        const tool = act.tool ?? "the call";
+        const args = act.arguments ? JSON.stringify(act.arguments).slice(0, 1500) : "";
+        const { submit } = await import("../store/sessions.ts");
+        const { startRun } = await import("../durable/runs.ts");
+        const text = `Ask again: I'm here now. Call ${tool} again${act.summary ? ` (${act.summary})` : ""} with the same arguments${args ? `: ${args}` : ""}, so I get a new card to approve.`;
+        const { run, created } = await submit({ sessionId: ap.session_id, personId: who.id, requestId: `ask_again:${ap.id}:${payload.action_ts ?? Date.now()}`, text, source: "slack" });
+        if (created) await startRun(run.id);
+        return;
+      }
+      if (a.action_id === "ask_again") return;
+    }
     // Recovering from a failed run (SLACK_UX_SPEC §3.6): retry, retry on the fallback model, or ask the owner.
     if (["retry_run", "retry_fallback", "ask_owner"].includes(a.action_id)) {
       const r = (await pool.query("SELECT r.session_id, sub.text, sub.person_id, s.teammate_id, s.place FROM runs r JOIN submissions sub ON sub.id = r.submission_id JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.value])).rows[0];

@@ -315,7 +315,7 @@ async function outcomeBlocks(d: any, runId: string | null): Promise<any[]> {
   if (d.status === "denied" && d.superseded) return [{ type: "context", elements: [{ type: "mrkdwn", text: `Replaced by an updated draft · ${name}'s note` }] }];
   if (d.status === "denied") return [{ type: "context", elements: [{ type: "mrkdwn", text: `Not now · ${name}${d.reason ? `: “${String(d.reason).slice(0, 200)}”` : ""}` }] }];
   return [{ type: "section", text: { type: "mrkdwn", text: "*Expired.* Nobody answered in time, so nothing ran." } },
-    ...(runId ? [{ type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Ask again" }, action_id: "retry_run", value: runId }] }] : [])];
+    ...(runId ? [{ type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Ask again" }, action_id: "ask_again", value: d.approval_id ?? runId }] }] : [])];
 }
 
 async function approvalResolved(v: View | undefined, e: EventRow): Promise<void> {
