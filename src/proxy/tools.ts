@@ -396,7 +396,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
           await pool.query("INSERT INTO grants (id, teammate_id, fingerprint, scope, run_id) VALUES ($1, $2, $3, $4, $5)", [newId("gr"), tm.id, toolFp, a.scope, a.scope === "job" ? b.runId : null]);
         }
         base.approval_id = a.approvalId;
-        if (a.arguments) { args = a.arguments; base.edited = true; }
+        if (a.arguments) { args = a.arguments; base.edited = true; base.args_preview = JSON.stringify(args ?? {}).slice(0, 300); }
       }
     }
     const t0 = Date.now();
