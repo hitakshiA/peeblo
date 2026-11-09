@@ -47,6 +47,7 @@ const hireSpec = {
   budget_usd: { type: "number", minimum: 0, maximum: 500, description: "Monthly budget in USD." },
   tools: { type: "array", items: { type: "string", enum: ["web", "code", "computer"] }, maxItems: 3 },
   connectors: { type: "array", items: { type: "string" }, maxItems: 10, description: "Otari MCP server names, e.g. linear, posthog, stripe." },
+  read_only: { type: ["array", "null"], items: { type: "string" }, description: "Connectors it may only read, never write (e.g. [\"stripe\"] when a person says read-only on Stripe). Enforced, not just instructions." },
   github_repos: { type: ["array", "null"], items: { type: "string" }, maxItems: 5, description: "owner/repo it works in (e.g. hitakshiA/acme-checkout-api): GitHub access scoped to these, and its own checkout of each on its computer. Required for any teammate that changes code." },
   mode: { type: ["string", "null"], enum: [...MODES, null] },
   computer_size: { type: ["string", "null"], enum: ["small", "large", null], description: "large only for teammates that browse websites." },
@@ -62,6 +63,7 @@ export function configFrom(a: any): Partial<TeammateConfig> {
     budget: { monthly_usd: a.budget_usd }, tools: [...new Set([...(a.tools ?? []), "computer"])], connectors: [...new Set([...(a.connectors ?? []), ...(a.github_repos?.length ? ["github"] : [])])], mode: a.mode ?? "auto",
     computer: { size: a.computer_size ?? "small", allowed_hosts: [], ...(a.github_repos?.length ? { repos: a.github_repos.map((r: string) => ({ name: r.split("/")[1], remote: `https://github.com/${r}.git`, base: "main", credential: "GH_TOKEN", protected: [], worktree: { setup: [], include: [], setup_inputs: [] } })) } : {}) } as any,
     ...(a.github_repos?.length ? { connector_scopes: { github: a.github_repos } } : {}),
+    ...(a.read_only?.length ? { read_only: a.read_only } : {}),
     ...(a.profile ? { profile: a.profile } : {}),
   };
 }
@@ -151,7 +153,7 @@ export const managerTools: AgentTool[] = [
       const { serviceName } = await import("../slack/look.ts");
       const uses = [
         ...(a.github_repos?.length ? [`GitHub (${a.github_repos.map((r: string) => r.split("/")[1]).join(", ")})`] : []),
-        ...(a.connectors ?? []).filter((c: string) => c !== "github" || !a.github_repos?.length).map((c: string) => serviceName(c)),
+        ...(a.connectors ?? []).filter((c: string) => c !== "github" || !a.github_repos?.length).map((c: string) => `${serviceName(c)}${(a.read_only ?? []).includes(c) ? " (read-only)" : ""}`),
         "its own computer", ...((a.tools ?? []).includes("web") ? ["the web"] : []),
       ];
       const asks = { ask: "asks before every write", auto: "asks before it writes anything that matters", trusted: "asks before it deletes anything", yolo: "acts without asking" }[String(fake.config.mode)] ?? "asks before it writes";
@@ -192,7 +194,7 @@ export const managerTools: AgentTool[] = [
     description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, the GitHub repos it works in (github_repos: the full list as owner/repo, comma-separated), budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it. Access is given with these fields, never by writing it into instructions. A teammate whose Slack app couldn't be made at hire gets it made by any change here (re-setting its role is enough), and its install button goes on its ID card.",
     input_schema: object({
       teammate: { type: "string" },
-      field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "github_repos", "budget_usd", "computer_size", "profile"] },
+      field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "read_only", "github_repos", "budget_usd", "computer_size", "profile"] },
       value: { type: "string", description: "The new value; lists comma-separated. For profile, a short summary of the change." },
       profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
       reason: { type: "string" },
@@ -235,6 +237,7 @@ export const managerTools: AgentTool[] = [
         : a.field === "connectors" ? list(a.value).some((x) => !c.connectors.includes(x))
         : a.field === "github_repos" ? list(a.value).some((x) => !(((c as any).connector_scopes?.github ?? []) as string[]).includes(x))
         : a.field === "computer_size" ? a.value === "large" && c.computer?.size !== "large"
+        : a.field === "read_only" ? (((c as any).read_only ?? []) as string[]).some((x) => !list(a.value).includes(x))
         : a.field === "model";
       return raises ? { ask: `${ctx.person?.display_name ?? "Someone"} wants to change ${c.name}'s ${a.field.replace("_usd", "")} to ${a.value} (${a.reason}).` } : null;
     },
@@ -275,7 +278,7 @@ export const managerTools: AgentTool[] = [
         return { text: `${t.config.name} is now at version ${next.version}: GitHub repos = ${repos.join(", ")} (scoped access and its own checkout of each). Its running conversations pick this up on their next message; say "${t.config.name} can work in it from its next step".` };
       }
       const patch: any = a.field === "instructions" ? { instructions: a.value }
-        : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) }
+        : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) } : a.field === "read_only" ? { read_only: list(a.value) }
         : a.field === "budget_usd" ? { budget: { monthly_usd: Number(a.value) } } : { computer: { ...t.config.computer, size: a.value } };
       const next = await updateTeammate(t.slug, patch, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
       // A budget change reaches the teammate's Otari key ceiling now, not at its next call.

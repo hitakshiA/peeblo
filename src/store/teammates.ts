@@ -14,6 +14,7 @@ export type TeammateConfig = {
   web: { allowed_domains: string[]; blocked_domains: string[] }; // Otari enforces these on search and fetch
   connectors: string[];         // names of MCP servers stored in Otari, e.g. "linear", "posthog"
   connector_scopes: Record<string, string[]>; // e.g. { github: ["acme/checkout-api", "acme/*"] }
+  read_only?: string[];          // connectors this teammate may only read (e.g. ["stripe"])
   computer: { size: "small" | "large"; allowed_hosts: string[]; recipe: Recipe; repos?: unknown[] };
   git?: { branch_prefix: string; publish: "off" | "own-branches" }; // hosts beyond the defaults; setup commands run once into the disk
   mode: "ask" | "auto" | "trusted" | "yolo";
@@ -70,7 +71,7 @@ export function validateConfig(c: Partial<TeammateConfig>): TeammateConfig {
     ...(profile ? { profile } : {}),
     name: c.name!.trim(), role: c.role!.trim(), instructions: c.instructions?.trim() ?? "",
     model: { default: c.model!.default.trim(), ...(c.model!.fallback ? { fallback: c.model!.fallback.trim() } : {}) },
-    budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, computer: { size, allowed_hosts: computerHosts, recipe, repos }, git: { branch_prefix: prefix, publish: publish as "off" | "own-branches" }, mode: mode as TeammateConfig["mode"],
+    budget: { monthly_usd: budget }, tools: [...new Set(c.tools ?? [])], web, connectors: [...new Set(connectors)], connector_scopes: connectorScopes, read_only: [...new Set<string>(((c as any).read_only ?? []).map(String))].filter((x) => (connectors as string[]).includes(x)), computer: { size, allowed_hosts: computerHosts, recipe, repos }, git: { branch_prefix: prefix, publish: publish as "off" | "own-branches" }, mode: mode as TeammateConfig["mode"],
   };
 }
 

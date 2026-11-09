@@ -331,6 +331,11 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     await event({ status: "refused", reason: scope });
     return reply({ text: `Not allowed: ${scope}. Ask the teammate's owner to add it.`, isError: true });
   }
+  // Read-only connectors (config.read_only, set at hire or by talking): no writes there, whoever asks.
+  if (kind !== "read" && ((tm.config as any).read_only ?? []).includes(t.server)) {
+    await event({ status: "refused", reason: `${t.server} is read-only for this teammate` });
+    return reply({ text: `Not allowed: ${t.server} is read-only for ${tm.config.name}. Don't try another way; write up what should change for a person (or a teammate with write access) to do.`, isError: true });
+  }
   const run = async () => {
     // The gate (src/reviewer.ts): risk class → mode rule → grant → the reviewer in Auto → a card.
     const risk = riskOf(t, args, kind);
