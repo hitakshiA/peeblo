@@ -62,6 +62,7 @@ export const webSearchTool: AgentTool = {
   },
 };
 
+
 // run_code: a short Python snippet in Otari's code sandbox, chosen by the agent for the cases its own computer is
 // the wrong tool for (quick exact math, a date calculation, parsing a pasted table). It is never attached to every
 // model call: one small call with Otari's code tool, and its output comes back as the result.
@@ -71,16 +72,18 @@ export const runCodeTool: AgentTool = {
   input_schema: object({ code: { type: "string", description: "Python 3 that prints its answer." } }),
   kind: "read",
   async run(ctx, a) {
+    // Otari's direct code execution (POST /code/execute): no model call; one sandbox per session, kept between runs.
+    const held = sandboxes.get(ctx.sessionId);
     try {
-      const r = await otari<any>("POST", "/chat/completions", {
-        model: "peeblo-worker", max_tokens: 800, temperature: 0, tools: [{ type: "otari_code_execution", container: "auto" }], ...(ctx.endUser ? { user: ctx.endUser } : {}),
-        messages: [{ role: "user", content: `Run this Python with the code execution tool, exactly as written, then reply with only what it printed (no commentary):\n\n\`\`\`python\n${String(a.code).slice(0, 8000)}\n\`\`\`` }],
-      });
-      const text = String(r.data?.choices?.[0]?.message?.content ?? "").trim() || "(no output)";
-      return { text: `Output (Otari sandbox):\n${text.slice(0, 4000)}`, data: { request_id: r.requestId } };
+      const r = await otari<any>("POST", "/code/execute", { code: String(a.code).slice(0, 20_000), container: held ?? "auto", timeout_seconds: 30, ...(ctx.endUser ? { user: ctx.endUser } : {}) });
+      const id = r.headers.get("otari-container-id"); if (id) sandboxes.set(ctx.sessionId, id);
+      const out = [String(r.data?.stdout ?? "").trim(), r.data?.stderr ? `stderr: ${String(r.data.stderr).trim()}` : ""].filter(Boolean).join("\n") || "(no output)";
+      return { text: `Ran in Otari's sandbox (exit ${r.data?.return_code ?? "?"}):\n${out.slice(0, 4000)}`, isError: r.data?.return_code ? r.data.return_code !== 0 : false, data: { request_id: r.requestId, container: id } };
     } catch (e) {
-      const err = e as OtariError;
-      return { text: `The sandbox didn't run it: ${err.message.slice(0, 300)}`, isError: true };
+      if (held) sandboxes.delete(ctx.sessionId);
+      return { text: `The sandbox didn't run it: ${(e as OtariError).message.slice(0, 300)}`, isError: true };
     }
   },
 };
+const sandboxes = new Map<string, string>(); // session → Otari container id
+
