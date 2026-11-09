@@ -99,6 +99,11 @@ export function readableModel(id: string): { name: string; logo: string | null }
   const short = id.split("/").pop() ?? id;
   return { name: short.replace(/-\d{4}$/, "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), logo: null };
 }
+// A teammate's model in words: a role policy reads as the model it runs ("DeepSeek V4.1 Flash"), never "peeblo-worker".
+export async function modelLabel(id: string): Promise<string> {
+  const { ROLES } = await import("../otari/routing.ts");
+  return readableModel(ROLES[id]?.default ?? id).name;
+}
 const PROVIDERS: Record<string, string> = { deepinfra: "DeepInfra", together: "Together", fireworks: "Fireworks", nebius: "Nebius", novita: "Novita", mistral: "Mistral", bedrock: "Bedrock", groq: "Groq", cerebras: "Cerebras", baseten: "Baseten", parasail: "Parasail" };
 export const readableProvider = (p: string) => PROVIDERS[p.toLowerCase()] ?? cap(p);
 

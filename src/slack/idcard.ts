@@ -52,6 +52,8 @@ export async function idCardPng(tm: Teammate, face: { shape: string; color: stri
   const W = 900, H = 520;
   const avatar = (await facePng(face, 300)).toString("base64");
   const c = tm.config;
+  const { modelLabel } = await import("./look.ts");
+  const model = await modelLabel(c.model.default);
   // The ID is the teammate's slug: the same on the card before and after the hire (never a preview id).
   const id = tm.slug.toUpperCase().slice(0, 16);
   const bars = [...id].map((ch, i) => `<rect x="${600 + i * 18}" y="430" width="${(ch.charCodeAt(0) % 3) + 3}" height="50" fill="#1d1c1d"/>`).join("");
@@ -63,7 +65,7 @@ export async function idCardPng(tm: Teammate, face: { shape: string; color: stri
     <image x="40" y="110" width="300" height="300" href="data:image/png;base64,${avatar}"/>
     <text x="380" y="160" font-family="Helvetica, Arial, sans-serif" font-size="48" font-weight="700" fill="#1d1c1d">${esc(c.name)}</text>
     ${roleLines(c.role).map((l, i) => `<text x="380" y="${196 + i * 28}" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#3a3a3a">${esc(l)}</text>`).join("")}
-    ${line(280, "Hired by", hiredBy)}${line(318, "Model", c.model.default.split("/").pop() ?? c.model.default)}${line(356, "Budget", `$${c.budget.monthly_usd}/month`)}${line(394, "Approvals", `${c.mode} mode`)}
+    ${line(280, "Hired by", hiredBy)}${line(318, "Model", model)}${line(356, "Budget", `$${c.budget.monthly_usd}/month`)}${line(394, "Approvals", `${c.mode} mode`)}
     <text x="40" y="465" font-family="Courier, monospace" font-size="22" fill="#1d1c1d">ID ${esc(id)}</text>${bars}
   </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();

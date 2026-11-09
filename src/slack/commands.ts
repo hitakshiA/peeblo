@@ -13,6 +13,7 @@ import { personForSlack, type Person } from "../store/people.ts";
 import { openSession, submit } from "../store/sessions.ts";
 import { getTeammate, listTeammates, updateTeammate, type Teammate } from "../store/teammates.ts";
 import { displayName, slack } from "./api.ts";
+import { modelLabel } from "./look.ts";
 
 const respond = (url: string, body: Record<string, unknown>) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
 const face = (slug: string) => (config.publicUrl ? { type: "image", image_url: `${config.publicUrl}/faces/${slug}.png`, alt_text: slug } : undefined);
@@ -40,7 +41,7 @@ export async function handleCommand(f: URLSearchParams): Promise<void> {
       const go = (x = "") => `https://slack.com/app_redirect?app=${app}&team=${team}${x}`;
       cards.push({ type: "card", block_id: `crew:${t.slug}`, ...(face(t.slug) ? { icon: face(t.slug) } : {}),
         title: { type: "plain_text", text: t.config.name.slice(0, 150) }, subtitle: { type: "plain_text", text: t.config.role.slice(0, 150) },
-        body: { type: "mrkdwn", text: `${t.config.model.default.split("/").pop()} · $${t.config.budget.monthly_usd}/mo · ${t.config.mode} mode`.slice(0, 200) },
+        body: { type: "mrkdwn", text: `${await modelLabel(t.config.model.default)} · $${t.config.budget.monthly_usd}/mo · ${t.config.mode} mode`.slice(0, 200) },
         actions: [{ type: "button", text: { type: "plain_text", text: "Home" }, url: go("&tab=home"), action_id: `crew_home:${t.slug}` }, { type: "button", style: "primary", text: { type: "plain_text", text: "Message" }, url: go(), action_id: `crew_dm:${t.slug}` }] });
     }
     await respond(url, { response_type: "ephemeral", text: `Your crew: ${cards.length} teammates`, blocks: [
