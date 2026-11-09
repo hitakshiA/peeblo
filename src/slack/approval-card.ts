@@ -27,6 +27,9 @@ export function question(a: any, teammate: string): string {
   }
   if (a.server) return a.risk === "read" ? `Okay to look this up in ${serviceName(a.server)}?` : `Okay to write to ${serviceName(a.server)}?`;
   if (a.tool && a.summary && a.kind === "peeblo_tool") return `${String(a.summary).split("\n")[0].replace(/[.?]$/, "")}?`;
+  // A routine names itself: "Set up “Monday numbers for Tom”?"; a computer command says what it does, not "computer bash".
+  if (a.tool === "schedule" && a.arguments?.name) return `${a.arguments.action === "delete" ? "Remove" : a.arguments.action === "update" ? "Change" : "Set up"} “${String(a.arguments.name).slice(0, 80)}”?`;
+  if (a.tool === "computer_bash" && /git push/.test(String(a.arguments?.command ?? ""))) return `Okay for ${teammate} to push code from its computer?`;
   if (a.tool) return `Okay for ${teammate} to ${verb(a.tool)}?`;
   return `Okay for ${teammate} to go ahead?`;
 }
