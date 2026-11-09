@@ -26,6 +26,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // dashboard session cookie). Reads and PUTs are retried on 429/5xx and network errors, honouring
 // Retry-After; POSTs are not, since a repeat could run something twice.
 export async function otari<T = any>(method: string, path: string, body?: unknown, opts: { auth?: Record<string, string>; retries?: number; timeoutMs?: number } = {}): Promise<{ data: T; requestId: string | null; headers: Headers }> {
+  // A role name before Otari holds the role policies goes out as that role's default model.
+  if (method === "POST" && body && typeof (body as any).model === "string" && /\/(chat\/completions|messages|responses)$/.test(path)) {
+    const { modelFor } = await import("./routing.ts");
+    body = { ...(body as object), model: modelFor((body as any).model) };
+  }
   const idempotent = method === "GET" || method === "PUT" || method === "DELETE" || method === "HEAD";
   const tries = idempotent ? (opts.retries ?? 3) : 1;
   for (let i = 1; ; i++) {

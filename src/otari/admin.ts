@@ -48,6 +48,8 @@ export async function signIn(email: string, password: string): Promise<{ orgId: 
     [seal(cookie), email, org.organization.id, workspaceId, expiresAt],
   );
   cached = undefined;
+  // With a session, Peeblo's role routing policies can be made (or brought up to date) in Otari.
+  void import("./routing.ts").then((r) => r.syncRolePolicies()).catch(() => null);
   return { orgId: org.organization.id, workspaceId, expiresAt };
 }
 

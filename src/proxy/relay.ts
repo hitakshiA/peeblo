@@ -12,7 +12,7 @@ import { handleTools } from "./tools.ts";
 import { freshLakeraState, guardrailRefusal } from "../guard.ts";
 import { budgetRefusal } from "../otari/people.ts";
 import { estimateCost, roughTokens } from "../otari/catalog.ts";
-import { ROLES } from "../otari/routing.ts";
+import { modelFor, ROLES } from "../otari/routing.ts";
 import { capCheck, noteSpend, type CapRefusal } from "../otari/spend.ts";
 import { teammateAt } from "../store/teammates.ts";
 
@@ -63,6 +63,7 @@ async function body(req: IncomingMessage): Promise<Buffer> {
 function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string, label?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
+  if (typeof j.model === "string") j.model = modelFor(j.model);
   // Otari's Sessions view names the job the way people know it ("Rivet · #incidents · checkout timeouts").
   if (label && (path === "/chat/completions" || path === "/messages" || path === "/responses")) j.session_label = label;
   // Name the paying person the way each API shape expects; drop any user the agent tried to set itself.

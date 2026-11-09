@@ -93,3 +93,24 @@ export async function policySpec(r: (typeof ROLES)[string]): Promise<PolicySpec>
   const step = r.step_down ? [{ when: { budget_used_pct: { gte: r.step_down.at_budget_pct } }, target: await pinnedName(r.step_down.model) }] : [];
   return { select: [...step, { default: await pinnedName(r.default) }], on_failure: await Promise.all(r.fallback.map(pinnedName)) };
 }
+
+// Whether Otari holds Peeblo's role policies (made from config/model-tiers.json). Until it does (a fresh install, or
+// no admin session to make them), a role name is sent as its default model, so agents work either way.
+let policiesReady = false;
+export const rolePoliciesReady = () => policiesReady;
+export function modelFor(requested: string): string {
+  return !policiesReady && requested in ROLES ? ROLES[requested].default : requested;
+}
+// Creates or updates every role policy. Runs at start and after an admin signs Peeblo in to Otari.
+export async function syncRolePolicies(): Promise<boolean> {
+  const { session, upsertRoutingPolicy } = await import("./admin.ts");
+  if (!(await session())) { policiesReady = false; return false; }
+  try {
+    for (const [name, r] of Object.entries(ROLES)) await upsertRoutingPolicy(name, await policySpec(r));
+    policiesReady = true;
+  } catch (e) {
+    console.error("otari: role policies:", (e as Error).message.slice(0, 200));
+    policiesReady = (await rolePoliciesInOtari().catch(() => [])).length === Object.keys(ROLES).length;
+  }
+  return policiesReady;
+}

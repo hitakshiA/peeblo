@@ -43,6 +43,8 @@ const readGuard = () => import("./guard.ts").then(async (g) => {
   return g.lakeraMandate();
 }).catch(() => null);
 await readGuard();
+// Peeblo's role routing policies in Otari, made or updated from config/model-tiers.json when an admin session exists.
+void import("./otari/routing.ts").then((r) => r.syncRolePolicies()).catch(() => null);
 setInterval(readGuard, 10 * 60_000).unref();
 const proxy = await startProxy();
 await launchDurable();
