@@ -37,8 +37,12 @@ case "${1:-up}" in
   up)
     ensure_env; load_env
     if [ "$(uname)" = Darwin ]; then
-      command -v node >/dev/null || { echo "Node 24 is required on macOS (brew install node@24)"; exit 1; }
-      command -v qemu-system-aarch64 >/dev/null || { echo "QEMU is required for teammate computers (brew install qemu)"; exit 1; }
+      # What a fresh Mac needs, checked before anything starts (docs/SETUP.md, "What you need").
+      command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "peeblo: Docker isn't running (start Docker Desktop or OrbStack)"; exit 1; }
+      [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ] || { echo "peeblo: Node 24 is required (brew install node@24 && brew link --overwrite --force node@24); node -v says $(node -v 2>/dev/null || echo nothing)"; exit 1; }
+      command -v pnpm >/dev/null || { echo "peeblo: pnpm is required (brew install pnpm)"; exit 1; }
+      command -v qemu-system-aarch64 >/dev/null || { echo "peeblo: QEMU is required for teammate computers (brew install qemu)"; exit 1; }
+      command -v mke2fs >/dev/null || [ -x /opt/homebrew/opt/e2fsprogs/sbin/mke2fs ] || [ -x /usr/local/opt/e2fsprogs/sbin/mke2fs ] || { echo "peeblo: e2fsprogs is required to build teammate computers (brew install e2fsprogs)"; exit 1; }
       mac_compose up -d --wait db
       [ -d node_modules ] || pnpm install --frozen-lockfile
       # The console (served by core at http://127.0.0.1:7340/console/), built once.
@@ -49,7 +53,8 @@ case "${1:-up}" in
       ls "$PEEBLO_DATA_DIR/images/small-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)"/*/manifest.json >/dev/null 2>&1 || node src/bin.ts image small
       if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else
         nohup node src/bin.ts daemon >> "$RUN/core.log" 2>&1 & echo $! > "$RUN/core.pid"
-        sleep 4; core_pid >/dev/null || { echo "peeblo: core failed to start; see $RUN/core.log"; tail -20 "$RUN/core.log"; exit 1; }
+        for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:${PEEBLO_API_PORT:-7340}/healthz" >/dev/null 2>&1 && break; core_pid >/dev/null || break; sleep 1; done
+        core_pid >/dev/null || { echo "peeblo: core failed to start; see $RUN/core.log"; tail -20 "$RUN/core.log"; exit 1; }
         echo "peeblo: core running (pid $(cat "$RUN/core.pid")); logs in $RUN/core.log"
       fi
     else
@@ -58,7 +63,7 @@ case "${1:-up}" in
     echo "peeblo: up. Run ./peeblo check to verify the setup." ;;
   down)
     load_env
-    if pid=$(core_pid); then kill "$pid"; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
+    if pid=$(core_pid); then kill "$pid"; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
     if [ "$(uname)" = Darwin ]; then mac_compose stop db; else compose --profile linux stop; fi ;;
   status)
     load_env

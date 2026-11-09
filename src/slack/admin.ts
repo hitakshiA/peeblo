@@ -17,24 +17,43 @@ async function call(method: string, body: URLSearchParams | FormData, token?: st
   return r.json();
 }
 
+// The stored token wins, unless the file holds a newer one (an admin made a fresh token after the old one broke).
 async function loadToken(): Promise<ConfigToken | null> {
   const { rows } = await pool.query("SELECT token FROM slack_config WHERE id = 1");
-  if (rows[0]) return unseal<ConfigToken>(rows[0].token);
+  const stored = rows[0] ? unseal<ConfigToken>(rows[0].token) : null;
   const f = process.env.PEEBLO_SLACK_CONFIG_FILE;
-  if (f && existsSync(f)) { const t = JSON.parse(readFileSync(f, "utf8")) as ConfigToken; await storeToken(t); return t; }
-  return null;
+  let file: ConfigToken | null = null;
+  try { if (f && existsSync(f)) file = JSON.parse(readFileSync(f, "utf8")) as ConfigToken; } catch { /* a broken file is ignored while a stored token exists */ }
+  if (file?.access_token && (!stored || (file.access_token !== stored.access_token && Number(file.exp) > Number(stored.exp)))) { await storeToken(file); return file; }
+  return stored;
 }
 const storeToken = (t: ConfigToken) => pool.query("INSERT INTO slack_config (id, token) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET token = $1, updated_at = now()", [seal(t)]);
 
-// The token rotates every 12 h; the new refresh token is saved before the access token is used.
+// The token rotates every 12 h. A refresh token works once, so rotation holds a database lock (check and core can
+// both get here) and re-reads the token inside it; the new refresh token is saved before the access token is used.
 export async function configToken(): Promise<string> {
   const t = await loadToken();
   if (!t) throw new Error("no Slack app configuration token; an admin creates one at api.slack.com/apps (Your App Configuration Tokens)");
   if (t.exp - Date.now() / 1000 > 600) return t.access_token;
-  const r = await call("tooling.tokens.rotate", form({ refresh_token: t.refresh_token }));
-  if (!r.ok) throw new Error(`Slack config token rotation failed: ${r.error}`);
-  await storeToken({ access_token: r.token, refresh_token: r.refresh_token, exp: r.exp });
-  return r.token;
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('peeblo.slack_config'))");
+    const now = (await c.query("SELECT token FROM slack_config WHERE id = 1")).rows[0];
+    const cur = now ? unseal<ConfigToken>(now.token) : t;
+    if (cur.exp - Date.now() / 1000 > 600) { await c.query("COMMIT"); return cur.access_token; }
+    const r = await call("tooling.tokens.rotate", form({ refresh_token: cur.refresh_token }));
+    if (!r.ok) throw new Error(`Slack config token rotation failed (${r.error}): make a new one at api.slack.com/apps (Your App Configuration Tokens), save it in ${process.env.PEEBLO_SLACK_CONFIG_FILE || "PEEBLO_SLACK_CONFIG_FILE"} and run ./peeblo check`);
+    await c.query("INSERT INTO slack_config (id, token) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET token = $1, updated_at = now()", [seal({ access_token: r.token, refresh_token: r.refresh_token, exp: r.exp })]);
+    await c.query("COMMIT");
+    return r.token;
+  } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; } finally { c.release(); }
+}
+
+// A real call with the token: Slack checks the token before the manifest, so an auth error means the token is bad.
+export async function configTokenWorks(): Promise<void> {
+  const r = await call("apps.manifest.validate", form({ manifest: JSON.stringify({ display_information: { name: "peeblo check" } }) }), await configToken());
+  if (["invalid_auth", "not_authed", "token_expired", "token_revoked", "account_inactive"].includes(r.error)) throw new Error(`Slack refused it (${r.error}): make a new one at api.slack.com/apps (Your App Configuration Tokens), save it in ${process.env.PEEBLO_SLACK_CONFIG_FILE || "PEEBLO_SLACK_CONFIG_FILE"} and run ./peeblo check`);
 }
 
 // The manifest and scopes live in profile.ts (built from the teammate's config and its agent-written profile).

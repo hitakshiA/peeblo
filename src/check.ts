@@ -37,8 +37,8 @@ export async function runChecks(): Promise<Result[]> {
   });
   await check("Slack app configuration token", async () => {
     // Peeblo makes each teammate's app with this token, and rotates it every 12 hours.
-    const { configToken } = await import("./slack/admin.ts");
-    await configToken();
+    const { configTokenWorks } = await import("./slack/admin.ts");
+    await configTokenWorks();
     return "valid (Peeblo rotates it before it expires)";
   });
   await check("Peeblo's Slack app", async () => {
@@ -86,8 +86,9 @@ export async function runChecks(): Promise<Result[]> {
     if (config.otariKeyKind !== "service") throw new Error("OTARI_API_KEY is a plain key; set OTARI_SERVICE_KEY so each person is an Otari end user with a budget");
     const { tiers } = await import("./otari/people.ts");
     const t = await tiers();
-    const d = t.find((x) => x.is_default);
-    if (!d) throw new Error("the service key has no default end-user budget; give it one in the dashboard (Keys)");
+    const d = (config.otariEndUserBudget && t.find((x) => x.budget_id === config.otariEndUserBudget)) || t.find((x) => x.is_default);
+    if (config.otariEndUserBudget && d?.budget_id !== config.otariEndUserBudget) throw new Error("OTARI_END_USER_BUDGET_ID isn't one of this key's budget tiers; copy the id from Otari (Budgets), or leave it empty");
+    if (!d) throw new Error(t.length ? "the service key has no default end-user budget, so every message would fail: in Otari open Keys → your service key and set a default end-user budget" : "no end-user budget tiers yet, so every message would fail: in Otari make one (Budgets, e.g. $2 a day), then set it as the service key's default end-user budget (Keys)");
     return `${t.length} budget tiers; new people get ${d.name} ($${d.max_budget})`;
   });
   await check("Otari dashboard session (admin work)", async () => {

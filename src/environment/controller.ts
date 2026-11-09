@@ -199,10 +199,16 @@ async function ensure(teammateId: string, sessionId: string | null): Promise<Liv
   return p;
 }
 
+// The idle timer restarts after every command and never sleeps a computer with a command running or one that
+// was replaced (a reboot after a crash makes a new Live).
 function touch(teammateId: string, l: Live): void {
   l.lastUsed = Date.now();
   if (l.idle) clearTimeout(l.idle);
-  l.idle = setTimeout(() => void sleep(teammateId, "idle"), config.vmIdleMs);
+  l.idle = setTimeout(() => {
+    if (live.get(teammateId) !== l) return;
+    if (l.inflight > 0) return touch(teammateId, l);
+    sleep(teammateId, "idle").catch((e) => console.error(`peeblo: idle sleep failed for ${teammateId}: ${(e as Error).message}`));
+  }, config.vmIdleMs);
 }
 
 export async function sleep(teammateId: string, reason: string): Promise<void> {
@@ -249,7 +255,7 @@ export async function exec(teammateId: string, argv: string[], opts: { cwd?: str
   } finally {
     clearTimeout(timer);
     l.inflight--;
-    l.lastUsed = Date.now();
+    if (live.get(teammateId) === l) touch(teammateId, l);
   }
 }
 

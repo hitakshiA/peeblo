@@ -152,12 +152,13 @@ export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" |
   if (!tm || !s.watch) return "failed";
   const { catalogFor, classify, executeTool } = await import("./connectors/mcp.ts");
   const t = (await catalogFor(tm.config)).tools.find((x) => x.server === s.watch.server && x.tool === s.watch.tool);
-  if (!t || classify(t, s.watch.arguments ?? {}) !== "read") { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: "a watch reads with a read tool of one of its connectors" } }); return "failed"; }
-  const { data } = await executeTool(t, s.watch.arguments ?? {}).catch(() => ({ data: null }));
-  if (data === null) return "failed";
+  if (!t || classify(t, s.watch.arguments ?? {}) !== "read") return watchFailed(s, `${s.watch.server}.${s.watch.tool} isn't a read tool this teammate has any more`);
+  let err = "";
+  const { data } = await executeTool(t, s.watch.arguments ?? {}).catch((e) => { err = (e as Error).message; return { data: null }; });
+  if (data === null) return watchFailed(s, err || "the read returned nothing");
   const text = JSON.stringify(data).slice(0, 200_000);
   const hash = createHash("sha256").update(text).digest("hex");
-  await pool.query("UPDATE schedules SET last_run_at = now(), state_hash = $2 WHERE id = $1", [s.id, hash]);
+  await pool.query("UPDATE schedules SET last_run_at = now(), state_hash = $2, failures = 0 WHERE id = $1", [s.id, hash]);
   if (!s.state_hash) { await appendEvent({ type: "schedule.watch", data: { schedule_id: s.id, result: "baseline" } }); return "baseline"; }
   if (s.state_hash === hash) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: "watch: no change" } }); return "unchanged"; }
   await appendEvent({ type: "schedule.watch", data: { schedule_id: s.id, result: "changed" } });
@@ -165,15 +166,58 @@ export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" |
   return "changed";
 }
 
+// A failed watch waits its normal interval before the next try; after 3 failures in a row it is turned off and its
+// creator is told.
+async function watchFailed(s: Schedule, why: string): Promise<"failed"> {
+  const n = Number((await pool.query("UPDATE schedules SET last_run_at = now(), failures = failures + 1 WHERE id = $1 RETURNING failures", [s.id])).rows[0]?.failures ?? 0);
+  await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: `watch failed (${n} in a row): ${why.slice(0, 200)}` } });
+  if (n >= 3) {
+    await pool.query("UPDATE schedules SET enabled = false WHERE id = $1", [s.id]);
+    await appendEvent({ type: "notify.owner", data: { schedule_id: s.id, kind: "watch_off", text: `I turned off the watch "${s.name ?? s.id}": it failed 3 times in a row (${why.slice(0, 200)}). Ask its teammate to set it up again when that's fixed.` } });
+  }
+  return "failed";
+}
+
+// Owner notices go to a person as a DM from Peeblo: the schedule's creator, else the teammate's owner. At most one
+// notice of a kind per thing per hour.
+const noticed = new Map<string, number>();
+async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; kind?: string; text?: string }): Promise<void> {
+  const key = `${d.kind}:${d.schedule_id ?? d.teammate_id}`;
+  if ((noticed.get(key) ?? 0) > Date.now() - 3_600_000) return;
+  const row = d.schedule_id
+    ? (await pool.query("SELECT s.created_by, t.owner_person, t.id AS teammate_id FROM schedules s JOIN teammates t ON t.id = s.teammate_id WHERE s.id = $1", [d.schedule_id])).rows[0]
+    : (await pool.query("SELECT NULL AS created_by, owner_person, id AS teammate_id FROM teammates WHERE id = $1", [d.teammate_id])).rows[0];
+  const personId = row?.created_by ?? row?.owner_person;
+  if (!personId || !d.text) return;
+  const { getPerson } = await import("./store/people.ts");
+  const who = await getPerson(personId);
+  const app = config.managerAppId || (await pool.query("SELECT a.app_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' AND a.bot_user_id IS NOT NULL LIMIT 1")).rows[0]?.app_id;
+  if (!who?.slack_user || !app) return;
+  const { slack } = await import("./slack/api.ts");
+  const dm: any = await slack(app, "conversations.open", { users: who.slack_user }).catch(() => null);
+  if (!dm?.channel?.id) return;
+  noticed.set(key, Date.now());
+  await slack(app, "chat.postMessage", { channel: dm.channel.id, text: d.text }).catch((e) => console.error("notice:", (e as Error).message));
+}
+
 // The ticker: one-time schedules that are due, and watches whose hour has come.
 export function installTriggers(): void {
+  let ticking = false;
   setInterval(() => void (async () => {
+    if (ticking) return;
+    ticking = true;
+    try {
     const due = (await pool.query(`SELECT * FROM schedules WHERE enabled AND ((kind = 'once' AND run_at <= now() AND last_run_at IS NULL) OR (kind = 'watch' AND (last_run_at IS NULL OR last_run_at < now() - make_interval(hours => greatest(1, coalesce((filter->>'every_hours')::int, 1))))))`)).rows as Schedule[];
     for (const s of due) {
       if (s.kind === "once") { await fire(s, "", "schedule", "once"); await pool.query("UPDATE schedules SET enabled = false WHERE id = $1", [s.id]); }
       else await pollWatch(s).catch(() => null);
     }
+    } finally { ticking = false; }
   })().catch((e) => console.error("triggers:", (e as Error).message)), 60_000).unref();
+
+  onEvent(async (e) => {
+    if (e.type === "notify.owner") await deliverNotice(e.data as any).catch((x) => console.error("notice:", (x as Error).message));
+  });
 
   // Each triggered run is logged with whether it found anything; a failure tells whoever made the trigger.
   onEvent(async (e) => {
