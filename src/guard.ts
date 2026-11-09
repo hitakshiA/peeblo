@@ -20,7 +20,7 @@ export const guardMode = (): GuardMode => (["lakera", "open", "off"].includes(co
 export type Screen = { safe: boolean; categories: string[]; requestId: string | null };
 
 // Qwen3Guard answers "Safety: Safe|Unsafe|Controversial\nCategories: …"; Llama Guard answers "safe" or
-// "unsafe\nS7"; gpt-oss-safeguard follows the policy prompt. Anything not clearly safe counts as unsafe.
+// "unsafe\nS7". Anything not clearly safe counts as unsafe.
 export function verdict(text: string): { safe: boolean; categories: string[] } {
   const t = text.trim();
   const qwen = /Safety:\s*(\w+)/i.exec(t);

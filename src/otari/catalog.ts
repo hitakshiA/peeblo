@@ -24,7 +24,9 @@ const OPEN_WEIGHT: RegExp[] = [
 // Hosted-only members of open families (no released weights). Inkling's weights are still pending, and it
 // matches no family above.
 const CLOSED: RegExp[] = [/^alibaba\/qwen(-max|-plus|-turbo|-flash|3\.\d+-(flash|max|plus))/];
-export const isOpenWeight = (id: string): boolean => OPEN_WEIGHT.some((r) => r.test(id)) && !CLOSED.some((r) => r.test(id));
+// Open-weight but never offered: too old for agent work (it drops tools and loses track of multi-step jobs).
+const NOT_OFFERED: RegExp[] = [/^openai\/gpt-oss/];
+export const isOpenWeight = (id: string): boolean => OPEN_WEIGHT.some((r) => r.test(id)) && !CLOSED.some((r) => r.test(id)) && !NOT_OFFERED.some((r) => r.test(id));
 
 export type Tier = { tier: "S" | "A" | "B" | "C" | "D" | "E"; aa_v5: number; aa_cost_per_task?: number; minutes_per_task?: number; est_otari_cost_per_task?: number; tokens_per_second?: number; note?: string };
 export type Measured = { cost_per_call: number; prompt_tokens_per_call: number; completion_tokens_per_call: number; output_tokens_per_second: number | null; calls: number; provider?: string; at: string };
