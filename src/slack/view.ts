@@ -226,6 +226,12 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
     if (v.frozen) {
       if (fallbackText) v.text = `${v.text}${v.text ? "\n\n" : ""}${fallbackText}`;
       await redraw(v, summary, blocks);
+    } else if (v.streamTs && !v.failedStream && v.privateOnly && !v.text && !fallbackText) {
+      // The answer went to the asker privately: the public "Working on it" message closes and goes away, so nobody
+      // sees an empty shell with a receipt; the asker gets the receipt with their private answer.
+      await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }] }).catch(() => null);
+      await slack(v.place.app_id, "chat.delete", { channel: v.place.channel, ts: v.streamTs }).catch(() => null);
+      await slack(v.place.app_id, "chat.postEphemeral", { channel: v.place.channel, user: v.place.user, thread_ts: v.place.channel_type === "im" ? undefined : v.place.thread_ts, text: "Receipt", blocks: blocks.filter((b) => b.type !== "context_actions") }).catch(() => null);
     } else if (v.streamTs && !v.failedStream) {
       const open = [...v.tasks.entries()].map(([id, t]) => ({ type: "task_update", id, title: t.title.slice(0, 120), status: t.status }));
       const finalText = v.text || fallbackText || "";
