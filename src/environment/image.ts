@@ -5,7 +5,7 @@
 // checked by sha256 and copied in.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.ts";
@@ -31,8 +31,11 @@ export function buildIdOf(dir: string): string | null {
   try { return JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).buildId ?? null; } catch { return null; }
 }
 
+// Builds unpack whole root filesystems (gigabytes): their scratch space is on the data disk, never /tmp (a small
+// in-memory filesystem in the container).
+const scratch = () => { const d = join(config.dataDir, "tmp"); mkdirSync(d, { recursive: true }); return d; };
 const run = (bin: string, args: string[], cwd?: string) => new Promise<void>((resolve, reject) => {
-  const p = spawn(bin, args, { stdio: "inherit", cwd });
+  const p = spawn(bin, args, { stdio: "inherit", cwd, env: { ...process.env, TMPDIR: scratch() } });
   p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${bin} ${args[0]} exited ${code}`))));
 });
 
