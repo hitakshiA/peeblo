@@ -132,7 +132,14 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   const est = await estimateCost(model, roughTokens(" ".repeat(Math.min(promptChars, 4_000_000))), out);
   // No price, no call: money fails closed (K16).
   if (est === null) return unchecked(`${model} has no price in Otari's catalog`);
-  const cap = await capCheck(tm, b.endUser, model, est);
+  let cap = await capCheck(tm, b.endUser, model, est);
+  // A role that steps down near its budget is served by the cheaper model there (Otari's policy decides), so price
+  // that before refusing: otherwise this check would stop the very calls the step-down exists for.
+  const step = sent in ROLES ? ROLES[sent].step_down : undefined;
+  if (cap && step) {
+    const cheaper = await estimateCost(step.model, roughTokens(" ".repeat(Math.min(promptChars, 4_000_000))), out);
+    if (cheaper !== null) cap = await capCheck(tm, b.endUser, step.model, cheaper);
+  }
   if (cap) return cap;
   return runBudget(b.runId, est);
 }
