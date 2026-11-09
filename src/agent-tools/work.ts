@@ -70,7 +70,7 @@ export const subagentTool: AgentTool = {
 // each listed step runs in this job without its own card. Required rules (no force-push, no credentials) still apply.
 export const planApprovalTool: AgentTool = {
   name: "plan_approval",
-  description: "When a person has asked for several writes as one job (\"push the fix, then merge\"), ask for them together: one card with the steps in plain words, each naming the tool it will use. Once approved, those tools run in this job without another card. Don't use it to bundle steps nobody asked for.",
+  description: "When a person has asked for several writes as one job (\"push the fix, then merge\", \"put everyone's budget back\"), ask for them together: one card with the steps in plain words, each naming the tool it will use. Once approved, those tools run in this job without another card. Don't use it to bundle steps nobody asked for.",
   input_schema: object({
     title: { type: "string", description: "The whole job in words, e.g. \"Push the guard to PR #1, then merge #1\"." },
     steps: { type: "array", maxItems: 8, items: { type: "object", properties: { action: { type: "string", description: "The step in words: repo, branch, what changes." }, tool: { type: "string", description: "The exact tool name this step uses." } }, required: ["action", "tool"], additionalProperties: false } },
