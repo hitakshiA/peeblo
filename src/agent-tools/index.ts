@@ -24,7 +24,7 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
   // A subagent looks things up but changes nothing, and opens no subagents.
   // The start set is small (NIGHT_PLAN_NOV9 §1): how to reply, find more tools, read a skill, recall, plan, hand
   // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) loads with find_tools.
-  const START = new Set(["slack_post", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
+  const START = new Set(["slack_post", "slack_read_thread", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
     "computer_bash", "computer_read", "computer_write", "computer_edit",
     // A teammate with repos opens and publishes them with its own tools, never with git on the computer.
     ...((((tm.config.computer as any)?.repos ?? []).length) ? ["repo_open", "repo_publish"] : [])]);

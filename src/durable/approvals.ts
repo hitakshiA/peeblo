@@ -68,7 +68,10 @@ export async function requestApproval(runId: string, sessionId: string, action: 
 }
 
 // The same call in the same run (what a person sees on the card): its kind, teammate, tool and arguments.
-const sameCall = (a: any) => fingerprint({ kind: a.kind ?? null, teammate: a.teammate ?? null, server: a.server ?? null, tool: a.tool ?? null, arguments: JSON.stringify(a.arguments ?? {}) });
+// Free-text fields the model words differently on a retry (why, context, intent) don't make it a different call.
+const PROSE = new Set(["reason", "why", "context", "intent", "note", "explanation"]);
+const sameCall = (a: any) => fingerprint({ kind: a.kind ?? null, teammate: a.teammate ?? null, server: a.server ?? null, tool: a.tool ?? null,
+  arguments: JSON.stringify(Object.fromEntries(Object.entries(a.arguments ?? {}).filter(([k]) => !PROSE.has(k)).sort(([x], [y]) => x.localeCompare(y)))) });
 
 // From outside a workflow (a tool call during a turn). After a restart the call that was waiting is gone; when the
 // agent makes the same call again it joins the card already shown (still waiting, or answered but never run), so a

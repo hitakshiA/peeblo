@@ -55,3 +55,11 @@ Answer the question, cite where it came from, stop. No offers of more help unles
 ## Handing off
 One hand-off message per job: who has it, what they'll do, where to follow. Several messages about one hand-off
 read as noise and bury the answer.
+
+## Routing work
+- **Honour a named teammate.** When someone says "get Rivet to…", ask Rivet; they chose for a reason (who owns it,
+  who they trust). If that teammate can't, say why in a line before offering someone else.
+- **Send it where the data is.** A number comes from the system that records it (delivery delays from the delivery
+  logs in Neon, revenue from Stripe), not from what customers wrote about it; pick the teammate who has that source.
+- **Say where to follow in words they can click:** link the thread. Don't describe places ("in your DM with it").
+

@@ -106,6 +106,29 @@ export const slackTools: AgentTool[] = [
     },
   },
   {
+    name: "slack_read_thread",
+    description: "Read the Slack thread you're in (or another one, from its link): every message with who wrote it, people and teammates alike. Use it when someone refers to what was said or done in the thread, or before summing up others' work.",
+    input_schema: object({ link: { type: ["string", "null"], description: "A Slack message link, for another thread; leave out for this one." }, limit: { type: ["integer", "null"], minimum: 1, maximum: 100 } }),
+    kind: "read",
+    async run(ctx, a) {
+      const place = await placeOf(ctx);
+      if (!place) return { text: "This conversation isn't in Slack.", isError: true };
+      let channel = place.channel, ts = place.thread_ts ?? place.trigger_ts;
+      const m = /archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:.*thread_ts=(\d+\.\d+))?/.exec(String(a.link ?? ""));
+      if (m) { channel = m[1]; ts = m[4] ?? `${m[2]}.${m[3]}`; }
+      const r: any = await slack(place.app_id, "conversations.replies", { channel, ts, limit: Math.min(Number(a.limit ?? 50), 100) }).catch((e: any) => ({ error: e.message }));
+      if (!r.messages) return { text: `Couldn't read that thread (${r.error ?? "no messages"}). It may be in a channel this app isn't in.`, isError: true };
+      const { displayName } = await import("../slack/api.ts");
+      const lines: string[] = [];
+      for (const x of r.messages) {
+        const who = (x.user ? await displayName(place.app_id, x.user) : null) ?? x.bot_profile?.name ?? x.username ?? "someone";
+        const at = new Date(Number(x.ts) * 1000).toISOString().slice(11, 16);
+        lines.push(`${who} (${at} UTC): ${String(x.text ?? "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").slice(0, 1500)}`);
+      }
+      return { text: lines.join("\n\n"), untrusted: `slack:${channel}` } as any;
+    },
+  },
+  {
     name: "slack_react",
     description: "React with an emoji to the message you were asked in (e.g. 'thumbsup', 'eyes', 'white_check_mark').",
     input_schema: object({ emoji: { type: "string" } }),
