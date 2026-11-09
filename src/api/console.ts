@@ -45,6 +45,17 @@ export function logout(req: IncomingMessage, res: ServerResponse): void {
 }
 
 // The built console (console/dist), served at /console/.
+// What the console shows for a job's ask: a person's words, or a plain name for an event Peeblo started itself.
+function askedLabel(text: string | null): string {
+  const t = String(text ?? "");
+  const ev = /^<peeblo_event>\s*([^:.\n]+)/.exec(t);
+  if (!ev) return t;
+  const kind = ev[1].trim();
+  return /first contact/.test(kind) ? "Welcome message (first contact)" : `${kind[0].toUpperCase()}${kind.slice(1)} (started by Peeblo)`;
+}
+// Where a session lives, in words: a DM, or a thread in a channel.
+const whereLabel = (kind: string, placeKey: string) => /^D/.test(placeKey) || kind === "dm" ? "Direct message" : /^[CG]/.test(placeKey) ? "Channel thread" : kind;
+
 const DIST = join(import.meta.dirname, "..", "..", "console", "dist");
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".json": "application/json" };
 export function serveConsole(path: string, res: ServerResponse): boolean {
@@ -87,6 +98,7 @@ export function addConsoleRoutes(router: Router): void {
       const dir = join(config.dataDir, "teammates", tm.slug, "memory");
       const banks = existsSync(dir) ? readdirSync(dir).filter((b) => !b.startsWith(".") && !b.endsWith(".md")) : [];
       const notes = notesIn(tm.slug, banks).filter((n) => n.bank !== "company");
+      for (const r of recent) r.asked = askedLabel(r.asked);
       return { teammate: tm, spend: spend ? { spent: spend.spent, cap: spend.cap } : null, app: appId ? { app_id: appId, installed: Boolean(app?.secrets.bot_token), install_url: hire?.install_url ?? null } : null, recent_runs: recent, schedules, computer: env ? { teammate: tm.slug, ...env } : null, memory: { notes: notes.length, unverified: notes.filter((n) => !n.verified).length } };
     })
     .add("GET", "/v1/teammates/:slug/face.png", async ({ params }) => {
@@ -107,13 +119,20 @@ export function addConsoleRoutes(router: Router): void {
       const { rows } = await pool.query(
         `SELECT s.id, s.kind, s.place_key, s.created_at, s.last_active_at, count(r.id)::int AS runs FROM sessions s JOIN teammates t ON t.id = s.teammate_id LEFT JOIN runs r ON r.session_id = s.id
           WHERE ($1::text IS NULL OR t.slug = $1) GROUP BY s.id ORDER BY s.last_active_at DESC LIMIT 100`, [slug]);
+      for (const r of rows) r.where = whereLabel(r.kind, r.place_key);
       return { sessions: rows };
     })
     .add("GET", "/v1/sessions/:id", async ({ params }) => {
       const s = (await pool.query("SELECT id, teammate_id, kind, place_key, created_at, last_active_at FROM sessions WHERE id = $1", [params.id])).rows[0];
       if (!s) throw notFound("session");
       const runs = (await pool.query("SELECT r.id, r.status, r.created_at, left(s.text, 300) AS asked FROM runs r JOIN submissions s ON s.id = r.submission_id WHERE r.session_id = $1 ORDER BY r.created_at DESC LIMIT 50", [params.id])).rows;
-      for (const r of runs) r.receipt = r.status === "done" || r.status === "failed" ? receiptLine(await buildReceipt(r.id).catch(() => null as any)) : null;
+      for (const r of runs) {
+        r.asked = askedLabel(r.asked);
+        r.receipt = r.status === "done" || r.status === "failed" ? receiptLine(await buildReceipt(r.id).catch(() => null as any)) : null;
+        // A job that ended on a stop (budget, guardrail, stuck) says so instead of a plain "done".
+        const stop = (await pool.query("SELECT data->>'stop_reason' AS s FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [r.id])).rows[0]?.s;
+        if (r.status === "done" && stop && ["budget_blocked", "guard_blocked", "guard_unavailable", "stuck", "error", "aborted", "length"].includes(stop)) r.status = `stopped: ${stop.replace(/_/g, " ")}`;
+      }
       return { session: s, runs };
     })
     .add("GET", "/v1/approvals", async ({ query }) => {

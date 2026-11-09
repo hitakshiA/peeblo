@@ -305,7 +305,7 @@ function SlackStep({ s, reload, advance }: StepProps) {
       ? <Status ok>Slack token saved{sl.workspace ? <> for <b>{sl.workspace}</b></> : null}. <button className="linkish" onClick={() => setReplace(true)}>Replace it</button></Status>
       : <>
         {sl.token_set && !sl.token_ok && <Status ok={false}>Slack didn't accept the saved token. Generate a new one.</Status>}
-        <Howto steps={[<>Open Slack's app page.</>, <>Under <b>Your App Configuration Tokens</b>, choose <b>Generate Token</b> and pick your workspace.</>, <>Copy both tokens here.</>]} />
+        <Howto steps={[<>Open Slack's app page.</>, <>Under <b>Your App Configuration Tokens</b>, choose <b>Generate Token</b> and pick your workspace.</>, <>Copy both tokens here. Already have a token for this workspace (Generate is greyed out)? Use its two <b>Copy</b> buttons.</>]} />
         <div><Ext href="https://api.slack.com/apps">Open Slack apps</Ext></div>
         <form className="stack" onSubmit={saveToken}>
           <div className="form two">
@@ -325,7 +325,7 @@ function SlackStep({ s, reload, advance }: StepProps) {
       {sl.app_created && !sl.installed && <>
         <Ext href={sl.install_url ?? installUrl} className="btn big moss">Add Peeblo to Slack</Ext>
         <div className="muted">The person who adds Peeblo becomes its first admin.</div>
-        <div className="waiting"><span className="pulse" aria-hidden="true" />Waiting for Slack…</div>
+        <div className="waiting"><span className="pulse" aria-hidden="true" />After you allow it in Slack, this page moves on by itself.</div>
       </>}
       {sl.installed && <>
         <div className="arrived"><Face slug="peeblo" face={PEEBLO_FACE} size={64} mood="happy" /><div><b>Peeblo is in Slack: it's sent you a DM.</b>{admins.length > 0 && <div className="muted">Admin: {admins.join(", ")}</div>}</div></div>

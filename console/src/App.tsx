@@ -57,7 +57,7 @@ export default function App() {
   );
 }
 
-const Status = ({ s }: { s: string }) => <span className={`pill ${s === "done" || s === "approved" || s === "awake" ? "ok" : s === "failed" || s === "denied" ? "bad" : s === "running" || s === "waiting" || s === "pending" ? "warn" : ""}`}>{s}</span>;
+const Status = ({ s }: { s: string }) => <span className={`pill ${s === "done" || s === "approved" || s === "awake" ? "ok" : s === "failed" || s === "denied" || s.startsWith("stopped") ? "bad" : s === "running" || s === "waiting" || s === "pending" ? "warn" : ""}`}>{s}</span>;
 const Page = ({ title, sub, error, children }: { title: string; sub?: string; error?: string | null; children: ReactNode }) => <><h1>{title}</h1>{sub && <p className="sub">{sub}</p>}{error && <div className="err" role="alert">{error}</div>}{children}</>;
 const hidden = (t: Teammate) => Boolean((t as any).hidden);
 
@@ -218,7 +218,7 @@ function Sessions({ id }: { id?: string }) {
     <div className="card"><table><thead><tr><th>Asked</th><th>Status</th><th>Receipt</th></tr></thead><tbody>{(one.data?.runs ?? []).map((r: any) => <tr key={r.id}><td>{r.asked}<div className="muted">{when(r.created_at)}</div></td><td><Status s={r.status} /></td><td className="mono">{r.receipt ?? "—"}</td></tr>)}</tbody></table></div>
   </Page>;
   return <Page title="Sessions" sub="Every conversation, with what each job cost.">
-    <div className="card"><table><thead><tr><th>Where</th><th>Kind</th><th>Jobs</th><th>Last active</th></tr></thead><tbody>{(list.data?.sessions ?? []).map((s) => <tr key={s.id}><td><a href={`#/sessions/${s.id}`} className="mono">{s.place_key}</a></td><td>{s.kind}</td><td>{s.runs}</td><td className="muted">{when(s.last_active_at)}</td></tr>)}</tbody></table></div>
+    <div className="card"><table><thead><tr><th>Where</th><th>Kind</th><th>Jobs</th><th>Last active</th></tr></thead><tbody>{(list.data?.sessions ?? []).map((s) => <tr key={s.id}><td><a href={`#/sessions/${s.id}`}>{(s as any).where ?? s.place_key}</a></td><td>{s.kind}</td><td>{s.runs}</td><td className="muted">{when(s.last_active_at)}</td></tr>)}</tbody></table></div>
   </Page>;
 }
 

@@ -113,7 +113,7 @@ export async function runChecks(): Promise<Result[]> {
     const d = (config.otariEndUserBudget && t.find((x) => x.budget_id === config.otariEndUserBudget)) || t.find((x) => x.is_default);
     if (config.otariEndUserBudget && d?.budget_id !== config.otariEndUserBudget) throw new Error("OTARI_END_USER_BUDGET_ID isn't one of this key's budget tiers; copy the id from Otari (Budgets), or leave it empty");
     if (!d) throw new Error(t.length ? "the service key has no default end-user budget, so every message would fail: in Otari open Keys → your service key and set a default end-user budget" : "no end-user budget tiers yet, so every message would fail: in Otari make one (Budgets, e.g. $2 a day), then set it as the service key's default end-user budget (Keys)");
-    return `${t.length} budget tiers; new people get ${d.name} ($${d.max_budget})`;
+    return `${t.length} budget tier${t.length === 1 ? "" : "s"} on Peeblo's key; new people get ${d.name} ($${d.max_budget})`;
   });
   await check("Otari dashboard session (admin work)", async () => {
     const { session } = await import("./otari/admin.ts");
@@ -198,7 +198,8 @@ export async function runChecks(): Promise<Result[]> {
     const own = crew.filter((t) => ownKeyServers(t.id, keys.find((k) => k.teammate_id === t.id)?.key_id ?? null).size).length;
     const { open } = await readOnlyEnforced();
     const soft = [...new Set(crew.flatMap((t) => (t.config.read_only ?? []).filter((s) => open.includes(s))))];
-    return `${own} of ${crew.length} teammates call connectors on their own key${soft.length ? `; read-only on ${soft.join(", ")} is kept by Peeblo only (that server's default access in Otari is every tool: set it to read tools to have Otari refuse writes too)` : "; Otari refuses their read-only writes too"}`;
+    if (!crew.length) return "no teammates yet: each one you hire gets its own Otari key, and its connector access is copied onto it";
+    return `${own} of ${crew.length} teammate${crew.length === 1 ? "" : "s"} call connectors with their own Otari key${soft.length ? `; read-only on ${soft.join(", ")} is kept by Peeblo only (that server's default access in Otari is every tool: set it to read tools to have Otari refuse writes too)` : "; when a connector is read only, Otari itself refuses the teammate's writes"}`;
   });
   await check("Otari rule engine", async () => {
     const { checkAction } = await import("./otari/rules.ts");

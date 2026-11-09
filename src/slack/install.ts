@@ -97,9 +97,20 @@ export async function hireCard(tm: Teammate, appId: string, team: string, image:
     ...(config.publicUrl ? { icon: { type: "image", image_url: `${config.publicUrl}/faces/${tm.slug}.png?v=${tm.version}`, alt_text: tm.config.name } } : {}),
     title: { type: "plain_text", text: tm.config.name.slice(0, 150) },
     subtitle: { type: "plain_text", text: subtitle },
-    ...(bio ? { body: { type: "mrkdwn", text: bio.length > 196 ? `${bio.slice(0, 195).replace(/\s+\S*$/, "")}…` : bio } } : {}),
+    ...(bio ? { body: { type: "mrkdwn", text: fitCard(bio, tm.config.profile?.agent_description) } } : {}),
     actions: [{ type: "button", style: "primary", text: { type: "plain_text", text: "Open home" }, url: go("&tab=home"), action_id: "open_home" }],
   };
+}
+
+// A card body holds about 200 characters: whole sentences that fit, else the one-line description, never a cut word.
+function fitCard(bio: string, line?: string): string {
+  const MAX = 196;
+  if (bio.length <= MAX) return bio;
+  let out = "";
+  for (const s of bio.match(/[^.!?]+[.!?]+(\s|$)/g) ?? []) { if ((out + s).trim().length > MAX) break; out += s; }
+  if (out.trim()) return out.trim();
+  if (line && line.length <= MAX) return line;
+  return `${bio.slice(0, MAX - 1).replace(/\s+\S*$/, "")}…`;
 }
 
 const done = (name: string) => [{ type: "context", elements: [{ type: "mrkdwn", text: `✅ ${name} is in Slack and posts as itself.` }] }];

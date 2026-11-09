@@ -144,15 +144,28 @@ export async function teammateSpend(tm: Teammate): Promise<{ spent: number; cap:
 }
 
 // A person across all of Peeblo's keys (end users belong to the key that made them), against their tier.
+// When a budget tier's current period began: Otari resets at midnight UTC (day), on Mondays (week) or on the 1st (month).
+function periodStart(tier?: { reset_alignment: string | null; budget_duration_sec: number | null }): Date {
+  const now = new Date();
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const a = tier?.reset_alignment ?? "";
+  if (/day/.test(a)) return day;
+  if (/week/.test(a)) return new Date(day.getTime() - ((day.getUTCDay() + 6) % 7) * 86_400_000);
+  if (/month/.test(a)) return monthStart();
+  if (tier?.budget_duration_sec) return new Date(now.getTime() - tier.budget_duration_sec * 1000);
+  return monthStart();
+}
+
 export async function personSpend(externalId: string): Promise<{ spent: number; cap: number | null; tier: string | null }> {
   const r = await reading(`person:${externalId}`, async () => {
     // With a session, one org read (an end user per key, all labelled with the person's id).
-    const org = await orgUsage().catch(() => null);
-    if (org) {
+    // Counted from the start of the tier's own period (a $2-a-day tier counts today, not the month).
+    if (await session().catch(() => null)) {
       const t = await tiers();
       const u = await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`).then((x) => x.data, () => null);
       const tier = t.find((x) => x.budget_id === u?.budget_id) ?? t.find((x) => x.is_default);
-      return { spent: org.by_user.filter((g) => g.label === externalId).reduce((a, g) => a + g.cost, 0), cap: tier?.max_budget ?? null, label: tier?.name ?? "" };
+      const org = await orgUsage(periodStart(tier).toISOString()).catch(() => null);
+      if (org) return { spent: org.by_user.filter((g) => g.label === externalId).reduce((a, g) => a + g.cost, 0), cap: tier?.max_budget ?? null, label: tier?.name ?? "" };
     }
     const { rows } = await pool.query<{ key_id: string; secret: Buffer }>("SELECT key_id, secret FROM teammate_keys WHERE retired_at IS NULL");
     const auths = [undefined, ...rows.map((x) => ({ authorization: `Bearer ${unseal<string>(x.secret)}` }))];

@@ -49,7 +49,8 @@ export function budgetRefusal(status: number, headers: Headers, body: string): B
 export function budgetReply(r: BudgetRefusal, teammate: string): string {
   const who = r.scope === "user" ? "your personal Otari budget" : r.scope === "api_token" || r.scope === "key" ? `${teammate}'s budget` : "the team's Otari budget";
   const nums = r.remaining !== null && r.estimate !== null ? ` (${fmt(r.remaining)} left, this would cost about ${fmt(r.estimate)})` : "";
-  return `I can't run this: it would go over ${who}${nums}. An admin can raise the limit, or try again when it resets.`;
+  const fix = r.scope === "user" ? "It resets on its own (daily budgets at midnight UTC); an admin can move you to a bigger budget in Otari → Budgets." : "An admin can raise the limit, or try again when it resets.";
+  return `I can't run this: it would go over ${who}${nums}. ${fix}`;
 }
 const fmt = (usd: number) => (usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`);
 

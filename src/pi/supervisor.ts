@@ -368,7 +368,14 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   }
   // Peeblo's own refusal (before Otari) carries its sentence; Otari's carries its numbers.
   // Peeblo's own budget stop shows its card (Ask the owner for more); no second message with raw numbers.
-  if (r.money) return { text: r.money.by === "peeblo" ? "" : budgetReply(r.money, tm.config.name), stopReason: "budget_blocked" };
+  // A person's own tier has no card, so it gets the sentence (with Peeblo's numbers) either way.
+  if (r.money) {
+    const m = r.money;
+    const own = m.by === "peeblo" && m.scope === "user"
+      ? budgetReply({ scope: "user", message: m.message ?? "", remaining: Math.max(0, Number(m.cap) - Number(m.spent)), estimate: Number(m.estimate) }, tm.config.name)
+      : m.by === "peeblo" ? "" : budgetReply(m, tm.config.name);
+    return { text: own, stopReason: "budget_blocked" };
+  }
   if (r.stopReason === "error") {
     throw new Error(`model error: ${r.error ?? "unknown"}`);
   }

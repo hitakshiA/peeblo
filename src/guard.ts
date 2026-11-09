@@ -192,7 +192,7 @@ export async function screen(content: string, endUser: string | null): Promise<S
     // Otari's gateway runs Lakera on just this text (the screening workspace's mandate, block mode).
     const r = await fetch(`${config.otariBaseUrl}/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${sk.key}`, "content-type": "application/json" },
       body: JSON.stringify({ model: await probeModel(), max_tokens: 1, messages: [{ role: "user", content: text }] }), signal: AbortSignal.timeout(30_000) }).catch(() => null);
-    if (r?.ok) { await r.body?.cancel(); return { checked_by: "lakera (Otari guardrail)", flagged: false, score: null, categories: [], requestId: r.headers.get("otari-request-id") }; }
+    if (r?.ok) { await r.body?.cancel(); return { checked_by: "Lakera Guard in Otari", flagged: false, score: null, categories: [], requestId: r.headers.get("otari-request-id") }; }
     if (r) {
       const body = await r.text();
       const refusal = guardrailRefusal(r.status, body);
@@ -201,8 +201,8 @@ export async function screen(content: string, endUser: string | null): Promise<S
         // Otari confirms: only text both flag is held back; the rest goes on, labelled.
         const second = await openGuard(text, endUser).catch(() => null);
         const requestId = r.headers.get("otari-request-id");
-        if (second && second.safe) return { checked_by: "lakera (Otari guardrail)", flagged: false, score: refusal.score, categories: [], requestId, disputed: `Lakera flagged it, ${config.guardModel} found nothing aimed at an AI` };
-        return { checked_by: second ? `lakera (Otari guardrail), confirmed by ${config.guardModel}` : "lakera (Otari guardrail)", flagged: true, score: refusal.score, categories: second?.categories?.length ? second.categories : ["prompt_injection"], requestId };
+        if (second && second.safe) return { checked_by: "Lakera Guard in Otari", flagged: false, score: refusal.score, categories: [], requestId, disputed: `Lakera flagged it, ${config.guardModel} found nothing aimed at an AI` };
+        return { checked_by: second ? `Lakera Guard in Otari, confirmed by ${config.guardModel}` : "Lakera Guard in Otari", flagged: true, score: refusal.score, categories: second?.categories?.length ? second.categories : ["prompt_injection"], requestId };
       }
     }
     // Not answered (or another error): the test route, then the open guard.
@@ -214,7 +214,7 @@ export async function screen(content: string, endUser: string | null): Promise<S
       if (m?.definitionId) {
         const { admin } = await import("./otari/admin.ts");
         const r = await admin<{ valid: boolean; score: number | null }>("POST", `/organizations/me/guardrail-definitions/${m.definitionId}/test`, { text }, "screening outside text", "");
-        return { checked_by: "lakera (Otari guardrail)", flagged: r.valid === false, score: typeof r.score === "number" ? r.score : null, categories: r.valid === false ? ["prompt_injection"] : [], requestId: null };
+        return { checked_by: "Lakera Guard in Otari", flagged: r.valid === false, score: typeof r.score === "number" ? r.score : null, categories: r.valid === false ? ["prompt_injection"] : [], requestId: null };
       }
     } catch { /* fall through to the open guard */ }
     const g = await openGuard(text, endUser);
