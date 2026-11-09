@@ -82,7 +82,7 @@ export async function runChecks(): Promise<Result[]> {
     const { session } = await import("./otari/admin.ts");
     const { links } = await import("./otari/links.ts");
     const s = await session();
-    if (!s) throw new Error(`none: per-teammate keys, policies and guardrail switches fall back to links (sign in from the console, or do it at ${links.keys()})`);
+    if (!s) throw new Error(`not connected: open the console (http://127.0.0.1:${config.apiPort}/console/) → Setup → Connect Otari, and sign in once with your Otari dashboard login. Until then teammates share one key with no per-teammate spend ceiling, and the role routing policies aren\'t made (calls use each role\'s default model).`);
     return `signed in as ${s.signedInAs} until ${s.expiresAt.toISOString().slice(0, 10)}`;
   });
   await check("Otari web search and code execution", async () => {

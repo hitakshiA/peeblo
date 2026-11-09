@@ -60,6 +60,7 @@ export function serveConsole(path: string, res: ServerResponse): boolean {
 }
 
 const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
+const bad = (why: string) => Object.assign(new Error(why), { status: 400 });
 
 export function addConsoleRoutes(router: Router): void {
   router
@@ -139,23 +140,40 @@ export function addConsoleRoutes(router: Router): void {
       return { approvals: rows };
     })
     .add("GET", "/v1/otari", async () => {
+      // A mirror of Otari for this Peeblo: what is set, what is missing, and where to change it in Otari's dashboard.
       const { links } = await import("../otari/links.ts");
       const { lakeraMandate } = await import("../guard.ts");
-      const { rolePoliciesInOtari } = await import("../otari/routing.ts");
-      const { webSearch } = await import("../otari/admin.ts");
-      const g = await lakeraMandate().catch(() => null);
-      const ws = await webSearch().catch(() => null);
-      return { web_search: { enabled: ws?.enabled ?? null }, guardrail: { enabled: g?.enabled ?? null, profile: config.guardProfile }, routing_policies: await rolePoliciesInOtari().catch(() => []), links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), routing: links.routing(), web_search: links.webSearch() } };
+      const { rolePoliciesInOtari, ROLES, rolePoliciesReady } = await import("../otari/routing.ts");
+      const { webSearch, session } = await import("../otari/admin.ts");
+      const s = await session();
+      const g = s ? await lakeraMandate().catch(() => null) : null;
+      const ws = s ? await webSearch().catch(() => null) : null;
+      return {
+        session: s ? { signed_in_as: s.signedInAs, expires_at: s.expiresAt } : null,
+        web_search: { enabled: ws?.enabled ?? null },
+        guardrail: { enabled: g?.enabled ?? null, profile: config.guardProfile, mode: config.guard },
+        routing_policies: s ? await rolePoliciesInOtari().catch(() => []) : [], roles: Object.keys(ROLES), policies_ready: rolePoliciesReady(),
+        links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), routing: links.routing(), web_search: links.webSearch(), mcp: links.mcpServers() },
+      };
     })
-    .add("POST", "/v1/otari/web_search", async ({ body }) => {
-      const { setWebSearch, webSearch } = await import("../otari/admin.ts");
-      await setWebSearch(Boolean(body?.enabled));
-      return { ok: true, now: (await webSearch())?.enabled ?? null };
+    // Connect Otari: the admin signs in once (the password is used for this call only, never stored); Peeblo keeps
+    // the session sealed and sets itself up: role routing policies, and a key with a spend ceiling per teammate.
+    .add("POST", "/v1/otari/session", async ({ body }) => {
+      if (!body?.email || !body?.password) throw bad("email and password are required");
+      const { signIn } = await import("../otari/admin.ts");
+      const r = await signIn(String(body.email), String(body.password));
+      const { syncRolePolicies } = await import("../otari/routing.ts");
+      const policies = await syncRolePolicies().catch(() => false);
+      const { listTeammates } = await import("../store/teammates.ts");
+      const { teammateKey } = await import("../otari/spend.ts");
+      let keys = 0;
+      for (const t of await listTeammates()) if (await teammateKey(t).catch(() => null)) keys++;
+      return { ok: true, expires_at: r.expiresAt, policies, teammate_keys: keys };
     })
-    .add("POST", "/v1/otari/guardrail", async ({ body }) => {
-      const { setLakera, lakeraMandate } = await import("../guard.ts");
-      await setLakera(Boolean(body?.enabled));
-      return { ok: true, now: (await lakeraMandate())?.enabled ?? null };
+    .add("DELETE", "/v1/otari/session", async () => {
+      const { signOut } = await import("../otari/admin.ts");
+      await signOut();
+      return { ok: true };
     })
     .add("GET", "/v1/computers", async () => {
       const { awake } = await import("../environment/controller.ts");

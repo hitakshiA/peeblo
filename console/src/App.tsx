@@ -278,17 +278,48 @@ function ComputerCard({ c, reload }: { c: any; reload: () => void }) {
 }
 function Computers() { const { data, reload } = useLoad<{ computers: any[] }>("/v1/computers", 10_000); return <Page title="Computers" sub="Each teammate's own Linux computer: its size, whether it's awake, and its setup builds."><div className="stack">{(data?.computers ?? []).filter((c) => !/^(eval-|vm-)/.test(c.teammate)).map((c) => <ComputerCard key={c.teammate} c={c} reload={reload} />)}</div></Page>; }
 
+// Connect Otari: one sign-in to the admin's Otari dashboard. The password is used once and never stored; Peeblo
+// keeps the session (sealed) and sets itself up with it.
+function ConnectOtari({ onDone }: { onDone: () => void }) {
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState<string | null>(null);
+  const go = () => { setBusy(true); setMsg(null); post("/v1/otari/session", { email, password })
+    .then((r: any) => { setPassword(""); setMsg(`Connected. ${r.policies ? "Routing policies are set" : "Routing policies couldn't be set yet"}; ${r.teammate_keys} teammate key${r.teammate_keys === 1 ? "" : "s"} with spend ceilings.`); onDone(); })
+    .catch((e) => setMsg(`Couldn't sign in: ${e.message}`)).finally(() => setBusy(false)); };
+  return <div className="card stack">
+    <h3>Connect Otari</h3>
+    <div className="muted">Sign in once with your Otari dashboard login. Peeblo then sets itself up in Otari: a routing policy per role, a key with a spend ceiling for each teammate, and reads your guardrail, web search and MCP servers. Your password is used for this sign-in only and never stored.</div>
+    <div className="row"><input placeholder="Otari email" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} /><button disabled={busy || !email || !password} onClick={go}>{busy ? "Connecting…" : "Connect"}</button></div>
+    {msg && <div>{msg}</div>}
+  </div>;
+}
+
+// Otari, mirrored: what this Peeblo uses there and how to change it. Configuration lives in Otari's dashboard.
 function Otari() {
   const { data, reload } = useLoad<any>("/v1/otari");
-  const [busy, setBusy] = useState(false);
-  const flip = (what: string, on: boolean) => { if (!confirm(`Turn ${what.replace("_", " ")} ${on ? "on" : "off"} for the whole Otari workspace?`)) return; setBusy(true); post(`/v1/otari/${what}`, { enabled: on }).finally(() => { setBusy(false); reload(); }); };
   if (!data) return null;
-  return <Page title="Otari" sub="Every model call, tool, budget and guardrail goes through Otari. Change the shared settings here, or open them in Otari's dashboard.">
+  const pill = (v: boolean | null, on = "on", off = "off") => v == null ? <span className="pill">unknown</span> : v ? <span className="pill ok">{on}</span> : <span className="pill">{off}</span>;
+  const signOut = () => { if (confirm("Disconnect Peeblo from your Otari dashboard? Teammates keep working; admin changes fall back to links.")) api("DELETE", "/v1/otari/session").then(reload); };
+  const missing = data.roles.filter((r: string) => !data.routing_policies.includes(r));
+  return <Page title="Otari" sub="Every model call, tool, budget and guardrail goes through Otari. Configure it in Otari's dashboard; this page shows what Peeblo uses and where to change it.">
+    {!data.session ? <ConnectOtari onDone={reload} /> :
+      <div className="card row"><span className="pill ok">connected</span><span>as <b>{data.session.signed_in_as}</b> until {when(data.session.expires_at)}</span><button className="ghost" onClick={signOut}>Disconnect</button></div>}
     <div className="grid">
-      <div className="card stack"><h3>Web search</h3><div>{data.web_search.enabled == null ? "unknown (no dashboard session)" : data.web_search.enabled ? <span className="pill ok">on</span> : <span className="pill">off</span>}</div><div className="row"><button disabled={busy} className="ghost" onClick={() => flip("web_search", !data.web_search.enabled)}>{data.web_search.enabled ? "Turn off" : "Turn on"}</button><a href={data.links.web_search} target="_blank" rel="noreferrer">Open in Otari</a></div></div>
-      <div className="card stack"><h3>Guardrail</h3><div>{data.guardrail.enabled == null ? "unknown" : data.guardrail.enabled ? <span className="pill ok">on</span> : <span className="pill">off</span>} <span className="muted">{data.guardrail.profile}</span></div><div className="row"><button disabled={busy} className="ghost" onClick={() => flip("guardrail", !data.guardrail.enabled)}>{data.guardrail.enabled ? "Turn off" : "Turn on"}</button><a href={data.links.guardrails} target="_blank" rel="noreferrer">Open in Otari</a></div></div>
-      <div className="card stack"><h3>Routing policies</h3><div className="mono">{data.routing_policies.join(", ") || "none"}</div><a href={data.links.routing} target="_blank" rel="noreferrer">Open in Otari</a></div>
-      <div className="card stack"><h3>Spend and keys</h3><a href={data.links.dashboard} target="_blank" rel="noreferrer">Usage</a><a href={data.links.keys} target="_blank" rel="noreferrer">Keys</a><a href={data.links.budgets} target="_blank" rel="noreferrer">Budgets</a></div>
+      <div className="card stack"><h3>Routing</h3><div>{data.session ? (missing.length ? <span className="pill bad">{missing.length} missing</span> : <span className="pill ok">in sync</span>) : <span className="pill">not connected</span>}</div>
+        <div className="muted">One policy per role ({data.roles.join(", ")}), kept in sync by Peeblo from config/model-tiers.json: the model, Otari's fallback, and a cheaper model when a teammate's budget is mostly used. Edit the file and restart to change them.</div>
+        <a href={data.links.routing} target="_blank" rel="noreferrer">See them in Otari</a></div>
+      <div className="card stack"><h3>Guardrail</h3><div>{pill(data.guardrail.enabled, "org-wide", "outside text only")} <span className="muted">{data.guardrail.profile}</span></div>
+        <div className="muted">Peeblo checks text from outside the company (tickets, chats, web pages, files) with your Lakera guardrail in Otari. To screen every call instead, turn on the org guardrail in Otari → Guardrails.</div>
+        <a href={data.links.guardrails} target="_blank" rel="noreferrer">Open guardrails in Otari</a></div>
+      <div className="card stack"><h3>Web search</h3><div>{pill(data.web_search.enabled)}</div>
+        <div className="muted">Teammates with the web tool search and read pages only when they choose to. Turn it on in Otari → Tools → Web search.</div>
+        <a href={data.links.web_search} target="_blank" rel="noreferrer">Open web search in Otari</a></div>
+      <div className="card stack"><h3>Connectors (MCP servers)</h3>
+        <div className="muted">Add a server in Otari → Tools → MCP servers (Linear, GitHub, Stripe, Notion…). Then give it to a teammate by name in Slack ("give Ledger stripe, read only") or in its settings here.</div>
+        <a href={data.links.mcp} target="_blank" rel="noreferrer">Open MCP servers in Otari</a></div>
+      <div className="card stack"><h3>Budgets and keys</h3>
+        <div className="muted">Each teammate has its own Otari key with a spend ceiling at its monthly budget; each Slack person is an Otari end user on a budget tier. Change tiers in Otari → Budgets.</div>
+        <div className="row"><a href={data.links.dashboard} target="_blank" rel="noreferrer">Usage</a><a href={data.links.keys} target="_blank" rel="noreferrer">Keys</a><a href={data.links.budgets} target="_blank" rel="noreferrer">Budgets</a></div></div>
     </div>
   </Page>;
 }
@@ -302,7 +333,9 @@ function Feedback() {
 
 function Setup() {
   const { data, reload } = useLoad<{ checks: any[] }>("/v1/setup");
+  const otari = useLoad<any>("/v1/otari");
   return <Page title="Setup" sub="The same checks as ./peeblo check: every key, URL and service Peeblo needs, and what to fix.">
+    {otari.data && !otari.data.session && <div style={{ marginBottom: 12 }}><ConnectOtari onDone={() => { otari.reload(); reload(); }} /></div>}
     <div className="row" style={{ marginBottom: 12 }}><button className="ghost" onClick={reload}>Check again</button></div>
     <div className="card"><table><tbody>{(data?.checks ?? []).map((c) => <tr key={c.name}><td>{c.ok ? <span className="pill ok">ok</span> : <span className="pill bad">fix</span>}</td><td><b>{c.name}</b></td><td>{c.detail}</td></tr>)}</tbody></table>{!data && <div className="muted">Checking…</div>}</div>
   </Page>;
