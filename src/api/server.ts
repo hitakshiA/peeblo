@@ -167,9 +167,18 @@ function authorized(header: string | undefined): boolean {
 addConsoleRoutes(router);
 addSetupRoutes(router);
 
+// "peeblo" is the core's name inside its own compose network (./peeblo check runs beside it).
+const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "peeblo"]);
+
 export function startApi(): Promise<Server> {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://core");
+    // The console and API answer only to this machine's own names (no DNS rebinding), and a change only from the
+    // console's own pages (a web page elsewhere can't post here, e.g. to choose the first password).
+    const host = String(req.headers.host ?? "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+    if (!LOCAL_HOSTS.has(host) && host !== config.apiHost) return send(res, 403, { error: "the console only answers on this machine (open it at http://127.0.0.1:7340/console/)" });
+    const origin = req.headers.origin ? (() => { try { return new URL(String(req.headers.origin)).host; } catch { return "bad"; } })() : null;
+    if (req.method !== "GET" && origin && origin !== req.headers.host) return send(res, 403, { error: "changes come only from the console's own pages" });
     // The console's built files, and its login (the only routes that work without a token or cookie).
     try { if (req.method === "GET" && serveConsole(url.pathname, res)) return; } catch { return send(res, 500, { error: "console error" }); }
     if (req.method === "POST" && url.pathname === "/v1/console/login") return void (await login(req, res, await readJson(req).catch(() => ({}))));

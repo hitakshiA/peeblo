@@ -25,8 +25,6 @@ export function ownKeyServers(teammateId: string, keyId: string | null): Set<str
   return new Set(s && s.keyId === keyId ? s.servers : []);
 }
 
-const everyoneAll = (a: Access) => a.everyone_tools.some((t) => t === "*");
-
 export async function syncTeammateAccess(tm: Teammate, teammateKeyIds?: Set<string>): Promise<{ ready: string[]; failed: string[] }> {
   const ready: string[] = [], failed: string[] = [];
   if (tm.slug === "peeblo" || !(await session())) return { ready, failed };
@@ -47,7 +45,10 @@ export async function syncTeammateAccess(tm: Teammate, teammateKeyIds?: Set<stri
       const mine = a.grants.find((g) => g.api_key_id === key.keyId);
       // What Peeblo's other keys may use here (its core key, set up by the admin), never another teammate's grant.
       const allowed = [...new Set(a.grants.filter((g) => g.api_key_id !== key.keyId && !teammateKeyIds.has(g.api_key_id)).flatMap((g) => g.tools))];
-      const tools = !want.has(s.name) || readOnly.has(s.name) || everyoneAll(a) ? [] : allowed;
+      // A teammate that may write gets its own grant: what the admin allowed Peeblo's core key there, else every tool.
+      // So a server's default access can be "read tools" (Otari then refuses read-only teammates' writes) without
+      // taking writes away from anyone else. Read-only teammates get no grant and stay on that default.
+      const tools = !want.has(s.name) || readOnly.has(s.name) ? [] : allowed.length ? allowed : ["*"];
       if (!tools.length) { if (mine) await admin("DELETE", `${path}/grants/${mine.id}`, undefined, `removing ${tm.slug}'s access to ${s.name}`, ""); }
       else if (!mine) await admin("POST", `${path}/grants`, { api_key_ids: [key.keyId], tools }, `giving ${tm.slug} access to ${s.name}`, "");
       else if (mine.tools.slice().sort().join() !== tools.slice().sort().join()) await admin("PATCH", `${path}/grants/${mine.id}`, { tools }, `changing ${tm.slug}'s access to ${s.name}`, "");

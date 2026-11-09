@@ -37,6 +37,14 @@ gates:
     enforcement: advisory
     forbidden: ["npm publish", "pnpm publish", "docker push", "gh release create"]
     message: Publishing is visible outside the team, so a person approves it first.
+  - id: ask-before-github-writes
+    type: command
+    runs: [pre_tool_use.command]
+    enforcement: advisory
+    # The computer's GitHub token is added on the way out, so writes through gh or GitHub's API (a merge, a comment,
+    # closing an issue) would skip the connector's cards. They ask a person, like a push.
+    forbidden: ["gh pr merge", "gh pr close", "gh pr comment", "gh pr review", "gh pr edit", "gh issue", "gh api", "gh repo", "gh workflow", "gh secret", "api.github.com"]
+    message: Changing things on GitHub (merges, comments, issues, settings) is visible outside the computer, so a person approves it first.
   - id: no-secret-files
     type: path
     runs: [pre_tool_use.read_target, pre_tool_use.edit_target]

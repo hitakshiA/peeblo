@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Base image pinned by digest (supply-chain habit; see docs/ARCHITECTURE.md).
+# Base image pinned by digest, so a rebuild gets the same bytes.
 FROM node:24.22.1-bookworm-slim@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c AS base
 RUN npm install -g --ignore-scripts pnpm@12.15.0 && npm cache clean --force
 

@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
+import { guardMode } from "../guard.ts";
 import { restartSoon, saveSettings } from "../settings.ts";
 import type { Router } from "./http.ts";
 
@@ -27,6 +28,9 @@ async function keyBudget(key: string, region: string): Promise<{ ok: boolean; er
   const r = await fetch(`${baseUrl(region)}/key/budget`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }) as any);
   if (!r.ok) return { ok: false, error: r.status === 401 || r.status === 403 ? "Otari didn't accept that key" : r.status === 421 ? "That key is for the other region" : `Otari answered ${r.status}` };
   const j: any = await r.json().catch(() => ({}));
+  // A plain key works for model calls but can't name the people it bills; Otari says so on end-user budgets.
+  const s = await fetch(`${baseUrl(region)}/end-user-budgets`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
+  if (s?.status === 403) return { ok: false, error: "That's a plain key. Peeblo needs a service key: in Otari, API keys → Create key → Advanced → tick Service key" };
   return { ok: true, used: j.limits?.[0]?.used_usd, limit: j.limits?.[0]?.limit_usd };
 }
 async function reachable(url: string): Promise<{ ok: boolean; error?: string }> {
@@ -64,12 +68,13 @@ export async function setupState(): Promise<any> {
     const all = await runChecks();
     const pick = (name: string, id: string, label: string, fix_url?: string, fix_text?: string) => {
       const r = all.find((x) => x.name === name);
-      return r ? { id, label, ok: r.ok, required: id !== "access", detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) } : null;
+      // Connectors and per-teammate access are worth fixing but never block setup (an unhealthy server is a warning).
+      return r ? { id, label, ok: r.ok, required: !OPTIONAL.includes(id), detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) } : null;
     };
     return [
       pick("Otari service key (bills each person)", "tier", "A default budget for each person", links.budgets(), "Sign in again on Connect Otari (it sets one), or Budgets → make a tier, then API keys → your key → default end-user budget"),
       pick("Otari web search and code execution", "tools", "Web search and code execution", `${links.webSearch()}`, "Tools → turn on web search and code execution"),
-      pick("Otari guardrail", "guardrail", "The Lakera guardrail", links.guardrails(), "Guardrails → add Lakera Guard with the profile name peeblo-lakera"),
+      guardItem(pick("Otari guardrail", "guardrail", guardMode() === "open" ? "The guardrail (open guard model)" : "The Lakera guardrail", links.guardrails(), "Guardrails → add Lakera Guard with the profile name peeblo-lakera (needs a Lakera account)")),
       pick("Otari MCP connectors", "connectors", "Connectors (MCP servers)", links.mcpServers(), "Tools → MCP servers → add the services your team uses"),
       pick("Otari routing policies", "routing", "Routing for each role", links.routing(), "Connect the dashboard above; Peeblo makes these itself"),
       pick("Otari connector access per teammate", "access", "Connector access per teammate", links.mcpServers(), "Set each server's default access to read tools"),
@@ -79,7 +84,7 @@ export async function setupState(): Promise<any> {
     ["password", Boolean(config.consolePassword)],
     ["otari", Boolean(otariKey?.ok)],
     ["connect", Boolean(s)],
-    ["readiness", readiness.length > 0 && readiness.every((r: any) => r.ok || r.id === "access")],
+    ["readiness", readiness.length > 0 && readiness.every((r: any) => r.ok || OPTIONAL.includes(r.id))],
     ["public_url", Boolean(pub?.ok)],
     ["slack", Boolean(app?.bot_user_id)],
   ];
@@ -103,8 +108,26 @@ export async function setupState(): Promise<any> {
   };
 }
 
+const OPTIONAL = ["access", "connectors"];
+// The guardrail item offers the other guard: Lakera needs its own account, the open guard model runs on Otari alone.
+function guardItem(i: any): any {
+  if (!i) return i;
+  if (guardMode() === "lakera" && !i.ok) return { ...i, alt: { mode: "open", text: "No Lakera account? Use an open guard model" } };
+  if (guardMode() === "open") return { ...i, alt: { mode: "lakera", text: "Use Lakera instead" } };
+  return i;
+}
+
 export function addSetupRoutes(router: Router): void {
   router
+    // Which guard screens outside text: Lakera (through Otari's org guardrail) or an open guard model through Otari.
+    .add("POST", "/v1/setup/guard", async ({ body }) => {
+      const mode = body?.mode === "open" ? "open" : body?.mode === "lakera" ? "lakera" : null;
+      if (!mode) throw bad("mode is open or lakera");
+      saveSettings({ PEEBLO_GUARD: mode === "lakera" ? null : mode });
+      forget("ready");
+      restartSoon();
+      return { ok: true, restarting: true };
+    })
     .add("GET", "/v1/setup/state", async () => setupState())
     .add("POST", "/v1/setup/otari", async ({ body }) => {
       const key = String(body?.key ?? "").trim();

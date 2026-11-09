@@ -158,8 +158,6 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const own = peebloTools(tm, { subagent });
 
   if (req.method === "GET" && path === "/tools") {
-    const tt = Date.now();
-    res.on("finish", () => { if (process.env.PEEBLO_TIMING) console.error(`timing: GET /tools ${Date.now() - tt} ms`); });
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     // A scoped GitHub connector names its repos, so the model never guesses an owner.
@@ -225,9 +223,9 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     if (source && !r.isError) {
       // Only text from outside the company is screened (customer tickets and chats, web pages and scrapers, other
       // people's files, other bots): internal tools stay labelled as untrusted but cost no guard call.
-      screened = OUTSIDE.test(source) ? await screen(text, b.endUser).catch(() => null) : null;
+      screened = OUTSIDE.test(source) ? await screen(text, b.endUser).catch(async () => (await import("../guard.ts")).unchecked()) : null;
       // On the receipt: which guard checked this outside text, and what it said.
-      if (screened) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "guard.checked", data: { checked_by: screened.checked_by, safe: !screened.flagged, source, score: screened.score, request_id: screened.requestId ?? null, ...(screened.disputed ? { disputed: screened.disputed } : {}) } }).catch(() => {});
+      if (screened?.checked_by) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "guard.checked", data: { checked_by: screened.checked_by, safe: !screened.flagged, source, score: screened.score, request_id: screened.requestId ?? null, ...(screened.disputed ? { disputed: screened.disputed } : {}) } }).catch(() => {});
       text = wrapUntrusted(text, source, screened);
     }
     if (!r.isError && (extra.kind ?? base.kind) === "read") {
@@ -283,7 +281,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   }
 
   const run = async () => {
-    if ((t.kind === "write" || rule?.ask) && t.name !== "plan_approval" && await planCovers(ctx.runId, t.name)) { base.plan = true; rule = null; }
+    if ((t.kind === "write" || rule?.ask) && t.name !== "plan_approval" && !(outward && NEVER_WITHOUT_ASKING.includes(outward)) && await planCovers(ctx.runId, t.name)) { base.plan = true; rule = null; }
     else if (t.kind === "write" || rule?.ask) {
       // Otari settings always, and anything the rules say to ask about: a person's yes for this one call.
       if (!ctx.runId) return reply({ text: "This needs a person's approval, and there is no run to ask in.", isError: true });
@@ -348,7 +346,8 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     // Money, deletions, shipping and posts outside the thread are per action: a grant never covers them.
     const perAction = NEVER_WITHOUT_ASKING.includes(risk);
     if (rule !== "allow" && !perAction && b.runId && (await granted(tm.id, b.runId, toolFp))) rule = "allow";
-    if (rule !== "allow" && b.runId && (await planCovers(b.runId, t.name))) { rule = "allow"; base.plan = true; }
+    // An approved plan covers its ordinary steps, never money, deletes, shipping or posts outside the thread.
+    if (rule !== "allow" && !perAction && b.runId && (await planCovers(b.runId, t.name))) { rule = "allow"; base.plan = true; }
     // The approvals map (company memory): some writes are a named person's to approve, whatever the reviewer thinks.
     let mapped: { who: string[]; why: string } | null = null;
     if (kind !== "read" && b.runId && !base.plan) {
@@ -366,8 +365,9 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     const exactFp = fingerprint({ server: t.server, tool: t.tool, args: JSON.stringify(identity) });
     base.exact = exactFp;
     if (rule !== "allow" && b.runId) {
-      const prior = (await pool.query("SELECT 1 FROM events WHERE run_id = $1 AND type = 'tool.call' AND data->>'exact' = $2 AND data->>'approval_id' IS NOT NULL LIMIT 1", [b.runId, exactFp])).rows[0];
-      if (prior) { rule = "allow"; base.repeat_of_approved = true; }
+      // Only a retry: the approved attempt failed and nothing identical has gone through (never a second refund).
+      const prior = (await pool.query("SELECT bool_or(data->>'status' = 'failed' AND data->>'approval_id' IS NOT NULL) AS failed, bool_or(data->>'status' = 'completed') AS done FROM events WHERE run_id = $1 AND type = 'tool.call' AND data->>'exact' = $2", [b.runId, exactFp])).rows[0];
+      if (prior?.failed && !prior?.done) { rule = "allow"; base.repeat_of_approved = true; }
     }
     if (rule === "review" && b.runId) {
       const r = await review(b.runId, b.sessionId, { teammate: tm.slug, server: t.server, tool: t.tool, arguments: args }, b.endUser ?? undefined).catch(() => ({ decision: "card" as const, reason: "the reviewer didn't answer", reviewed: false }));
@@ -546,4 +546,6 @@ function firewallHint(t: { server: string; tool: string }): string {
 }
 
 // Sources whose text comes from outside the company, so a guard model checks it for injected instructions.
-const OUTSIDE = /^(web:|file:|computer:bash|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot)\.)/;
+// GitHub issues and comments, Jira service-desk tickets and Sentry error payloads are written by people outside the
+// team too, so they count as outside text.
+const OUTSIDE = /^(web:|file:|computer:bash|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot|github|atlassian|sentry)\.)/;

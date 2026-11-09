@@ -1,8 +1,8 @@
 // Routing at the boundary (how pi-otari routes subagents): when one part of a job is clearly harder than everyday
 // work, the teammate asks Otari's recommender which model fits that part. If it picks a stronger or different model,
 // that part runs as a subagent on the pick and its answer comes back; the job itself never switches model mid-way.
-// The candidates are Peeblo's role policies (config/model-tiers.json), so nothing here names a model. Only budgets
-// limit it.
+// The candidates are the role defaults in config/model-tiers.json, so nothing here names a model; a pick runs on its
+// role policy. Only budgets limit it.
 import type { AgentTool } from "./types.ts";
 import { object } from "./schema.ts";
 
@@ -33,7 +33,11 @@ export const pickModelTool: AgentTool = {
     if (r.fallback || r.model === c.everyday) return { text: r.fallback ? "Otari's router didn't answer; do it yourself on your own model." : `Otari's router says the everyday model fits this${r.reason ? ` (${r.reason})` : ""}; do it yourself.`, data: r };
     const { subagentTool } = await import("./work.ts");
     const name = readableModel(r.model).name;
-    const out = await subagentTool.run(ctx, { task: a.task, model: r.model });
+    // The pick runs on its role policy when it has one (the heavy model through `peeblo-heavy`), so Otari's fallback
+    // and its step-down to a cheaper model as the key's budget runs down apply to it.
+    const { ROLES } = await import("../otari/routing.ts");
+    const role = Object.entries(ROLES).find(([, v]) => v.default === r.model && v.step_down)?.[0];
+    const out = await subagentTool.run(ctx, { task: a.task, model: role ?? r.model });
     if (out.isError) return { text: `Otari's router picked ${name}, but that run didn't finish (${out.text}); do it yourself.`, isError: true, data: r };
     return { text: `Otari's router picked ${name}${r.reason ? ` (${r.reason})` : ""}; its answer:\n${out.text}\n\nCheck it against what you know, and say in your reply that ${name} did this part.`, untrusted: out.untrusted, data: { ...r, ...(out.data as object) } };
   },

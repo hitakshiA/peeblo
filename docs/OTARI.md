@@ -26,9 +26,11 @@ Peeblo is a crew of agents shared by a whole team, so it leans on the parts of O
   every key that serves them. When Otari refuses for budget, the person gets a sentence with Otari's own numbers,
   and the owner gets a button to raise it.
 - **Connector access per teammate.** Each teammate's connector calls run on its own key. Otari holds a grant for
-  each server it was given, minus the ones it's read-only on, so Otari itself refuses a write it isn't allowed.
-- **Spend from Otari.** "Who spent what this month" is one read of Otari's org usage summary (by teammate tag, model
-  and end user), with a daily series for a chart.
+  each server it may write to (every tool, or what the admin allowed Peeblo's key there). A read-only teammate
+  gets no grant and falls back to the server's default access, so with that default set to "read tools" Otari
+  itself refuses its writes. The console's checklist says which servers still default to every tool.
+- **Spend from Otari.** "Who spent what this month" is one read of Otari's org usage summary (by each teammate's
+  key, model and end user), with a daily series for a chart.
 
 ## The parts
 
@@ -88,7 +90,7 @@ Teammates are agents: they choose what to do. Code holds only what must always o
 - **Two guardrails in series.** Lakera's policy flags some marketing pages; an open-weight guard model confirms each
   flag. On 39 real tickets, issues and web pages, nothing harmless was held back.
 - **Our own open-weight list.** `/catalog/models` has an `open_weights` flag, but it's wrong for about a quarter of
-  the models (reported to the Otari team), so Peeblo keeps a reviewed family list.
+  the models, so Peeblo keeps a reviewed family list.
 - **Routing at the boundary.** A hard part runs as a helper on the routed model, instead of switching a running
   conversation to another model mid-way.
 - **No per-job call caps.** Budgets are the limit, enforced by Otari's key ceilings and checked before each call.

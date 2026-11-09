@@ -42,7 +42,7 @@ export const scheduleTools: AgentTool[] = [
       action: { type: "string", enum: ["create", "list", "pause", "resume", "remove"] },
       id: { type: ["string", "null"] },
       name: { type: ["string", "null"] },
-      cron: { type: ["string", "null"], description: "5-field cron in UTC, e.g. '0 21 * * *' for 21:00 every day; at most hourly." },
+      cron: { type: ["string", "null"], description: "5-field cron in the person's own time zone (it runs in theirs, daylight saving included), e.g. '0 9 * * 1' for 9:00 every Monday their time; at most hourly." },
       once_at: { type: ["string", "null"], description: "An ISO time for a single run." },
       prompt: { type: ["string", "null"], description: promptHelp },
       channel: { type: ["string", "null"], description: "A public channel id for the results; empty for this conversation." },
@@ -60,8 +60,9 @@ export const scheduleTools: AgentTool[] = [
       if (a.once_at && !(new Date(a.once_at).getTime() > Date.now())) return { text: "once_at must be a time in the future.", isError: true };
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? 0.05 });
-      return { text: `Scheduled "${a.name}" (id ${s.id}: for your tools only, never in a reply) ${a.cron ? `on ${a.cron} (UTC)` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? 0.05).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
+      const tz = ctx.person ? (await pool.query<{ tz: string | null }>("SELECT tz FROM people WHERE id = $1", [ctx.person.id])).rows[0]?.tz ?? null : null;
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { tz, originRequest: await originRequest(ctx), kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? 0.05 });
+      return { text: `Scheduled "${a.name}" (id ${s.id}: for your tools only, never in a reply) ${a.cron ? `on ${a.cron} (${tz ?? "UTC"})` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? 0.05).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
     },
   },
   {
@@ -70,12 +71,12 @@ export const scheduleTools: AgentTool[] = [
     input_schema: object({}),
     kind: "read",
     async run(ctx) {
-      const rows = (await pool.query("SELECT kind, name, cron, run_at, enabled, last_run_at, filter AS source FROM schedules WHERE teammate_id = $1 ORDER BY created_at DESC LIMIT 20", [ctx.teammate.id])).rows;
+      const rows = (await pool.query("SELECT kind, name, cron, run_at, enabled, last_run_at, tz AS cron_tz, filter AS source FROM schedules WHERE teammate_id = $1 ORDER BY created_at DESC LIMIT 20", [ctx.teammate.id])).rows;
       if (!rows.length) return { text: "You have no schedules, triggers or watches." };
       // One-off times in the asker's own time zone, worked out here (models get offsets wrong), with UTC beside them.
       const tz = ctx.person ? (await pool.query<{ tz: string | null }>("SELECT tz FROM people WHERE id = $1", [ctx.person.id])).rows[0]?.tz ?? null : null;
       const at = (d: Date) => `${tz ? `${new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(d)} ${tz} (` : ""}${d.toISOString().slice(0, 16).replace("T", " ")} UTC${tz ? ")" : ""}`;
-      return { text: rows.map((r: any) => `- ${r.name ?? "(unnamed)"}: ${r.kind === "cron" ? `${r.cron} (cron, UTC)` : r.kind === "once" ? `once at ${at(new Date(r.run_at))}` : r.kind}${r.kind === "once" && r.last_run_at ? " (done: it ran)" : r.enabled ? "" : " (paused)"}`).join("\n") };
+      return { text: rows.map((r: any) => `- ${r.name ?? "(unnamed)"}: ${r.kind === "cron" ? `${r.cron} (cron, ${r.cron_tz ?? "UTC"})` : r.kind === "once" ? `once at ${at(new Date(r.run_at))}` : r.kind}${r.kind === "once" && r.last_run_at ? " (done: it ran)" : r.enabled ? "" : " (paused)"}`).join("\n") };
     },
   },
   {

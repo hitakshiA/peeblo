@@ -12,13 +12,18 @@ From a fresh machine to a teammate answering in Slack: one command, then your br
   brew link --overwrite --force node@24      # node@24 isn't put on your PATH otherwise; `node -v` should say v24
   ```
 - **An [Otari](https://otari.ai) account** with credit. Peeblo calls only Otari; it holds no model-provider keys.
-- **A Slack workspace** where you can add apps.
+- **A Slack workspace** where you can add apps. Each teammate is its own Slack app, and Slack's free plan limits how
+  many apps a workspace can add, so a crew of more than a few teammates needs a paid plan (or its trial).
+- **For the guardrail, either** a [Lakera](https://www.lakera.ai) account connected to Otari's Guardrails, **or**
+  nothing: the console's checklist offers an open guard model that runs through Otari alone.
 - **A public HTTPS address** that reaches this machine: a domain with TLS (Caddy works), or a tunnel (Tailscale
   Funnel, a Cloudflare named tunnel, zrok). Only Slack's events, sign-in callbacks and webhooks use it. With a free
   zrok share, reserve it and turn off its warning page (`zrok reserve public … --skip-interstitial`), or Slack's
   install link stops on that page.
 
-Everything else is set up in your browser.
+Everything else is set up in your browser. Two optional extras still go in `.env` (see `.env.example`): a GitHub token
+for teammates that work in your repositories (`PEEBLO_GITHUB_TOKEN`, a fine-grained token limited to those repos),
+and a signing secret per service that sends webhooks (`PEEBLO_HOOK_SECRET_STRIPE`, …).
 
 ## 1. Start it
 
@@ -42,8 +47,9 @@ The console walks you through six steps and checks each one live. What you'll ne
    password isn't stored. Signed up with Google or GitHub? Set a password first at Otari's sign-in page
    ("Forgot that password, or didn't sign up?").
 4. **The Otari checklist.** The console checks what Peeblo needs and links each fix in Otari's dashboard: web search
-   and code execution on (Tools), a Lakera guardrail named **`peeblo-lakera`** (Guardrails), and your connectors
-   (Tools → MCP servers: Linear, GitHub, Stripe, Notion, PostHog, Intercom, … any service with an MCP server).
+   and code execution on (Tools), a Lakera guardrail named **`peeblo-lakera`** (Guardrails; no Lakera account? choose
+   the open guard model right there instead), and your connectors (Tools → MCP servers: Linear, GitHub, Stripe,
+   Notion, PostHog, Intercom, … any service with an MCP server). Connectors are optional and never block setup.
 5. **A public address** Slack can reach: a domain with HTTPS in front of port `8787`, or a tunnel to it.
 6. **Slack.** At [api.slack.com/apps](https://api.slack.com/apps), under **Your App Configuration Tokens**, generate
    a token for your workspace and paste both parts. Then **Create Peeblo's Slack app** and **Add Peeblo to Slack**.
@@ -65,7 +71,9 @@ Peeblo may ask a question, then shows the new teammate's ID card. Approve it, cl
 and the teammate introduces itself. Every teammate works only through its own Slack app.
 
 Give a teammate more tools by asking Peeblo: "give Quill github too, read only". Anything that raises what a
-teammate can do (tools, budget, approval mode) asks its owner or an admin first.
+teammate can do (tools, budget, approval mode) asks its owner or an admin first. For Otari itself to refuse a
+read-only teammate's writes, set each server's default access to **Read tools** in Otari (Tools → MCP servers →
+the server → Access); teammates that may write get their own grant, so nothing else changes.
 
 Teammates that browse websites need the large computer image, built once: `./peeblo image large` (about 4.4 GB
 with Docker running).
@@ -150,6 +158,6 @@ the "Refund created" rule on, you approve twice: once on Peeblo's card, then aga
 - `./peeblo status`, `./peeblo logs`, `./peeblo down`. After pulling an update, run `./peeblo down` then
   `./peeblo up`.
 - Approvals wait 30 minutes in a live conversation and 12 hours for scheduled work, then count as no.
-- Money, deletes, shipping and posts outside the thread always ask, whatever a teammate's mode.
-- Routines run on UTC times; Peeblo tells you the time in yours.
+- Money, deletes, shipping and posts outside the thread always ask, in every mode but YOLO (which only an admin can set).
+- Routines run in the time zone of the person who set them (from their Slack profile), daylight saving included.
 - Everything a teammate does is in the console under **Sessions**, with a receipt for each job.

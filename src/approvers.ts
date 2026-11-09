@@ -93,9 +93,11 @@ export async function policyApprovers(runId: string, call: { server?: string; to
   const ids = async (names: string[]) => uniq(await Promise.all(names.map(async (n) => (await pool.query(
     "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1", [n])).rows[0]?.id)));
   const pick = async (pred: (k: string) => boolean, why: string) => { const r = rules.find((x) => pred(x.key)); if (!r) return null; const who = await ids(r.names); return who.length ? { who, why } : null; };
-  // The requester's own words in this job: "I'll approve", "ask me first", "check with me".
+  // The requester's own words in this job ("I'll approve", "ask me first") pick who gets an ordinary write's card,
+  // never a money, delete or shipping card: those follow the map, else go to an admin (below).
   const o = await runOrigin(runId);
-  if (o.personId) {
+  const high = ["money", "destructive", "shipping", "outside_thread"].includes(String(call.risk ?? ""));
+  if (o.personId && !high) {
     const said = (await pool.query(`SELECT sub.text FROM submissions sub JOIN runs r ON r.submission_id = sub.id WHERE r.session_id = (SELECT session_id FROM runs WHERE id = $1) AND sub.person_id = $2 ORDER BY sub.created_at DESC LIMIT 5`, [runId, o.personId])).rows.map((x) => String(x.text)).join("\n");
     if (/\b(i['’]?ll approve|i will approve|ask me (first|before)|check with me|let me approve|i approve it)\b/i.test(said)) return { who: [o.personId], why: "they said they'd approve it" };
   }
@@ -108,6 +110,12 @@ export async function policyApprovers(runId: string, call: { server?: string; to
   for (const r of rules.filter((x) => x.key.startsWith("account "))) {
     const acct = r.key.slice(8).trim();
     if (acct.length > 2 && args.includes(acct)) { const who = await ids(r.names); if (who.length) return { who, why: `${r.key.slice(8)} is their account` }; }
+  }
+  // No map line for it: money, deletes, shipping and posts outside the thread go to an admin (or the teammate's
+  // owner), so nobody approves their own refund unless they are one of those.
+  if (high) {
+    const who = uniq([...(await adminIds()), o.ownerId]);
+    if (who.length) return { who, why: "money, deletes and shipping go to an admin or the teammate's owner" };
   }
   return null;
 }

@@ -22,7 +22,7 @@ async function ownerName(tm: Teammate): Promise<string | null> {
   return p?.display_name ? String(p.display_name).split(" ")[0] : null;
 }
 
-const ASKS: Record<string, string> = { ask: "Asks before every write", auto: "Asks before it writes anything that matters", trusted: "Asks before it deletes anything", yolo: "Acts without asking" };
+const ASKS: Record<string, string> = { ask: "Asks before every write", auto: "Asks before money, deletes and any write you didn't ask for", trusted: "Asks before money and deletes", yolo: "Acts without asking" };
 
 // Three plain facts under the bio (code fills them; the model never writes these numbers).
 async function facts(tm: Teammate): Promise<string> {

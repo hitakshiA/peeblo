@@ -110,7 +110,6 @@ async function dropRefusedTurn(l: Live, sessionId: string, runId: string): Promi
 
 
 async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
-  const t0 = Date.now(); const lap = (what: string) => { if (process.env.PEEBLO_TIMING) console.error(`timing: ${what} ${Date.now() - t0} ms`); };
   const dir = join(config.dataDir, "teammates", tm.slug);
   await mkdir(join(dir, "sessions"), { recursive: true });
   await mkdir(join(dir, "pi-agent"), { recursive: true });
@@ -130,9 +129,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const model = place.model || tm.config.model.default;
   const models = [model, tm.config.model.fallback].filter(Boolean).join(",");
   const web = tm.config.tools.includes("web");
-  lap("prompt written");
   const key = await teammateKey(tm);
-  lap("key");
   const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: false, /* code runs through the run_code tool when the agent chooses it, never on every call */ otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
   const child = spawn(process.execPath, [PI_CLI, "--mode", "rpc",
     "--no-extensions", "-e", PI_OTARI, "-e", PEEBLO_TOOLS,
@@ -154,9 +151,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const l: Live = { child, rpc, token, teammateVersion: tm.version, queue: Promise.resolve() };
   child.on("exit", () => { live.delete(sessionId); revokeToken(token); });
   live.set(sessionId, l);
-  lap("spawned");
   await rpc.send("get_state");
-  lap("pi ready");
   return l;
 }
 
@@ -238,10 +233,10 @@ async function personNote(ctx: RunContext, tm: Teammate, person: { id: string; d
   const { placeOfSession } = await import("../memory/store.ts");
   const card = personCard(person.id);
   const open = openPromises(tm.slug, placeOfSession(ctx.session), person.display_name);
-  // Their time zone (from Slack): times are said in it; schedules are stored in UTC.
+  // Their time zone (from Slack): times are said in it, and recurring schedules run in it.
   const tz = (await pool.query<{ tz: string | null }>("SELECT tz FROM people WHERE id = $1", [person.id])).rows[0]?.tz ?? null;
   const local = tz ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date()) : null;
-  const zone = tz && local ? `${person.display_name ?? "They"} ${person.display_name ? "is" : "are"} on ${tz} (it's ${local} there now). Say times in their time zone; schedules are set in UTC.\n` : "";
+  const zone = tz && local ? `${person.display_name ?? "They"} ${person.display_name ? "is" : "are"} on ${tz} (it's ${local} there now). Say times in their time zone; a recurring schedule's cron is written in their time zone too (one-off times are exact instants).\n` : "";
   if (!card && !open.length && !zone) return "";
   return `<peeblo_event kind="person">${zone}${card ? `How ${person.display_name ?? "they"} like answers:\n${card.slice(0, 800)}\n` : ""}${open.length ? `You promised ${person.display_name ?? "them"}: ${open.map((n) => `${n.title} (${n.path})`).join("; ")}.` : ""}</peeblo_event>\n`;
 }
@@ -302,7 +297,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   if (person?.end_user_id && config.otariKeyKind === "service") await ensureEndUser(person.end_user_id, person.display_name, config.otariEndUserBudget || undefined, (await teammateKey(tm)) ?? undefined);
   // Receipts say whether Otari's org guardrail screened the turn; read its state fresh for each turn.
   if (guardMode() === "lakera") await freshLakeraState(0);
-  // The open guard screens the person's message before the teammate sees it (Lakera runs inside Otari instead).
+  // The open guard also screens the person's own message before the teammate sees it.
   if (guardMode() === "open" && !internal) {
     // The guard fails closed: one retry, then the message is not acted on (and the person is told why).
     const screenOnce = () => screenOpen(ctx.session.id, ctx.run.id, person?.end_user_id ?? null, tm.slug, ctx.text);

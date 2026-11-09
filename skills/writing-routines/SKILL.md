@@ -9,8 +9,8 @@ A routine is a prompt you write now that you'll follow later, alone. Nobody is t
 prompt has to carry the judgement.
 
 ## 1. Pick the trigger
-- **A time** ("every weekday at 9", "Fridays at 5", "tomorrow at noon"): `schedule` (cron in UTC, at most hourly,
-  or `once_at`). Convert the person's time zone and say the UTC time back to them.
+- **A time** ("every weekday at 9", "Fridays at 5", "tomorrow at noon"): `schedule` (cron in the person's own time zone, at most hourly,
+  or `once_at`, an exact instant). Write the cron as they said it ("every weekday at 9" is `0 9 * * 1-5`).
 - **An event a service sends** ("after every deploy", "when a PR merges"): `webhook_trigger`, with a filter so only
   the events they mean wake you. Give them the URL and tell them where to paste it.
 - **A change in something you can read** ("when a new bug is marked urgent"): `watch`. It wakes you only when the
@@ -32,6 +32,6 @@ Set `budget_usd` per run to what the job needs (most are a few cents). Prefer a 
 the trigger is "when X changes".
 
 ## 4. Confirm in one line
-Say what you set up, when it runs (in their time zone and UTC), where results go, and that writes still need the
+Say what you set up, when it runs (in their time zone), where results go, and that writes still need the
 usual approval. `schedule` with action `list` shows them; only the person who set one up, the owner or an admin can
 pause or remove it.

@@ -24,7 +24,6 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
-    "promptfoo": "0.125.1",
     "typescript": "5.9.3"
   }
 }

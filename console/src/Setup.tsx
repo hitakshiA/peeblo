@@ -182,7 +182,7 @@ function OtariStep({ s, reload, advance, restart }: StepProps) {
     });
   };
   return <>
-    <Head title="Your Otari key">Otari is the gateway every model, tool and budget goes through. Peeblo needs one service key to reach it; it's kept sealed on this machine.</Head>
+    <Head title="Your Otari key">Otari is the gateway every model, tool and budget goes through. Peeblo needs one service key to reach it; it stays on this machine, in a settings file only Peeblo can read.</Head>
     {o.key_set && (o.key_ok
       ? <Status ok>The key works{o.org ? ` for ${o.org}` : ""}.{o.used_usd != null && <span className="muted"> {money(o.used_usd)}{o.limit_usd != null ? ` of ${money(o.limit_usd)}` : ""} used.</span>}</Status>
       : <Status ok={false}>{o.key_error ? friendly(new ApiError(400, o.key_error)) : "The saved key doesn't work. Paste a new one."}</Status>)}
@@ -219,8 +219,9 @@ function ConnectStep({ s, reload, advance }: StepProps) {
   </>;
 }
 
-function ReadinessStep({ s, reload, advance }: StepProps) {
+function ReadinessStep({ s, reload, advance, restart }: StepProps) {
   const [busy, setBusy] = useState(false);
+  const useGuard = (mode: string) => { setBusy(true); post<{ ok: boolean; restarting?: boolean }>("/v1/setup/guard", { mode }).then((r) => { if (r?.restarting) restart(mode === "open" ? "Switched to the open guard model." : "Switched to Lakera."); }).finally(() => setBusy(false)); };
   const items = s.readiness ?? [];
   const ready = items.filter((i) => i.ok === true).length;
   const passed = STEPS.indexOf(s.next) > STEPS.indexOf("readiness");
@@ -236,6 +237,7 @@ function ReadinessStep({ s, reload, advance }: StepProps) {
             <Dot ok={i.ok} />
             <div className="check-text"><b>{i.label}</b>{i.detail && <span className="muted">{i.detail}</span>}</div>
             {i.ok !== true && i.fix_url && <Ext href={i.fix_url} className="btn ghost small">{i.fix_text || "Fix in Otari"}</Ext>}
+            {(i as any).alt && <button className="ghost small" disabled={busy} onClick={() => useGuard((i as any).alt.mode)}>{(i as any).alt.text}</button>}
           </li>)}
         </ul>
       </>}

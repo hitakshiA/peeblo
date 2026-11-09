@@ -1,10 +1,11 @@
-// The guardrail is one setting (PEEBLO_GUARD), and exactly one guard runs:
-// - "lakera" (default): Otari's org guardrail (Lakera Guard, block mode) checks every model call's input,
-//   tool results included, before any provider sees it. Peeblo only reads the verdicts Otari reports.
-// - "open": an open guard model through Otari chat (default Qwen3Guard) screens each person's message
-//   before the teammate sees it. For teams that want every part open.
-// - "off": nothing is screened (the receipt says so).
-// Either way the verdict is an event, and the receipt names the guard that checked it.
+// The guardrail screens text from outside the company (files, web pages, emails, tickets, webhook payloads, other
+// bots) before a model reads it. One setting (PEEBLO_GUARD) picks the guard:
+// - "lakera" (default): Lakera Guard, enforced at Otari's gateway in a screening workspace of its own (block mode),
+//   with an open guard model confirming each flag. Text both flag is held back; text only Lakera flags goes on with
+//   a note. Ordinary teammate calls are not screened, so agent prompts never trip it.
+// - "open": the open guard model (default Qwen3Guard) through Otari chat, for teams with no Lakera account.
+// - "off": nothing is screened.
+// Every verdict is an event, and the receipt names the guard that checked.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.ts";
@@ -180,8 +181,22 @@ export function guardrailRefusal(status: number, body: string): { profile: strin
 // Untrusted content (web pages, connector results, files, other bots) is screened and labelled with its source.
 // Text the guardrails flag is held back from the model; text only one of them flags goes on with a note.
 export type Screened = { checked_by: string | null; flagged: boolean; score: number | null; categories: string[]; requestId: string | null; disputed?: string };
+// A guardrail that couldn't answer: the text goes on as data with a note, never silently as if it passed.
+export const unchecked = (): Screened => ({ checked_by: null, flagged: false, score: null, categories: [], requestId: null, disputed: "the guardrail couldn't check this text" });
+
+// Long text is screened in parts (the guard reads about 20,000 characters at a time); any flagged part flags it.
 export async function screen(content: string, endUser: string | null): Promise<Screened> {
-  const text = content.slice(0, 20_000);
+  if (content.length <= 20_000) return screenPart(content, endUser);
+  let last: Screened | null = null;
+  for (let i = 0; i < Math.min(content.length, 120_000); i += 20_000) {
+    const s = await screenPart(content.slice(i, i + 20_000), endUser);
+    if (s.flagged) return s;
+    last = s;
+  }
+  return last!;
+}
+
+async function screenPart(text: string, endUser: string | null): Promise<Screened> {
   const mode = guardMode();
   if (mode === "open") {
     const g = await openGuard(text, endUser);

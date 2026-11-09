@@ -39,7 +39,7 @@ export async function receiptModal(runId: string): Promise<any> {
     fact("Provider", r.providers.map(readableProvider).join(", ") || "–"),
     fact("Calls", `${r.calls}${r.failed_attempts ? ` (${r.failed_attempts} retried)` : ""}`),
     ...(r.fallbacks && models[1] ? [fact("Fell back to", models[1])] : []),
-    fact("Checked by", r.guard.checked_by ? r.guard.checked_by.replace(/ \(.*\)$/, "") : "no guard on this run"),
+    fact("Checked by", r.guard.checked_by ? r.guard.checked_by.replace(/ \(.*\)$/, "") : "nothing from outside the company to screen"),
     fact("Cost", money(r.cost_usd)),
     ...(budget ? [fact("Budget used", budget)] : []),
   ] : [];

@@ -45,7 +45,7 @@ export async function outputPlace(tm: Teammate, origin: SlackPlace | null, chann
   return { place: { slack: { ...origin, channel, channel_type: "channel", thread_ts: undefined, trigger_ts: undefined, direct: false } } };
 }
 
-export async function createSchedule(tm: Teammate, by: string | null, s: { kind: Kind; name: string; prompt: string; cron?: string | null; runAt?: string | null; place: any; budgetUsd?: number; filter?: any; watch?: any; originRequest?: string | null }): Promise<{ id: string; secret?: string }> {
+export async function createSchedule(tm: Teammate, by: string | null, s: { kind: Kind; name: string; prompt: string; cron?: string | null; runAt?: string | null; place: any; budgetUsd?: number; filter?: any; watch?: any; originRequest?: string | null; tz?: string | null }): Promise<{ id: string; secret?: string }> {
   const id = newId("sc");
   const session = await openSession(tm.id, "api", `schedule:${id}`, { ...s.place, schedule_id: id });
   const secret = s.kind === "webhook" ? randomBytes(24).toString("hex") : null;
@@ -54,6 +54,7 @@ export async function createSchedule(tm: Teammate, by: string | null, s: { kind:
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [id, tm.id, session.id, s.kind, s.name, s.cron ?? null, s.runAt ?? null, s.prompt, s.place, Math.min(1, s.budgetUsd ?? 0.05), s.filter ?? {}, s.watch ?? null, by, secret ? seal(secret) : null]);
   if (s.originRequest) await pool.query("UPDATE schedules SET origin_request = $2 WHERE id = $1", [id, s.originRequest.slice(0, 4000)]);
+  if (s.tz) await pool.query("UPDATE schedules SET tz = $2 WHERE id = $1", [id, s.tz]);
   if (s.kind === "cron") { const { syncSchedules } = await import("./durable/schedules.ts"); await syncSchedules(); }
   await appendEvent({ type: "schedule.created", data: { schedule_id: id, teammate_id: tm.id, kind: s.kind, name: s.name, by } });
   return { id, ...(secret ? { secret } : {}) };
@@ -91,7 +92,7 @@ export async function handleHook(slug: string, id: string, headers: Record<strin
   if (miss) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: `filter: ${miss}`, event } }); return [202, "skipped: doesn't match the trigger's filter"]; }
   const delivery = String(headers["x-github-delivery"] ?? createHash("sha256").update(body).digest("hex").slice(0, 16));
   const summary = JSON.stringify(payload).slice(0, 4000).replaceAll("</untrusted>", "</ untrusted>");
-  const run = await fire(s, `\n\nEvent: ${event || "webhook"}\n<untrusted source="webhook:${slug}/${s.name ?? s.id}">\n${summary}\n</untrusted>`, "webhook", delivery);
+  const run = await fire(s, `\n\nEvent: ${event || "webhook"}\n${await screenedBlock(summary, `webhook:${slug}/${s.name ?? s.id}`)}`, "webhook", delivery);
   return [202, run ? `run ${run}` : "skipped"];
 }
 
@@ -130,7 +131,7 @@ export async function handleSourceHook(source: string, headers: Record<string, s
     const miss = filterMiss(rest, event, payload);
     if (miss) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: `filter: ${miss}`, event } }); continue; }
     const summary = JSON.stringify(payload).slice(0, 4000).replaceAll("</untrusted>", "</ untrusted>");
-    const run = await fire(s, `\n\nEvent from ${source}: ${event}\n<untrusted source="webhook:${source}">\n${summary}\n</untrusted>`, "webhook", `${source}:${payload?.id ?? payload?.event?.id ?? createHash("sha256").update(body).digest("hex").slice(0, 16)}:${s.id}`);
+    const run = await fire(s, `\n\nEvent from ${source}: ${event}\n${await screenedBlock(summary, `webhook:${source}`)}`, "webhook", `${source}:${payload?.id ?? payload?.event?.id ?? createHash("sha256").update(body).digest("hex").slice(0, 16)}:${s.id}`);
     if (run) fired.push(run);
   }
   return [200, fired.length ? `woke ${fired.length}` : "no matching trigger"];
@@ -162,7 +163,7 @@ export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" |
   if (!s.state_hash) { await appendEvent({ type: "schedule.watch", data: { schedule_id: s.id, result: "baseline" } }); return "baseline"; }
   if (s.state_hash === hash) { await appendEvent({ type: "schedule.skipped", data: { schedule_id: s.id, reason: "watch: no change" } }); return "unchanged"; }
   await appendEvent({ type: "schedule.watch", data: { schedule_id: s.id, result: "changed" } });
-  await fire(s, `\n\nThe watched data changed (${s.watch.server}.${s.watch.tool}). Latest:\n<untrusted source="watch:${s.watch.server}">\n${text.slice(0, 4000)}\n</untrusted>`, "schedule", hash.slice(0, 16));
+  await fire(s, `\n\nThe watched data changed (${s.watch.server}.${s.watch.tool}). Latest:\n${await screenedBlock(text.slice(0, 4000), `watch:${s.watch.server}`)}`, "schedule", hash.slice(0, 16));
   return "changed";
 }
 
@@ -235,4 +236,12 @@ export function installTriggers(): void {
     await appendEvent({ type: "schedule.ran", data: { schedule_id: id, run_id: e.run_id, findings: posted ? "some" : "none", ok: e.type === "run.finished" } });
     if (e.type === "run.failed") await appendEvent({ type: "notify.owner", data: { schedule_id: id, kind: "schedule_failed", text: `A scheduled job failed: ${String((e.data as any).error ?? "").slice(0, 200)}` } });
   });
+}
+
+// A webhook payload or a watched result is outside text: screened like any tool result before it reaches a model,
+// held back when the guardrail flags it, and marked when the guardrail couldn't check it.
+async function screenedBlock(text: string, source: string): Promise<string> {
+  const { screen, wrapUntrusted, unchecked } = await import("./guard.ts");
+  const s = await screen(text, null).catch(() => unchecked());
+  return wrapUntrusted(text, source, s);
 }
