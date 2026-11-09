@@ -90,8 +90,8 @@ export function summaryLine(titles: string[]): string {
 // Readable model names, the same set as the landing page.
 const MODELS: [RegExp, string, string][] = [
   [/deepseek-v4\.1-flash/i, "DeepSeek V4.1 Flash", "deepseek"], [/deepseek-v4-pro/i, "DeepSeek V4 Pro", "deepseek"],
-  [/kimi-k3/i, "Kimi K3", "kimi"], [/glm-5\.3/i, "GLM-5.3", "zhipu"], [/qwen3\.8-27b/i, "Qwen3.8 27B", "qwen"],
-  [/minimax-m3/i, "MiniMax M3", "minimax"], [/nemotron-3-ultra/i, "Nemotron 3 Ultra", "nvidia"], [/mimo-v2\.6-pro/i, "MiMo V2.6 Pro", ""],
+  [/kimi-k3\.1-pro/i, "Kimi K3.1 Pro", "kimi"], [/kimi-k3/i, "Kimi K3", "kimi"], [/glm-5\.3/i, "GLM-5.3", "zhipu"], [/qwen3\.8-27b/i, "Qwen3.8 27B", "qwen"],
+  [/minimax-m3\.1-flash/i, "MiniMax M3.1 Flash", "minimax"], [/minimax-m3/i, "MiniMax M3", "minimax"], [/nemotron-3-ultra/i, "Nemotron 3 Ultra", "nvidia"], [/mimo-v2\.6-pro/i, "MiMo V2.6 Pro", ""],
 ];
 export function readableModel(id: string): { name: string; logo: string | null } {
   const hit = MODELS.find(([re]) => re.test(id));

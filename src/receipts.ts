@@ -17,7 +17,10 @@ export type Receipt = {
 
 export async function buildReceipt(runId: string, opts: { links?: boolean } = {}): Promise<Receipt> {
   const events = await runEvents(runId);
-  const calls = events.filter((e) => e.type === "model.call").map((e) => e.data as any);
+  // Helpers this job started (subagent, pick_model) are part of its cost: their model calls join the receipt.
+  const helpers = events.filter((e) => e.type === "tool.call" && ["subagent", "pick_model"].includes(String((e.data as any).tool)) && (e.data as any).result?.run_id).map((e) => String((e.data as any).result.run_id));
+  const helperCalls = (await Promise.all([...new Set(helpers)].map((id) => runEvents(id).catch(() => [])))).flat().filter((e) => e.type === "model.call");
+  const calls = [...events.filter((e) => e.type === "model.call"), ...helperCalls].map((e) => e.data as any);
   // Calls Otari answered but that never finished here (core died mid-stream): take Otari's settled cost.
   const finished = new Set(calls.map((c) => c.request_id));
   const opened = events.filter((e) => e.type === "model.call.opened").map((e) => e.data as any).filter((o) => o.request_id && !finished.has(o.request_id));
