@@ -176,5 +176,5 @@ async function notInChannel(appId: string, ev: any, tagged: { app_id: string; bo
   if (!missing.length) return;
   const { slack } = await import("./api.ts");
   const names = missing.map((t) => `<@${t.bot_user_id}>`).join(" and ");
-  await slack(appId, "chat.postEphemeral", { channel: ev.channel, user: ev.user, ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}), text: `${names} ${missing.length > 1 ? "aren't" : "isn't"} in this channel, so ${missing.length > 1 ? "they" : "it"} didn't see that. Add ${missing.length > 1 ? "them" : "it"} with /invite, or tag me and I'll take it.` });
+  await slack(appId, "chat.postEphemeral", { channel: ev.channel, user: ev.user, ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}), text: `${names} ${missing.length > 1 ? "aren't" : "isn't"} in this channel, so ${missing.length > 1 ? "they" : "it"} didn't see that. Tag me and I'll add ${missing.length > 1 ? "them" : "it"} here, or use /invite.` });
 }

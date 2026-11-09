@@ -68,8 +68,13 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
     if (!own) return { refused: `${callee.config.name} isn't in this Slack workspace.` };
     const { slack } = await import("./slack/api.ts");
     if (!["im", "mpim"].includes(here.channel_type)) {
-      const joined: any = await slack(own, "conversations.join", { channel: here.channel }).catch(() => null);
-      const member: any = joined?.ok ? joined : await slack(own, "conversations.info", { channel: here.channel }).catch(() => null);
+      let joined: any = await slack(own, "conversations.join", { channel: here.channel }).catch(() => null);
+      // A private channel can't be joined; the caller's app (a member, since the work came from here) invites it.
+      if (!joined?.ok) {
+        const bot = (await pool.query("SELECT bot_user_id FROM slack_apps WHERE app_id = $1", [own])).rows[0]?.bot_user_id;
+        if (bot) await slack(here.app_id, "conversations.invite", { channel: here.channel, users: bot }).catch(() => null);
+      }
+      const member: any = await slack(own, "conversations.info", { channel: here.channel }).catch(() => null);
       if (member?.channel?.is_member) place = { ...here, app_id: own, direct: true };
     }
     if (!place) {
