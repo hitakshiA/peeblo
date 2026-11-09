@@ -177,7 +177,7 @@ export const managerTools: AgentTool[] = [
         const app = await createTeammateApp(tm, face.color, await facePng(face));
         install = app.installUrl;
         await pool.query("UPDATE hires SET app_id = $2, install_url = $3 WHERE teammate_id = $1", [tm.id, app.appId, install]);
-      } catch (e) { appNote = ` Its Slack app couldn't be made yet (${(e as Error).message.slice(0, 120)}), so it can't work until its app is set up.`; }
+      } catch (e) { appNote = ` Its Slack app couldn't be made yet (${(e as Error).message.slice(0, 120)}), so it can't work until its app is set up. Any teammate_update on it (re-setting its role is enough) makes the app again.`; }
       await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "teammate.hired", data: { teammate_id: tm.id, slug, by: ctx.person?.id ?? null, app: Boolean(install) } });
       if (place) {
         // The install button goes on the ID card it was approved on (its own message in the thread); nothing else is posted.
@@ -189,7 +189,7 @@ export const managerTools: AgentTool[] = [
   },
   {
     name: "teammate_update",
-    description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, the GitHub repos it works in (github_repos: the full list as owner/repo, comma-separated), budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it. Access is given with these fields, never by writing it into instructions.",
+    description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, the GitHub repos it works in (github_repos: the full list as owner/repo, comma-separated), budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it. Access is given with these fields, never by writing it into instructions. A teammate whose Slack app couldn't be made at hire gets it made by any change here (re-setting its role is enough), and its install button goes on its ID card.",
     input_schema: object({
       teammate: { type: "string" },
       field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "github_repos", "budget_usd", "computer_size", "profile"] },
