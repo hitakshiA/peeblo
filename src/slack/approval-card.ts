@@ -2,7 +2,7 @@
 // the service's icon, "Okay to write to Linear?", one quiet line ("Writes 1 comment · GRO-323 · ≈ $0.0002"), and
 // Approve / Not now. "Not now" opens a small form: a reason (optional), or approve with edits, or for the whole job.
 import { approverNames } from "../approvers.ts";
-import { money, serviceIcon, serviceName } from "./look.ts";
+import { atlassianName, money, serviceIcon, serviceName } from "./look.ts";
 
 const DOMAINS: Record<string, string> = { linear: "linear.app", github: "github.com", posthog: "posthog.com", stripe: "stripe.com", hubspot: "hubspot.com", notion: "notion.so", sheets: "google.com", intercom: "intercom.com", freshdesk: "freshdesk.com", supabase: "supabase.com", airtable: "airtable.com" };
 const human = (k: string) => k.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -27,7 +27,8 @@ export function question(a: any, teammate: string): string {
     const digits = minorDigits(cur);
     return Number.isFinite(amount) && amount > 0 ? `${/refund/i.test(String(a.arguments?.stripe_api_operation_id ?? a.tool)) ? "Refund" : credit ? "Credit" : "Move"} ${sym}${(amount / 10 ** digits).toFixed(digits)}${cur ? "" : " (its invoice's currency)"}?` : `Okay to move money in ${serviceName(a.server ?? "stripe")}?`;
   }
-  if (a.server) return a.risk === "read" ? `Okay to look this up in ${serviceName(a.server)}?` : `Okay to write to ${serviceName(a.server)}?`;
+  const svc = a.server === "atlassian" ? atlassianName(String(a.tool ?? "")) : serviceName(a.server);
+  if (a.server) return a.risk === "read" ? `Okay to look this up in ${svc}?` : `Okay to write to ${svc}?`;
   if (a.tool && a.summary && a.kind === "peeblo_tool") return `${String(a.summary).split("\n")[0].replace(/[.?]$/, "")}?`;
   // A routine names itself: "Set up “Monday numbers for Tom”?"; a computer command says what it does, not "computer bash".
   if (a.tool === "schedule" && a.arguments?.name) return `${a.arguments.action === "delete" ? "Remove" : a.arguments.action === "update" ? "Change" : "Set up"} “${String(a.arguments.name).slice(0, 80)}”?`;
@@ -79,31 +80,42 @@ function what(a: any): string | null {
   if (a.risk === "outside_thread") return "Posts outside this thread";
   if (a.risk === "shipping") return "Ships a change";
   const tool = String(a.tool ?? "").replace(/^[a-z]+__/, "");
-  const m = /^(save|create|add|update|edit|post|send|write|set|delete|remove|archive|close)_(.+)$/.exec(tool);
   // "<thing>_write" with a method (GitHub's issue_write {method: "create"}): "Creates 1 issue".
   const w = /^(.+)_write$/.exec(tool);
-  if (!m && w) {
-    const method = String(a.arguments?.method ?? "").toLowerCase();
-    const noun = w[1].replace(/_/g, " ");
+  if (w && a.arguments?.method) {
+    const method = String(a.arguments.method).toLowerCase();
     const verb = /delete|remove/.test(method) ? "Removes" : /update|edit|close|lock|set/.test(method) ? "Changes" : /create|add/.test(method) ? "Creates" : "Writes";
-    return `${verb} 1 ${noun}`;
+    return `${verb} 1 ${w[1].replace(/_/g, " ")}`;
   }
-  // No write verb in the name: say what the tool is, never a bare "writes".
-  if (!m) {
-    if (!tool) return a.risk ? RISK[a.risk] ?? null : null;
-    // In words: "Reads Sentry projects", "Runs the planner in monday.com"; the service's own name isn't repeated.
-    const words = tool.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[_\-\s.]+/).filter((w) => w && w !== String(a.server ?? "").toLowerCase());
-    const svc = a.server ? serviceName(a.server) : "";
-    const VERBS: Record<string, string> = { get: "Reads", list: "Lists", search: "Searches", run: "Runs", invoke: "Runs", submit: "Submits", generate: "Generates", execute: "Runs", send: "Sends", trigger: "Triggers", manage: "Changes" };
-    const v = VERBS[words[0]];
-    const rest = (v ? words.slice(1) : words).join(" ");
-    return v ? `${v} ${rest}${svc ? ` in ${svc}` : ""}` : `Uses ${svc ? `${svc} ` : ""}${rest}`;
-  }
-  const noun = m[2].replace(/_/g, " ").replace(/s$/, "");
-  const verb = /delete|remove|archive/.test(m[1]) ? "Removes" : /update|edit|set|close/.test(m[1]) ? "Changes" : "Writes";
-  return `${verb} 1 ${noun}`;
+  // A generic API tool names its operation: Stripe's stripe_api_write {stripe_api_operation_id: "PostCustomers"}.
+  const op = String(a.arguments?.stripe_api_operation_id ?? a.arguments?.operation_id ?? "");
+  const name = op || tool;
+  if (!name) return a.risk ? RISK[a.risk] ?? null : null;
+  // In words, from the tool's own name: the verb (wherever it sits in the first words), then what it acts on.
+  // "retire_issue_label" → "Retires issue label"; "PostCustomers" → "Creates customers". The service isn't repeated.
+  const words = name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[_\-\s.]+/).filter((x) => x && x !== String(a.server ?? "").toLowerCase() && x !== "api");
+  const at = words.findIndex((x, n) => n < 3 && VERB[x]);
+  if (at < 0) return `${words.join(" ").replace(/^./, (c) => c.toUpperCase())}`.slice(0, 80) || null;
+  const rest = [...words.slice(0, at), ...words.slice(at + 1)].join(" ");
+  return `${VERB[words[at]]}${rest ? ` ${rest}` : ""}`.slice(0, 80);
 }
 
+const VERB: Record<string, string> = {
+  create: "Creates", add: "Adds", new: "Creates", post: "Creates", insert: "Adds", save: "Saves", write: "Writes", upsert: "Saves",
+  update: "Changes", edit: "Changes", set: "Sets", patch: "Changes", put: "Changes", modify: "Changes", rename: "Renames", move: "Moves",
+  delete: "Removes", remove: "Removes", archive: "Archives", retire: "Retires", restore: "Restores", unarchive: "Restores", cancel: "Cancels",
+  close: "Closes", reopen: "Reopens", resolve: "Resolves", acknowledge: "Acknowledges", ack: "Acknowledges", snooze: "Snoozes", mute: "Mutes",
+  share: "Shares", unshare: "Stops sharing", invite: "Invites", assign: "Assigns", unassign: "Unassigns", link: "Links", unlink: "Unlinks",
+  tag: "Tags", untag: "Untags", label: "Labels", mark: "Marks", pin: "Pins", unpin: "Unpins", star: "Stars", subscribe: "Subscribes to", unsubscribe: "Unsubscribes from",
+  send: "Sends", reply: "Replies to", comment: "Comments on", publish: "Publishes", unpublish: "Unpublishes", schedule: "Schedules",
+  apply: "Applies", deploy: "Deploys", merge: "Merges", reset: "Resets", rebase: "Rebases", revert: "Reverts", release: "Releases", rollback: "Rolls back",
+  run: "Runs", execute: "Runs", invoke: "Runs", trigger: "Triggers", start: "Starts", stop: "Stops", pause: "Pauses", resume: "Resumes",
+  enable: "Turns on", disable: "Turns off", approve: "Approves", reject: "Rejects", submit: "Submits", import: "Imports", upload: "Uploads",
+  prepare: "Prepares", generate: "Generates", duplicate: "Copies", copy: "Copies", clone: "Copies", refund: "Refunds", charge: "Charges", pay: "Pays",
+  convert: "Converts", transfer: "Transfers", manage: "Changes", rotate: "Rotates", verify: "Verifies", sync: "Syncs", give: "Gives",
+  connect: "Connects", disconnect: "Disconnects", exec: "Runs", provision: "Provisions", compose: "Writes", change: "Changes", call: "Calls",
+  unpause: "Resumes", undeploy: "Undeploys", transition: "Moves", transform: "Transforms", test: "Tests", suspend: "Suspends", format: "Formats", install: "Installs", uninstall: "Uninstalls", grant: "Grants", revoke: "Revokes", get: "Reads", list: "Lists", search: "Searches", fetch: "Reads", read: "Reads", query: "Queries",
+};
 const RISK: Record<string, string> = { money: "moves money", destructive: "removes something", shipping: "ships a change", outside_thread: "posts outside this thread", write: "writes" };
 
 const cutWord = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).replace(/\s+\S*$/, "")}…`);

@@ -15,7 +15,7 @@ const SERVICES: Record<string, string> = {
 export const serviceName = (server: string) => SERVICES[server] ?? server.charAt(0).toUpperCase() + server.slice(1);
 
 // Atlassian covers Jira and Confluence: the tool says which.
-const atlassianName = (tool: string) => (/confluence|page|space/i.test(tool) ? "Confluence" : "Jira");
+export const atlassianName = (tool: string) => (/confluence|page|space/i.test(tool) ? "Confluence" : "Jira");
 
 // "Read Linear", "Searched GitHub", "Updated Google Sheets", from the tool's own words.
 export function stepTitle(tool: string, d: { command?: string; kind?: string; callee?: string } = {}): string | null {
