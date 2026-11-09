@@ -48,7 +48,7 @@ const hireSpec = {
   tools: { type: "array", items: { type: "string", enum: ["web", "code", "computer"] }, maxItems: 3 },
   connectors: { type: "array", items: { type: "string" }, maxItems: 10, description: "Otari MCP server names, e.g. linear, posthog, stripe." },
   read_only: { type: ["array", "null"], items: { type: "string" }, description: "Connectors it may only read, never write (e.g. [\"stripe\"] when a person says read-only on Stripe). Enforced, not just instructions." },
-  github_repos: { type: ["array", "null"], items: { type: "string" }, maxItems: 5, description: "owner/repo it works in (e.g. your-org/-checkout-api): GitHub access scoped to these, and its own checkout of each on its computer. Required for any teammate that changes code." },
+  github_repos: { type: ["array", "null"], items: { type: "string" }, maxItems: 5, description: "owner/repo it works in (e.g. your-org/checkout-api): GitHub access scoped to these, and its own checkout of each on its computer. Required for any teammate that changes code." },
   mode: { type: ["string", "null"], enum: [...MODES, null] },
   computer_size: { type: ["string", "null"], enum: ["small", "large", null], description: "large only for teammates that browse websites." },
   face: { type: ["string", "null"], enum: [...SHAPES, null] },
