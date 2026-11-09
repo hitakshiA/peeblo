@@ -189,10 +189,10 @@ export const managerTools: AgentTool[] = [
   },
   {
     name: "teammate_update",
-    description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it.",
+    description: "Change a teammate's setup by talking: instructions, model, mode (ask/auto/trusted/yolo), tools, connectors, the GitHub repos it works in (github_repos: the full list as owner/repo, comma-separated), budget or computer size. Lowering applies at once; raising a capability asks first. Only its owner or an admin can change it. Access is given with these fields, never by writing it into instructions.",
     input_schema: object({
       teammate: { type: "string" },
-      field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "budget_usd", "computer_size", "profile"] },
+      field: { type: "string", enum: ["instructions", "model", "mode", "tools", "connectors", "github_repos", "budget_usd", "computer_size", "profile"] },
       value: { type: "string", description: "The new value; lists comma-separated. For profile, a short summary of the change." },
       profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
       reason: { type: "string" },
@@ -202,7 +202,8 @@ export const managerTools: AgentTool[] = [
     async describe(_ctx, a) {
       const t = await getTeammate(String(a.teammate)).catch(() => null);
       const name = t?.config.name ?? String(a.teammate);
-      const what = a.field === "connectors" || a.field === "tools" ? `Give ${name}: ${String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean).join(", ")}`
+      const what = a.field === "github_repos" ? `${name}'s GitHub repos: ${String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean).join(", ")}`
+        : a.field === "connectors" || a.field === "tools" ? `Give ${name}: ${String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean).join(", ")}`
         : a.field === "budget_usd" ? `${name}'s budget: $${a.value} a month` : a.field === "mode" ? `${name}'s mode: ${a.value}` : `${name}'s ${String(a.field).replace(/_/g, " ")}: ${String(a.value).slice(0, 200)}`;
       return { kind: "teammate_change", target_name: name, summary: `${what}${a.reason ? `\nWhy: ${String(a.reason).slice(0, 200)}` : ""}` };
     },
@@ -226,6 +227,7 @@ export const managerTools: AgentTool[] = [
         : a.field === "budget_usd" ? Number(a.value) > c.budget.monthly_usd
         : a.field === "tools" ? list(a.value).some((x) => !c.tools.includes(x))
         : a.field === "connectors" ? list(a.value).some((x) => !c.connectors.includes(x))
+        : a.field === "github_repos" ? list(a.value).some((x) => !(((c as any).connector_scopes?.github ?? []) as string[]).includes(x))
         : a.field === "computer_size" ? a.value === "large" && c.computer?.size !== "large"
         : a.field === "model";
       return raises ? { ask: `${ctx.person?.display_name ?? "Someone"} wants to change ${c.name}'s ${a.field.replace("_usd", "")} to ${a.value} (${a.reason}).` } : null;
@@ -245,6 +247,23 @@ export const managerTools: AgentTool[] = [
         if (!a.profile) return { text: "Give the profile (bio, agent_description, starter_prompts).", isError: true };
         const next = await updateTeammate(t.slug, { profile: a.profile } as any, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
         return { text: `${t.config.name}'s Slack profile is updated (version ${next.version}); Slack shows it within a minute or two.` };
+      }
+      if (a.field === "github_repos") {
+        const repos = list(a.value).filter((r) => /^[\w.-]+\/[\w.-]+$/.test(r));
+        if (!repos.length) return { text: "Give the repos as owner/repo, e.g. hitakshiA/acme-web.", isError: true };
+        const have = (((t.config.computer as any)?.repos ?? []) as any[]);
+        const entry = (r: string) => have.find((x) => x.remote === `https://github.com/${r}.git`) ?? { name: r.split("/")[1], remote: `https://github.com/${r}.git`, base: "main", credential: "GH_TOKEN", protected: [], worktree: { setup: [], include: [], setup_inputs: [] } };
+        const next = await updateTeammate(t.slug, {
+          connectors: [...new Set([...t.config.connectors, "github"])],
+          tools: [...new Set([...t.config.tools, "computer"])],
+          connector_scopes: { ...((t.config as any).connector_scopes ?? {}), github: repos },
+          computer: { ...(t.config.computer as any), repos: repos.map(entry) },
+        } as any, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
+        if (process.env.PEEBLO_GITHUB_TOKEN) {
+          const { setSecret } = await import("../store/secrets.ts");
+          await setSecret(t.id, "GH_TOKEN", process.env.PEEBLO_GITHUB_TOKEN, ["github.com", "api.github.com"]);
+        }
+        return { text: `${t.config.name} is now at version ${next.version}: GitHub repos = ${repos.join(", ")} (scoped access and its own checkout of each). Its running conversations pick this up on their next message; say "${t.config.name} can work in it from its next step".` };
       }
       const patch: any = a.field === "instructions" ? { instructions: a.value }
         : a.field === "mode" ? { mode: a.value } : a.field === "tools" ? { tools: list(a.value) } : a.field === "connectors" ? { connectors: list(a.value) }
