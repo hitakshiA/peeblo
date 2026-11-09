@@ -60,7 +60,7 @@ export async function runChecks(): Promise<Result[]> {
   });
   await check("Peeblo's Slack app", async () => {
     const { rows } = await pool.query("SELECT a.app_id, a.team_id, a.bot_user_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' AND a.bot_user_id IS NOT NULL LIMIT 1");
-    if (!rows[0]) throw new Error("not installed: run ./peeblo slack-app, open the link it prints and click Allow");
+    if (!rows[0]) throw new Error("not added to Slack yet: in the console, Setup → Slack → Add Peeblo to Slack");
     return "installed in your workspace";
   });
   await check("Slack apps up to date", async () => {
@@ -207,7 +207,7 @@ export async function runChecks(): Promise<Result[]> {
     return "teammate policy loaded; force push refused";
   });
   await check("public URL", async () => {
-    if (!config.publicUrl) throw new Error("PEEBLO_PUBLIC_URL is not set; Slack needs a public HTTPS URL (a domain, or a tunnel on a Mac)");
+    if (!config.publicUrl) throw new Error("no public address yet: in the console, Setup → Public address (Slack needs an https address that reaches this machine)");
     if (!config.publicUrl.startsWith("https://")) throw new Error("PEEBLO_PUBLIC_URL must be https://");
     const r = await fetch(`${config.publicUrl}/slack/events`, { method: "POST", headers: { "content-type": "application/json", "user-agent": "peeblo-check" }, body: JSON.stringify({ type: "url_verification", challenge: "peeblo-check" }), signal: AbortSignal.timeout(10_000) });
     const text = await r.text();

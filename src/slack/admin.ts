@@ -1,6 +1,6 @@
 // Making a teammate's Slack app (D1): from a manifest with the app configuration token (rotated before it expires),
 // with its face (an Open Bot Avatar), and a one-click install link. The config token lives sealed in core; on first
-// use it is read from PEEBLO_SLACK_CONFIG_FILE ({access_token, refresh_token, exp}).
+// use it comes from the console's setup (or from PEEBLO_SLACK_CONFIG_FILE: {access_token, refresh_token, exp}).
 import { existsSync, readFileSync } from "node:fs";
 import { config } from "../config.ts";
 import { seal, unseal } from "../crypto.ts";
@@ -43,7 +43,7 @@ export async function configToken(): Promise<string> {
     const cur = now ? unseal<ConfigToken>(now.token) : t;
     if (cur.exp - Date.now() / 1000 > 600) { await c.query("COMMIT"); return cur.access_token; }
     const r = await call("tooling.tokens.rotate", form({ refresh_token: cur.refresh_token }));
-    if (!r.ok) throw new Error(`Slack config token rotation failed (${r.error}): make a new one at api.slack.com/apps (Your App Configuration Tokens), save it in ${process.env.PEEBLO_SLACK_CONFIG_FILE || "PEEBLO_SLACK_CONFIG_FILE"} and run ./peeblo check`);
+    if (!r.ok) throw new Error(`Slack config token rotation failed (${r.error}): make a new one at api.slack.com/apps (Your App Configuration Tokens), and paste it in the console (Setup → Slack)`);
     await c.query("INSERT INTO slack_config (id, token) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET token = $1, updated_at = now()", [seal({ access_token: r.token, refresh_token: r.refresh_token, exp: r.exp })]);
     await c.query("COMMIT");
     return r.token;
@@ -53,7 +53,7 @@ export async function configToken(): Promise<string> {
 // A real call with the token: Slack checks the token before the manifest, so an auth error means the token is bad.
 export async function configTokenWorks(): Promise<void> {
   const r = await call("apps.manifest.validate", form({ manifest: JSON.stringify({ display_information: { name: "peeblo check" } }) }), await configToken());
-  if (["invalid_auth", "not_authed", "token_expired", "token_revoked", "account_inactive"].includes(r.error)) throw new Error(`Slack refused it (${r.error}): make a new one at api.slack.com/apps (Your App Configuration Tokens), save it in ${process.env.PEEBLO_SLACK_CONFIG_FILE || "PEEBLO_SLACK_CONFIG_FILE"} and run ./peeblo check`);
+  if (["invalid_auth", "not_authed", "token_expired", "token_revoked", "account_inactive"].includes(r.error)) throw new Error(`Slack refused it (${r.error}): make a new one at api.slack.com/apps (Your App Configuration Tokens), and paste it in the console (Setup → Slack)`);
 }
 
 // The manifest and scopes live in profile.ts (built from the teammate's config and its agent-written profile).
