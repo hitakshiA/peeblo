@@ -46,6 +46,8 @@ The full guide, with the server's network (ports, HTTPS, DNS, the SSH tunnel to 
 - [docs/SETUP.md](docs/SETUP.md): from a fresh machine to a teammate in Slack.
 - [docs/OTARI.md](docs/OTARI.md): how Peeblo uses Otari, the choices we made, and the limits we hit.
 - [skills/](skills/): how teammates hire, reconcile numbers, handle approvals, and decide when to speak.
+- [CONTRIBUTING.md](CONTRIBUTING.md): set up a dev copy, where things live, and what a good pull request has.
+- [SECURITY.md](SECURITY.md): report a vulnerability privately.
 
 ## License
 
