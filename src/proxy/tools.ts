@@ -97,7 +97,7 @@ const readCache = new Map<string, string>();
 // At most this many tool calls in one turn; after that only slack_post runs (NIGHT_PLAN_NOV9 §1).
 // Peeblo's chat turns stay short; a teammate working a job on its computer gets room for real work (its spend cap
 // is the real limit). Both get a heads-up when 3 calls are left.
-const TURN_CALLS_CHAT = 16, TURN_CALLS_WORK = 80; // chat: room for a second route when a source refuses
+const TURN_CALLS_CHAT = 20, TURN_CALLS_WORK = 80; // chat: room for a second route when a source refuses
 const turnCalls = new Map<string, number>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
@@ -371,6 +371,24 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
 const toolCallIdOf = (base: Record<string, unknown>) => String(base.id ?? newId("tc"));
 
 // How many records a JSON result holds: the longest array at the top or one level down.
+// A JSON list cut mid-record (Otari stops MCP results at 50,000 characters): the complete records before the cut,
+// as {"data": [...], "has_more": true}. Null when the text isn't the start of a JSON list.
+export function salvageList(text: string): { data: any[]; has_more: true } | null {
+  const at = text.search(/\[\s*\{/);
+  if (at < 0) return null;
+  const out: any[] = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = at + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "{") { if (depth++ === 0) start = i; }
+    else if (c === "}") { if (--depth === 0 && start >= 0) { try { out.push(JSON.parse(text.slice(start, i + 1))); } catch { break; } start = -1; } }
+    else if (c === "]" && depth === 0) break;
+  }
+  return out.length ? { data: out, has_more: true } : null;
+}
+
 function recordCount(text: string): number | null {
   try {
     const v = JSON.parse(text);
@@ -387,7 +405,21 @@ function compactList(text: string): string | null {
   const arr: any[] | undefined = Array.isArray(v) ? v : v && typeof v === "object" ? (Object.values(v).filter(Array.isArray) as any[][]).sort((a, b) => b.length - a.length)[0] : undefined;
   if (!arr?.length || typeof arr[0] !== "object") return null;
   const meta = v && !Array.isArray(v) ? Object.entries(v).filter(([, x]) => typeof x !== "object").map(([k, x]) => `${k}: ${x}`).join(", ") : "";
-  const line = (o: any) => KEY_FIELDS.filter((f) => o?.[f] !== undefined && o[f] !== null && typeof o[f] !== "object").map((f) => `${f}=${String(o[f]).slice(0, 90)}`).join(" · ").slice(0, 260);
+  const money = (o: any) => {
+    const item = o?.items?.data?.[0];
+    const price = item?.price ?? o?.price ?? o?.plan;
+    const bits: string[] = [];
+    if (price?.unit_amount ?? price?.amount) bits.push(`price=${price.unit_amount ?? price.amount}`);
+    if (price?.currency && !o?.currency) bits.push(`currency=${price.currency}`);
+    const iv = price?.recurring?.interval ?? price?.interval;
+    if (iv) bits.push(`interval=${iv}${(price?.recurring?.interval_count ?? price?.interval_count ?? 1) > 1 ? `×${price.recurring?.interval_count ?? price.interval_count}` : ""}`);
+    const q = item?.quantity ?? o?.quantity;
+    if (q !== undefined && q !== null) bits.push(`quantity=${q}`);
+    if (o?.discount?.coupon?.percent_off ?? o?.discounts?.[0]?.coupon?.percent_off) bits.push(`percent_off=${o.discount?.coupon?.percent_off ?? o.discounts[0].coupon.percent_off}`);
+    if (typeof o?.customer === "string") bits.push(`customer=${o.customer}`);
+    return bits;
+  };
+  const line = (o: any) => [...KEY_FIELDS.filter((f) => o?.[f] !== undefined && o[f] !== null && typeof o[f] !== "object").map((f) => `${f}=${String(o[f]).slice(0, 90)}`), ...money(o)].join(" · ").slice(0, 320);
   const lines = arr.slice(0, 40).map((o, i) => `${i + 1}. ${line(o)}`);
   return `${meta ? `${meta}\n` : ""}${lines.join("\n")}${arr.length > 40 ? `\n… and ${arr.length - 40} more` : ""}`;
 }
@@ -397,6 +429,10 @@ function compactList(text: string): string | null {
 async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
   const chars = r.text.length;
   if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
+  // Otari cuts MCP results at 50,000 characters: keep the records that arrived whole.
+  let salvaged: ReturnType<typeof salvageList> = null;
+  if (chars >= 50_000 && recordCount(r.text) === null) salvaged = salvageList(r.text);
+  if (salvaged) r = { ...r, text: JSON.stringify(salvaged) };
   const n = recordCount(r.text);
   const head = compactList(r.text) ?? r.text.slice(0, 3000);
   const path = `/work/${ctx.sessionId}/results/${t.server}-${t.tool}-${callId.slice(-8)}.${n === null ? "txt" : "json"}`;
@@ -406,7 +442,8 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
     if (w.isError) throw new Error(w.text);
     // Otari cuts MCP results at 50,000 characters: say so, or the model works on half a record without knowing.
     let cut = "";
-    if (chars >= 50_000 && n === null) { try { JSON.parse(r.text); } catch { cut = " Otari cut this result at 50,000 characters, so the file ends mid-record and some records are missing. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything."; } }
+    if (salvaged) cut = ` Otari cut this result at 50,000 characters: the ${n} complete records that arrived are below and in the file (valid JSON), the rest are missing. Before you total anything, get the rest: ask for the next page (Stripe: limit 8 and starting_after the last id; others: their cursor or page), and add them up together.`;
+    else if (chars >= 50_000 && n === null) { try { JSON.parse(r.text); } catch { cut = " Otari cut this result at 50,000 characters, so the file ends mid-record and some records are missing. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything."; } }
     return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo:${cut} the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
   } catch {
     return { ...r, chars, text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]` };

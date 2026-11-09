@@ -19,7 +19,11 @@ A number people act on has to be right, defined, and comparable. How it looks co
   finance sheet may be in EUR. Reconcile before you report, or say which you used and why.
 - A surprising number is a reason to check, not to report. Re-run the query; look at a few raw rows.
 - **If one source refuses, get the number another way** before you call it missing. MRR when Stripe's analytics
-  won't answer: list active subscriptions (`stripe_api_read`) and add them up on your computer, per currency.
+  won't answer: list subscriptions with status active, 8 at a time (bigger pages get cut), following
+  `starting_after` until `has_more` is false. Each line shows price (in cents), currency, interval, quantity and
+  any percent_off: MRR is price × quantity ÷ 100, divided by 12 for yearly, less the discount, summed per currency
+  on your computer. Trials aren't MRR.
+- **A list that says it's cut or has more isn't the total.** Get every page before you add anything up.
 - **Say what you did, not the plumbing**: "Stripe wouldn't give me MRR directly, so I added it up from
   subscriptions." Never name keys, scopes or permissions in a reply.
 

@@ -375,6 +375,11 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
     && !ok(["memory_write", "person_note", "company_memory_propose", "promise", "memory_forget", "skill_save"])) {
     return ruled("said noted without saving", "You told them it's noted or saved, but no memory tool saved anything this turn. Save it now (a person's preference: person_note; a fact about the company: company_memory_propose if you're Peeblo with an admin, else memory_write; anything else: memory_write), then correct your reply with slack_post if it said more than you did.");
   }
+  // Talking about keys and permissions instead of the answer: say what was done, and use any data a read did return.
+  if (/\b(permissions?|scopes?|api key|the key|widen|data queries)\b/i.test(posted.join("\n"))) {
+    const readOk = calls.some((c) => c.s === "completed" && c.t.includes("__"));
+    return ruled("permission talk in the reply", `Your reply talks about keys or permissions. People don't need the plumbing: say what you did in plain words ("Stripe wouldn't give me MRR directly, so I added it up from subscriptions").${readOk ? " A read this turn did return data: use it (get any missing pages first), compute the answer on your computer, and post it." : " If there's another way to get it, use it; otherwise say plainly what you couldn't get."} Then correct your reply with slack_post.`);
+  }
   // Saying an approval card is waiting when none is.
   const pendingCard = (await pool.query("SELECT 1 FROM approvals a JOIN runs r ON r.id = a.run_id WHERE r.session_id = $1 AND a.status = 'pending' AND a.expires_at > now() LIMIT 1", [ctx.session.id])).rowCount;
   if (!pendingCard && /\b(card|approv\w*)\b/i.test(said) && /\b(is|it['’]s|card['’]s|still) (waiting|pending|up)\b|\bneeds you to approve\b|\bwaiting (on|for) (you|your)\b|\bpending (your )?approval\b|\b(approve|tap) (it|that|the card) (above|when|and)\b/i.test(said)) {
