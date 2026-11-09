@@ -2,13 +2,17 @@
   "name": "peeblo-console",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite", "build": "tsc --noEmit && vite build" },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build"
+  },
   "dependencies": {
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
     "@fontsource-variable/baloo-2": "5.2.6",
+    "@fontsource-variable/jetbrains-mono": "5.2.6",
     "@fontsource-variable/quicksand": "5.2.6",
-    "@fontsource-variable/jetbrains-mono": "5.2.6"
+    "open-bot-avatar": "0.1.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
   },
   "devDependencies": {
     "@types/react": "19.2.2",

@@ -189,7 +189,7 @@ export function startApi(): Promise<Server> {
     if (!route) return send(res, 404, { error: "not found" });
     const viaConsole = consoleCookie(req);
     // Before sign-in, the setup state says only whether a password exists (so the console knows which screen to show).
-    if (url.pathname === "/v1/setup/state" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 200, { password_set: Boolean(config.consolePassword), mode: config.otariKey ? "running" : "setup", next: config.consolePassword ? "login" : "password" });
+    if (url.pathname === "/v1/setup/state" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 200, { signed_in: false, password_set: Boolean(config.consolePassword), mode: config.otariKey ? "running" : "setup", next: config.consolePassword ? "login" : "password" });
     if (url.pathname !== "/healthz" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 401, { error: "sign in, or send the admin token" });
     try {
       let body = req.method === "GET" ? {} : await readJson(req);

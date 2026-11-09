@@ -1,93 +1,83 @@
 // Peeblo's console: everything you can do in Slack, from the same API. Hash routes keep it a single static page.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ApiError, api, get, money, post, when, type RunEvent, type Teammate } from "./api";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { api, get, money, post, when, type RunEvent, type Teammate } from "./api";
+import { Connectors } from "./Connectors";
+import { Face, PEEBLO_FACE, primeFaces } from "./Face";
+import { useLoad } from "./hooks";
+import { ConnectOtari, Login, Wizard, useSetup } from "./Setup";
 
 type Route = { page: string; arg?: string };
-const parse = (): Route => { const [page = "crew", arg] = location.hash.replace(/^#\/?/, "").split("/"); return { page: page || "crew", arg: arg ? decodeURIComponent(arg) : undefined }; };
+const parse = (): Route => { const [page = "", arg] = location.hash.replace(/^#\/?/, "").split("/"); return { page: page || "crew", arg: arg ? decodeURIComponent(arg) : undefined }; };
 function useRoute(): Route { const [r, setR] = useState(parse()); useEffect(() => { const f = () => setR(parse()); addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []); return r; }
-
-// Loads a value from the API and reloads on demand.
-function useLoad<T>(path: string | null, every = 0): { data: T | null; error: string | null; reload: () => void } {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const reload = useCallback(() => { if (path) get<T>(path).then((d) => { setData(d); setError(null); }, (e) => setError((e as Error).message)); }, [path]);
-  useEffect(() => { reload(); if (!every) return; const t = setInterval(reload, every); return () => clearInterval(t); }, [reload, every]);
-  return { data, error, reload };
-}
-
-function Login({ onIn }: { onIn: () => void }) {
-  const [pw, setPw] = useState(""); const [err, setErr] = useState<string | null>(null);
-  return (
-    <div className="login"><form className="card stack" onSubmit={(e) => { e.preventDefault(); post("/v1/console/login", { password: pw }).then(onIn, () => setErr("That password isn't right.")); }}>
-      <div className="brand"><span className="brand-dot" />Peeblo</div>
-      <p className="muted">The console runs on your server, never on the public URL.</p>
-      <label>Console password<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus /></label>
-      {err && <div className="err">{err}</div>}
-      <button className="moss">Sign in</button>
-    </form></div>
-  );
-}
 
 // Grouped like the work: the crew and what it's doing, then what helps you debug it, then the system around it.
 const NAV: [string, [string, string][]][] = [
-  ["Work", [["crew", "Crew"], ["sessions", "Sessions"], ["approvals", "Approvals"], ["schedules", "Schedules"]]],
+  ["Work", [["crew", "Crew"], ["connectors", "Connectors"], ["sessions", "Sessions"], ["approvals", "Approvals"], ["schedules", "Schedules"]]],
   ["Debug", [["people", "People"], ["computers", "Computers"], ["feedback", "Feedback"]]],
-  ["System", [["otari", "Otari"], ["setup", "Setup"]]],
+  ["System", [["otari", "Otari"], ["setup", "Setup"], ["checks", "Checks"]]],
 ];
 
 export default function App() {
-  const [me, setMe] = useState<"loading" | "out" | { display_name: string | null } | null>("loading");
   const route = useRoute();
-  const pending = useLoad<{ approvals: any[] }>(me && me !== "loading" && me !== "out" ? "/v1/approvals?status=pending" : null, 10_000);
-  const check = useCallback(() => get<{ person: any }>("/v1/console/me").then((r) => setMe(r.person ?? { display_name: "admin" }), (e) => setMe(e instanceof ApiError && e.status === 401 ? "out" : "out")), []);
-  useEffect(() => { check(); }, [check]);
-  if (me === "loading") return null;
-  if (me === "out") return <Login onIn={check} />;
+  const setup = useSetup();
+  const { state, signedIn, loaded } = setup;
+  const unfinished = Boolean(state && state.next !== "done");
+  const pending = useLoad<{ approvals: any[] }>(signedIn ? "/v1/approvals?status=pending" : null, 10_000);
+  // Until setup is done, the console opens on it.
+  useEffect(() => { if (loaded && signedIn && unfinished && !location.hash.replace(/^#\/?/, "")) location.replace("#/setup"); }, [loaded, signedIn, unfinished]);
+  if (!loaded) return null;
+  if (!signedIn) return state && (!state.password_set || unfinished) ? <Wizard setup={setup} /> : <Login onIn={setup.reload} />;
+  if (route.page === "setup" && setup.available && !setup.locked) return <Wizard setup={setup} />;
   const n = pending.data?.approvals.length ?? 0;
+  const page = route.page === "setup" ? "checks" : route.page;
   return (
     <div className="shell">
       <nav className="side">
-        <a className="brand" href="#/crew"><img className="brand-face" src="/v1/teammates/peeblo/face.png" alt="" />peeblo</a>
-        {NAV.map(([group, items]) => <div key={group} className="nav-group"><div className="nav-label">{group}</div>
-          {items.map(([k, label]) => <a key={k} className={`nav ${route.page === k || (k === "crew" && route.page === "teammate") ? "on" : ""}`} href={`#/${k}`}>{label}{k === "approvals" && n > 0 && <span className="badge">{n}</span>}</a>)}</div>)}
-        <div className="side-foot">Signed in as {(me as any)?.display_name ?? "admin"}<br /><a href="#" onClick={(e) => { e.preventDefault(); post("/v1/console/logout").then(() => setMe("out")); }}>Sign out</a></div>
+        <a className="brand" href="#/crew"><Face slug="peeblo" face={PEEBLO_FACE} size={32} />peeblo</a>
+        <div className="nav-groups">
+          {NAV.map(([group, items]) => <div key={group} className="nav-group"><div className="nav-label">{group}</div>
+            {items.filter(([k]) => k !== "setup" || setup.available).map(([k, label]) => <a key={k} className={`nav ${page === k || (k === "crew" && page === "teammate") ? "on" : ""}`} href={`#/${k}`}>{label}{k === "approvals" && n > 0 && <span className="badge">{n}</span>}{k === "setup" && unfinished && <span className="badge soft">to do</span>}</a>)}</div>)}
+        </div>
+        <div className="side-foot">Signed in as {setup.person ?? "admin"}<br /><a href="#" onClick={(e) => { e.preventDefault(); post("/v1/console/logout").then(() => setup.reload()); }}>Sign out</a></div>
       </nav>
       <main className="main">
-        {route.page === "crew" && <Crew />}
-        {route.page === "teammate" && route.arg && <TeammatePage slug={route.arg} />}
-        {route.page === "approvals" && <Approvals onChange={pending.reload} />}
-        {route.page === "sessions" && <Sessions id={route.arg} />}
-        {route.page === "people" && <People />}
-        {route.page === "schedules" && <Schedules />}
-        {route.page === "computers" && <Computers />}
-        {route.page === "otari" && <Otari />}
-        {route.page === "feedback" && <Feedback />}
-        {route.page === "setup" && <Setup />}
+        {page === "crew" && <Crew />}
+        {page === "teammate" && route.arg && <TeammatePage slug={route.arg} />}
+        {page === "connectors" && <Connectors />}
+        {page === "approvals" && <Approvals onChange={pending.reload} />}
+        {page === "sessions" && <Sessions id={route.arg} />}
+        {page === "people" && <People />}
+        {page === "schedules" && <Schedules />}
+        {page === "computers" && <Computers />}
+        {page === "otari" && <Otari />}
+        {page === "feedback" && <Feedback />}
+        {page === "checks" && <Checks />}
       </main>
     </div>
   );
 }
 
-const Face = ({ slug, big }: { slug: string; big?: boolean }) => <img className={`face ${big ? "big" : ""}`} src={`/v1/teammates/${encodeURIComponent(slug)}/face.png`} alt="" />;
 const Status = ({ s }: { s: string }) => <span className={`pill ${s === "done" || s === "approved" || s === "awake" ? "ok" : s === "failed" || s === "denied" ? "bad" : s === "running" || s === "waiting" || s === "pending" ? "warn" : ""}`}>{s}</span>;
-const Page = ({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) => <><h1>{title}</h1>{sub && <p className="sub">{sub}</p>}{children}</>;
+const Page = ({ title, sub, error, children }: { title: string; sub?: string; error?: string | null; children: ReactNode }) => <><h1>{title}</h1>{sub && <p className="sub">{sub}</p>}{error && <div className="err" role="alert">{error}</div>}{children}</>;
 const hidden = (t: Teammate) => Boolean((t as any).hidden);
 
 function Crew() {
-  const { data } = useLoad<{ teammates: Teammate[] }>("/v1/teammates");
+  const { data, error } = useLoad<{ teammates: Teammate[] }>("/v1/teammates");
+  useEffect(() => { if (data) primeFaces(data.teammates); }, [data]);
   const crew = (data?.teammates ?? []).filter((t) => !hidden(t));
   return (
-    <Page title="Your crew" sub="Open a teammate to talk to it, adjust it, or read its memory.">
+    <Page title="Your crew" sub="Open a teammate to talk to it, adjust it, or read its memory." error={error}>
       <p className="muted" style={{ marginBottom: 16 }}>To hire, ask Peeblo in Slack: “I need a teammate who…”. Peeblo proposes the role, tools and budget, and you approve its ID card there.</p>
       <div className="grid">
         {crew.map((t) => (
           <a key={t.id} className="card link" href={`#/teammate/${t.slug}`}>
-            <div className="mate"><Face slug={t.slug} /><h3>{t.config.name}</h3></div>
+            <div className="mate"><Face slug={t.slug} face={t.face} size={56} /><h3>{t.config.name}</h3></div>
             <div className="muted clamp">{t.config.role}</div>
             <div className="row tags"><span className="pill">{t.config.model.default.replace(/^peeblo-/, "").split("/").pop()}</span><span className="pill">${t.config.budget.monthly_usd}/mo</span><span className="pill">{t.config.mode}</span></div>
           </a>
         ))}
       </div>
+      {data && crew.length === 0 && <div className="empty card stack"><Face slug="peeblo" face={PEEBLO_FACE} size={64} /><h3>No teammates yet</h3><p className="muted">DM Peeblo in Slack: “I need a teammate who…”. Your crew shows up here.</p></div>}
     </Page>
   );
 }
@@ -99,7 +89,7 @@ function TeammatePage({ slug }: { slug: string }) {
   const t: Teammate = data.teammate;
   return (
     <>
-      <div className="row" style={{ marginBottom: 8 }}><Face slug={slug} big /><div><h1>{t.config.name}</h1><div className="sub" style={{ margin: 0 }}>{t.config.role}</div></div></div>
+      <div className="row" style={{ marginBottom: 8 }}><Face slug={slug} face={t.face} size={96} /><div><h1>{t.config.name}</h1><div className="sub" style={{ margin: 0 }}>{t.config.role}</div></div></div>
       <div className="row">
         <span className="pill">{t.config.model.default}</span><span className="pill">{data.spend ? `${money(data.spend.spent)} of ${money(data.spend.cap)} this month` : `$${t.config.budget.monthly_usd}/mo`}</span>
         <span className="pill">{t.config.mode} mode</span><span className="pill">{t.config.computer?.size ?? "small"} computer</span><span className="pill">v{t.version}</span>
@@ -257,26 +247,10 @@ function ComputerCard({ c, reload }: { c: any; reload: () => void }) {
 }
 function Computers() { const { data, reload } = useLoad<{ computers: any[] }>("/v1/computers", 10_000); return <Page title="Computers" sub="Each teammate's own Linux computer: its size, whether it's awake, and its setup builds."><div className="stack">{(data?.computers ?? []).filter((c) => !/^(eval-|vm-)/.test(c.teammate)).map((c) => <ComputerCard key={c.teammate} c={c} reload={reload} />)}</div></Page>; }
 
-// Connect Otari: one sign-in to the admin's Otari dashboard. The password is used once and never stored; Peeblo
-// keeps the session (sealed) and sets itself up with it.
-function ConnectOtari({ onDone }: { onDone: () => void }) {
-  const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState<string | null>(null);
-  const go = () => { setBusy(true); setMsg(null); post("/v1/otari/session", { email, password })
-    .then((r: any) => { setPassword(""); setMsg(`Connected. ${r.policies ? "Routing policies are set" : "Routing policies couldn't be set yet"}; ${r.teammate_keys} teammate key${r.teammate_keys === 1 ? "" : "s"} with spend ceilings.`); onDone(); })
-    .catch((e) => setMsg(`Couldn't sign in: ${e.message}`)).finally(() => setBusy(false)); };
-  return <div className="card stack">
-    <h3>Connect Otari</h3>
-    <div className="muted">Sign in once with your Otari dashboard login. Peeblo then sets itself up in Otari: a routing policy per role, a key with a spend ceiling for each teammate, and reads your guardrail, web search and MCP servers. Your password is used for this sign-in only and never stored.</div>
-    <div className="row"><input placeholder="Otari email" value={email} onChange={(e) => setEmail(e.target.value)} /><input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} /><button disabled={busy || !email || !password} onClick={go}>{busy ? "Connecting…" : "Connect"}</button></div>
-    {msg && <div>{msg}</div>}
-  </div>;
-}
-
 // Otari, mirrored: what this Peeblo uses there and how to change it. Configuration lives in Otari's dashboard.
 function Otari() {
-  const { data, reload } = useLoad<any>("/v1/otari");
-  if (!data) return null;
+  const { data, error, reload } = useLoad<any>("/v1/otari");
+  if (!data) return <Page title="Otari" error={error}>{null}</Page>;
   const pill = (v: boolean | null, on = "on", off = "off") => v == null ? <span className="pill">unknown</span> : v ? <span className="pill ok">{on}</span> : <span className="pill">{off}</span>;
   const signOut = () => { if (confirm("Disconnect Peeblo from your Otari dashboard? Teammates keep working; admin changes fall back to links.")) api("DELETE", "/v1/otari/session").then(reload); };
   const missing = data.roles.filter((r: string) => !data.routing_policies.includes(r));
@@ -313,10 +287,10 @@ function Feedback() {
   </Page>;
 }
 
-function Setup() {
-  const { data, reload } = useLoad<{ checks: any[] }>("/v1/setup");
+function Checks() {
+  const { data, error, reload } = useLoad<{ checks: any[] }>("/v1/setup");
   const otari = useLoad<any>("/v1/otari");
-  return <Page title="Setup" sub="Everything Peeblo needs, checked live (the same as ./peeblo check). Anything to fix says how.">
+  return <Page title="Checks" sub="Everything Peeblo needs, checked live (the same as ./peeblo check). Anything to fix says how." error={error}>
     {otari.data && !otari.data.session && <div style={{ marginBottom: 12 }}><ConnectOtari onDone={() => { otari.reload(); reload(); }} /></div>}
     <div className="row" style={{ marginBottom: 22 }}><button className="ghost" onClick={reload}>Check again</button></div>
     {!data && <div className="muted">Checking…</div>}

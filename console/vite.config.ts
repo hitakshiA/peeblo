@@ -6,5 +6,5 @@ export default defineConfig({
   base: "/console/",
   plugins: [react()],
   build: { outDir: "dist", emptyOutDir: true },
-  server: { proxy: { "/v1": "http://127.0.0.1:7340" } },
+  server: { proxy: { "/v1": "http://127.0.0.1:7340", "/healthz": "http://127.0.0.1:7340" } },
 });

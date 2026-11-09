@@ -64,7 +64,7 @@ export async function setupState(): Promise<any> {
     const all = await runChecks();
     const pick = (name: string, id: string, label: string, fix_url?: string, fix_text?: string) => {
       const r = all.find((x) => x.name === name);
-      return r ? { id, label, ok: r.ok, detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) } : null;
+      return r ? { id, label, ok: r.ok, required: id !== "access", detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) } : null;
     };
     return [
       pick("Otari service key (bills each person)", "tier", "A default budget for each person", links.budgets(), "Budgets → make a tier, then Keys → your key → default end-user budget"),
@@ -84,6 +84,7 @@ export async function setupState(): Promise<any> {
     ["slack", Boolean(app?.bot_user_id)],
   ];
   return {
+    signed_in: true,
     password_set: Boolean(config.consolePassword),
     mode: config.otariKey ? "running" : "setup",
     otari: {
