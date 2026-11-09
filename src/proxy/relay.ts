@@ -18,7 +18,7 @@ import { teammateAt } from "../store/teammates.ts";
 import { overBuildCap } from "../otari/price-cap.ts";
 
 export type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
-export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; modelCalls?: { runId: string | null; n: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
+export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; modelCalls?: { runId: string | null; n: number }; runCost?: { runId: string | null; usd: number; cap: number; warned?: boolean }; finalStatus?: { runId: string | null; calls: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
 const tokens = new Map<string, Binding>();
 
 export function issueToken(b: Omit<Binding, "runId" | "endUser" | "turn" | "personId">): string {
@@ -29,6 +29,18 @@ export function issueToken(b: Omit<Binding, "runId" | "endUser" | "turn" | "pers
 export function bindRun(token: string, runId: string, endUser: string | null, turn: number, personId: string | null): void {
   const b = tokens.get(token);
   if (b) Object.assign(b, { runId, endUser, turn, personId });
+}
+// After a job stops on a limit: one short turn to write where it is (only slack_post, at most 3 model calls).
+export function allowFinalStatus(token: string, runId: string): void {
+  const b = tokens.get(token);
+  if (b) b.finalStatus = { runId, calls: 0 };
+}
+// How much room a job has left (for the heads-up in tool results).
+export function jobRoom(b: Binding): { calls: number; usd: number } {
+  const maxCalls = b.teammateSlug === "peeblo" ? MAX_MODEL_CALLS_CHAT : MAX_MODEL_CALLS_WORK;
+  const used = b.modelCalls?.runId === b.runId ? b.modelCalls.n : 0;
+  const cost = b.runCost?.runId === b.runId ? b.runCost : null;
+  return { calls: maxCalls - used, usd: cost ? cost.cap - cost.usd : Infinity };
 }
 export function revokeToken(token: string): void {
   tokens.delete(token);
@@ -204,7 +216,15 @@ export function startProxy(): Promise<Server> {
         `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
            AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
       const MAX_MODEL_CALLS = b.teammateSlug === "peeblo" ? MAX_MODEL_CALLS_CHAT : MAX_MODEL_CALLS_WORK;
-      const why = b.stuck?.runId === b.runId ? b.stuck.reason : b.modelCalls.n > MAX_MODEL_CALLS ? `more than ${MAX_MODEL_CALLS} model calls` : silent >= 3 ? "3 turns in a row with no visible output" : null;
+      // The job's spend: 3% of the teammate's monthly budget per run (at least $0.05), the real guard for long work.
+      if (b.runCost?.runId !== b.runId) {
+        const tm = await teammateAt(b.teammateId, b.teammateVersion);
+        b.runCost = { runId: b.runId, usd: 0, cap: Math.max(0.05, Number(tm?.config.budget.monthly_usd ?? 5) * 0.03) };
+      }
+      const finalTurn = b.finalStatus?.runId === b.runId && b.finalStatus.calls < 3;
+      if (finalTurn) b.finalStatus!.calls++;
+      const why = finalTurn ? null : b.stuck?.runId === b.runId ? b.stuck.reason : b.modelCalls.n > MAX_MODEL_CALLS ? `more than ${MAX_MODEL_CALLS} model calls`
+        : b.runCost.usd >= b.runCost.cap ? `this job's spend reached $${b.runCost.cap.toFixed(2)}` : silent >= 3 ? "3 turns in a row with no visible output" : null;
       if (why) {
         if (b.stuck?.runId !== b.runId) { b.stuck = { runId: b.runId, reason: why }; await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: why } }).catch(() => {}); }
         return void res.writeHead(429, { "content-type": "application/json", "otari-error-code": "loop_limit", "peeblo-refused": "loop_limit" }).end(JSON.stringify({ detail: `Peeblo stopped this run: ${why}.`, code: "loop_limit" }));
@@ -327,6 +347,7 @@ export function startProxy(): Promise<Server> {
       await record(b, path, a, usage, { firstChunkMs, peebloFallback: Boolean((a as any).peebloFallback) });
       if (usage?.cost_usd !== undefined) {
         noteSpend(b.teammateId, b.endUser, Number(usage.cost_usd) || 0);
+        if (b.runCost?.runId === b.runId) b.runCost.usd += Number(usage.cost_usd) || 0;
         void import("../otari/night-cap.ts").then((m) => m.noteNightSpend(Number(usage.cost_usd) || 0));
       }
     }

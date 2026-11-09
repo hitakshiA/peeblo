@@ -6,6 +6,7 @@
 // checked, writes one at a time per session and approved by a person when the tool or the mode says so,
 // untrusted results labelled with their source and screened, and a tool.call event.
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { jobRoom } from "./relay.ts";
 import { peebloTools } from "../agent-tools/index.ts";
 import { computerTools } from "../agent-tools/computer.ts";
 import { validate, type Schema } from "../agent-tools/schema.ts";
@@ -178,7 +179,12 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   }
   // A heads-up near the limit, so the agent answers with what it has instead of being cut off.
   const left = TURN_CALLS - used;
-  const limitNote = left === 3 && name !== "slack_post" ? `\n[peeblo: 3 tool calls left this turn. Answer with what you have; say plainly what you couldn't check.]` : "";
+  const room = jobRoom(b);
+  const limitNote = (left === 3 || room.calls === 10 || (room.usd !== Infinity && room.usd > 0 && room.usd < 0.2 * (b.runCost?.cap ?? 1) && !b.runCost?.warned)) && name !== "slack_post"
+    ? `\n[peeblo: this job is near its limit. Finish the step you're on, then post where you are: what's done, what still fails and why, what's next.]` : "";
+  if (limitNote && b.runCost) b.runCost.warned = true;
+  // The final status turn after a stop: only the status post.
+  if (b.finalStatus?.runId === b.runId && name !== "slack_post") return json(res, 200, { text: "This job has stopped. Post your status with slack_post now; nothing else.", isError: true });
   const cached = repeats >= 2 ? readCache.get(repeatKey) : undefined;
   if (cached !== undefined) {
     await event({ status: "completed", reused: true });

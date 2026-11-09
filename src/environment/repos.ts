@@ -227,6 +227,13 @@ export async function publish(tm: Teammate, sessionId: string, repo: string, pr?
   const w = (await worktreesOf(sessionId)).find((x) => x.repo === repo);
   if (!r || !w) throw new Error(`open ${repo} with repo_open first`);
   await sync(tm, r, sessionId);
+  // Scratch work never ships: probe and debug scripts the branch adds are refused by name.
+  const added = await vm(tm, sessionId, `cd ${sh(w.path)} && git diff --name-only --diff-filter=A refs/remotes/origin/${w.base}...HEAD`);
+  const scratch = String(added.stdout ?? "").split("\n").filter((f) => /(^|\/)(probe|dbg|debug|scratch|tmp|temp)[^/]*\.(m?[jt]s|cjs|py|sh|txt|log)$/i.test(f.trim()));
+  if (scratch.length) {
+    await appendEvent({ sessionId, runId: null, type: "repo.publish_refused", data: { repo, reason: "scratch files", files: scratch } });
+    throw new Error(`refused: these look like scratch files and don't belong in the PR: ${scratch.join(", ")}. Remove them in a new commit (git rm), then publish.`);
+  }
   const out = join(workspaceOf(tm.slug), ".peeblo", "out");
   await mkdir(out, { recursive: true });
   const file = `${sessionId}-${repo}.bundle`;

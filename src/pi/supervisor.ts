@@ -399,6 +399,20 @@ export function installPiExecutor(): void {
     // A turn is one step: if core dies mid-turn, the step runs again on the same Pi session after restart.
     let r = await DBOS.runStep(() => turn(ctx, 1), { name: "turn" });
     await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 1, text: r.text, stop_reason: r.stopReason } }), { name: "turn-finish" });
+    // A job stopped on a limit gets one short turn to say where it is, in its own words.
+    if (r.stopReason === "stuck") {
+      const l = live.get(ctx.session.id);
+      if (l) {
+        const { allowFinalStatus } = await import("../proxy/relay.ts");
+        allowFinalStatus(l.token, ctx.run.id);
+        const asker = ctx.run.submission_id ? (await pool.query("SELECT p.display_name FROM submissions s LEFT JOIN people p ON p.id = s.person_id WHERE s.id = $1", [ctx.run.submission_id])).rows[0]?.display_name : null;
+        const note = `<peeblo_event kind="stopped">This job has stopped here. Post your status for ${String(asker ?? "them").split(" ")[0]} with slack_post, in two or three short lines: what's done, what still fails and why, and what you'd do next. Your work is saved; say they can tell you to continue. No other tools.</peeblo_event>`;
+        await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 2, final_status: true } }), { name: "turn-start-status" });
+        const s2 = await DBOS.runStep(() => turn(ctx, 2, note), { name: "turn-status" });
+        await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 2, text: s2.text, stop_reason: s2.stopReason } }), { name: "turn-finish-status" });
+      }
+      return { summary: r.text.slice(0, 500) };
+    }
     // At most one continuation, if the Stop check or the outcome grader says the job isn't done.
     const check = await DBOS.runStep(() => stopCheck(ctx, r).catch(() => ({ again: null })), { name: "stop-check" });
     if (check.again) {
