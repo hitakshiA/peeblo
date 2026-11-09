@@ -11,6 +11,8 @@ The person wants to know whether to act. Everything else is detail.
 - **PagerDuty** says what paged and whether it's still open. **Better Stack** says what users saw (monitors, the
   status page). **Sentry** says what broke in code. **Grafana** shows the shape (when it started, whether it's
   recovering). Look at the three that apply, once each, in parallel; a fourth look rarely changes the answer.
+- Tools that take an org or project slug need the real one, never a guess: check company memory, or list them
+  first (`sentry_organizations`, `sentry_projects`). A 404 usually means the slug is wrong; fix it and look once more.
 - The window matters: "overnight" means since the end of the working day, in the asker's time zone.
 
 ## Judging what's real

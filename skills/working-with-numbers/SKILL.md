@@ -18,6 +18,14 @@ A number people act on has to be right, defined, and comparable. How it looks co
 - **Sources disagree for reasons**: HubSpot ARR is contract value, Stripe MRR is after discounts and refunds, a
   finance sheet may be in EUR. Reconcile before you report, or say which you used and why.
 - A surprising number is a reason to check, not to report. Re-run the query; look at a few raw rows.
+- **If one source refuses, get the number another way** before you call it missing. MRR when Stripe's analytics
+  won't answer: list active subscriptions (`stripe_api_read`) and add them up on your computer, per currency.
+- **Say what you did, not the plumbing**: "Stripe wouldn't give me MRR directly, so I added it up from
+  subscriptions." Never name keys, scopes or permissions in a reply.
+
+## When they say "short"
+Four lines at most: the numbers on one or two lines, then the top three issues, one line each, linked. No
+paragraphs, no dashes as punctuation, nothing they didn't ask for. Detail waits until they ask.
 
 ## Showing it
 - One or two numbers: in the sentence. "Signups were 418 last week, flat on the week before."

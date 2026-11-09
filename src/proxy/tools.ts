@@ -97,7 +97,7 @@ const readCache = new Map<string, string>();
 // At most this many tool calls in one turn; after that only slack_post runs (NIGHT_PLAN_NOV9 §1).
 // Peeblo's chat turns stay short; a teammate working a job on its computer gets room for real work (its spend cap
 // is the real limit). Both get a heads-up when 3 calls are left.
-const TURN_CALLS_CHAT = 12, TURN_CALLS_WORK = 80;
+const TURN_CALLS_CHAT = 16, TURN_CALLS_WORK = 80; // chat: room for a second route when a source refuses
 const turnCalls = new Map<string, number>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
