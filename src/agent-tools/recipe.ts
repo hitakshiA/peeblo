@@ -9,6 +9,7 @@ import { normalizeRecipe, type Recipe } from "../environment/recipe-schema.ts";
 import { buildStatus, queueBuild, waitForBuild } from "../environment/recipes.ts";
 import { diskOf, isAwake, sleep } from "../environment/controller.ts";
 import type { Tier } from "../environment/image.ts";
+import { appendEvent } from "../store/events.ts";
 import { updateTeammate } from "../store/teammates.ts";
 import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";
@@ -33,7 +34,7 @@ const list = (a: string[]) => (a.length ? a.join(", ") : "none");
 export const recipeTools: AgentTool[] = [
   {
     name: "recipe_propose",
-    description: "Propose a permanent change to your computer's setup (packages, setup steps, config files, services). Installs you make with apk/npm/pip in a session are lost at the next computer reset; a recipe makes them permanent. The change is trial-built first; if it builds, your owner approves it once.",
+    description: "Make a change to your computer's setup permanent (packages, setup steps, config files, services). Installs you make with apk/apt/npm/pip in a session are lost at the next computer reset; a recipe keeps them. The change is trial-built first. Packages from the standard registries are saved without asking (your owner is told); new sites, setup commands, files, secrets or services wait for your owner's yes.",
     input_schema: object({
       patch: { type: "object", description: "Added to the current recipe: {packages: {apk, npm, pip}, run: [{name, run}], files: [{path, content, mode}], env, secrets, network: {hosts}, verify, start: [{name, run, ready}], remove: [package]}. Pin versions (jq=1.8.1-r0, pnpm@9.15.4, uv==0.9.2).", additionalProperties: true },
       reason: { type: "string", description: "Why the change is needed, for your owner." },
@@ -54,9 +55,18 @@ export const recipeTools: AgentTool[] = [
       const newHosts = recipe.network.hosts.filter((h) => !cur.network.hosts.includes(h));
       const action = {
         kind: "recipe_change", teammate: ctx.teammate.slug, approvers: [ctx.teammate.owner_person], reason: a.reason, build_id: q.id,
-        diff: { packages: { apk: list(recipe.packages.apk.filter((x) => !cur.packages.apk.includes(x))), npm: list(recipe.packages.npm.filter((x) => !cur.packages.npm.includes(x))), pip: list(recipe.packages.pip.filter((x) => !cur.packages.pip.includes(x))) }, run_steps: recipe.run.length - cur.run.length, files: recipe.files.map((f) => f.path), start: recipe.start.map((s) => s.name) },
+        diff: { packages: { apk: list(recipe.packages.apk.filter((x) => !cur.packages.apk.includes(x))), apt: list((recipe.packages.apt ?? []).filter((x) => !(cur.packages.apt ?? []).includes(x))), npm: list(recipe.packages.npm.filter((x) => !cur.packages.npm.includes(x))), pip: list(recipe.packages.pip.filter((x) => !cur.packages.pip.includes(x))) }, run_steps: recipe.run.length - cur.run.length, files: recipe.files.map((f) => f.path), start: recipe.start.map((s) => s.name) },
         verify: b.verify ?? [], disk_mb: Math.round(Number(b.bytes ?? 0) / 1e6), new_build_hosts: newHosts, asked_by: ctx.person?.id ?? null,
       };
+      // Only packages from the standard registries (and removals): no card; the owner hears about it. New sites, setup
+      // commands, files, environment, secrets or services still ask the owner first.
+      const same = (k: "run" | "files" | "start" | "env" | "secrets") => JSON.stringify((recipe as any)[k] ?? null) === JSON.stringify((cur as any)[k] ?? null);
+      if (!newHosts.length && same("run") && same("files") && same("start") && same("env") && same("secrets")) {
+        await updateTeammate(ctx.teammate.slug, { computer: { ...ctx.teammate.config.computer, recipe } } as any, { label: "recipe_propose (packages only)" }, a.reason);
+        const added = ["apk", "apt", "npm", "pip"].map((k) => (action.diff.packages as any)[k]).filter((x: string) => x !== "none").join(", ") || "a package change";
+        await appendEvent({ type: "notify.owner", data: { teammate_id: ctx.teammate.id, kind: "recipe_packages", key: `${ctx.teammate.id}:${q.id}`, text: `${ctx.teammate.config.name} added ${added} to its computer for good (${a.reason}). Standard packages don't need your yes; say "remove ${added.split(",")[0]}" to it if you'd rather not.` } });
+        return { text: `Saved: the new setup is built (${action.disk_mb} MB) and becomes active the next time your computer starts with no other conversation open; your owner was told. Until then, keep using what you installed in this session.`, data: { build_id: q.id } };
+      }
       const ok = await askApproval(ctx.runId, ctx.sessionId, action, config.approvalTtlSeconds);
       if (ok.status !== "approved") return { text: ok.status === "expired" ? "Your owner didn't answer in time; the setup is unchanged. The trial build stays ready if they approve later." : "Your owner said no; the setup is unchanged. Don't propose it again in this conversation.", isError: true };
       await updateTeammate(ctx.teammate.slug, { computer: { ...ctx.teammate.config.computer, recipe } } as any, { label: `recipe_propose (approved ${ok.approvalId})` }, a.reason);

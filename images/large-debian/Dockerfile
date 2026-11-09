@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Pinned binaries Debian doesn't package (or packages too old): Node 24, bun, uv, typst, ruff, ast-grep,
 # difftastic, duckdb, yq (mikefarah), agent-browser, and two Python wheels.
 COPY fetch.sh /tmp/fetch.sh
-RUN sh /tmp/fetch.sh "$TARGETARCH" && rm /tmp/fetch.sh
+RUN sh /tmp/fetch.sh "${TARGETARCH:-$(dpkg --print-architecture)}" && rm /tmp/fetch.sh
 
 # npm globals at exact versions. Playwright MCP drives the system Chromium (no browser download).
 RUN npm install -g --no-audit --no-fund pnpm@12.18.0 @playwright/mcp@0.0.84 && npm cache clean --force \

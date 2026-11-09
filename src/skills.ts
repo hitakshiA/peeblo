@@ -3,7 +3,7 @@
 // Pi lists skills only when a tool named read or bash exists, and Peeblo's teammates have neither (their files are
 // in a VM; the manager has no computer). So Peeblo writes the same <available_skills> list into the system prompt,
 // and read_skill opens a skill's files, never anything outside skills/.
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { config } from "./config.ts";
 import { join, normalize, sep } from "node:path";
 import type { Teammate } from "./store/teammates.ts";
@@ -23,6 +23,35 @@ export function saveSkill(tm: Teammate, name: string, description: string, body:
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${description.replace(/\n/g, " ").slice(0, 300)}\n---\n\n${body.trim()}\n`);
   return dir;
+}
+
+// More files inside a learned skill's folder (a checklist, a template, a script it points to). Paths stay inside it.
+export function saveSkillFiles(tm: Teammate, name: string, files: { path: string; content: string }[]): string[] {
+  const dir = join(learnedDir(tm.slug), name);
+  const saved: string[] = [];
+  for (const f of files.slice(0, 20)) {
+    const target = normalize(join(dir, f.path));
+    if (!target.startsWith(dir + sep) || /(^|\/)\.\.?(\/|$)/.test(f.path)) continue;
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, String(f.content).slice(0, 200_000));
+    saved.push(f.path);
+  }
+  return saved;
+}
+// A skill installed whole (its own SKILL.md with frontmatter, plus its files). A built-in skill's name can't be taken.
+export function installSkill(tm: Teammate, name: string, files: { path: string; content: string }[]): string {
+  if (!SKILL_NAME.test(name)) throw new Error("A skill name is 3–41 lowercase letters, digits or dashes.");
+  if (existsSync(join(DIR, name))) throw new Error(`${name} is one of Peeblo's own skills; it can't be replaced.`);
+  if (!files.some((f) => f.path === "SKILL.md")) throw new Error("A skill needs a SKILL.md.");
+  mkdirSync(join(learnedDir(tm.slug), name), { recursive: true });
+  saveSkillFiles(tm, name, files);
+  return join(learnedDir(tm.slug), name);
+}
+export function removeSkill(tm: Teammate, name: string): boolean {
+  const dir = join(learnedDir(tm.slug), name);
+  if (!SKILL_NAME.test(name) || !existsSync(join(dir, "SKILL.md"))) return false;
+  rmSync(dir, { recursive: true, force: true });
+  return true;
 }
 
 export function skillsFor(tm: Teammate): string[] {

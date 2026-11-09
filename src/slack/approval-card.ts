@@ -71,7 +71,7 @@ function what(a: any): string | null {
   if (a.kind === "peeblo_tool") return a.reason ? `Why: ${String(a.reason)}`.slice(0, 120) : null;
   if (a.kind === "recipe_change") {
     const p = a.diff?.packages ?? {};
-    const added = ["apk", "npm", "pip"].map((k) => p[k]).filter((x) => x && x !== "none").join(", ");
+    const added = ["apk", "apt", "npm", "pip"].map((k) => p[k]).filter((x) => x && x !== "none").join(", ");
     return `${added ? `Adds ${added}` : "Changes its setup"}${a.disk_mb ? ` · ${a.disk_mb} MB` : ""}${a.new_build_hosts?.length ? ` · new sites: ${a.new_build_hosts.join(", ")}` : ""}`;
   }
   if (a.kind === "teammate_change") return String(a.summary ?? "").split("\n")[0] || "Changes a teammate's setup";
