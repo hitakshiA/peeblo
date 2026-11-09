@@ -1,4 +1,4 @@
-// Schedules, webhook triggers and watches (K11): the teammate writes the prompt each run follows, including how to
+// Schedules, webhook triggers and watches: the teammate writes the prompt each run follows, including how to
 // decide whether anything is worth reporting. Code holds the rails (src/triggers.ts).
 import { config } from "../config.ts";
 import { pool } from "../db.ts";

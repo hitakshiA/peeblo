@@ -1,4 +1,4 @@
-// Memory is versioned files per place (J3, K12). Each teammate has a git repo in core (data/teammates/<slug>/memory)
+// Memory is versioned files per place (J3). Each teammate has a git repo in core (data/teammates/<slug>/memory)
 // with one folder per bank; core is the only writer (one commit per write). Code decides scope:
 // - what a conversation can read: its own place's bank, the teammate's workspace bank ("ws") and the company bank;
 //   a DM's bank is readable only in that DM, a private channel's only there;

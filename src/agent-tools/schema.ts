@@ -1,4 +1,4 @@
-// Strict JSON schemas for Peeblo's own tools, and the harness-side check of every call's arguments (K7d).
+// Strict JSON schemas for Peeblo's own tools, and the harness-side check of every call's arguments.
 // Schemas stay flat and strict (every property required, optional ones nullable, no extra keys), the shape
 // open models handle best and providers can enforce.
 export type Schema = {

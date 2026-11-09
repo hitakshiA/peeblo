@@ -126,7 +126,7 @@ export function guardrailRefusal(status: number, body: string): { profile: strin
 }
 
 // Untrusted content (web pages, connector results, files, other bots) is screened by the same guard and
-// labelled with its source (K13). A flag is a warning appended for the model, not a block.
+// labelled with its source. A flag is a warning appended for the model, not a block.
 export type Screened = { checked_by: string | null; flagged: boolean; score: number | null; categories: string[]; requestId: string | null };
 export async function screen(content: string, endUser: string | null): Promise<Screened> {
   const text = content.slice(0, 20_000);

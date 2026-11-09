@@ -1,4 +1,4 @@
-// Repos and session worktrees (COMPUTER_SPEC §5).
+// Repos and session worktrees.
 // - Each repo the teammate works in has a bare repo on /workspace (/workspace/repos/<repo>.git: commits are
 //   durable at once) and, per session, a checkout on the VM's own disk (/work/<session>/<repo>, much faster).
 // - The VM never holds a write credential. The host keeps a mirror per repo (data/teammates/<slug>/mirror) that the
@@ -184,7 +184,7 @@ export async function snapshotWip(teammateId: string, sessionId: string): Promis
   return n;
 }
 
-// What the agent is told each turn (K10): its own repos, and the other live sessions' branches and touched paths.
+// What the agent is told each turn: its own repos, and the other live sessions' branches and touched paths.
 export async function repoFacts(tm: Teammate, sessionId: string): Promise<string> {
   const mine = await worktreesOf(sessionId);
   const others = (await pool.query(

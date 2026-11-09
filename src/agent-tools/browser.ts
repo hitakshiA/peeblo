@@ -1,10 +1,10 @@
-// The browser on large computers (K7): two tools over one driver interface. browser_read looks (and `open`
+// The browser on large computers: two tools over one driver interface. browser_read looks (and `open`
 // navigates); browser_act changes the page and goes through the gate (the mode decides ask or allow; the tool
 // list never changes). The default driver is agent-browser, a CLI that keeps a headless Chromium behind a daemon
 // in the VM and returns accessibility snapshots with @e refs. A different driver (e.g. Playwright MCP) plugs in
 // behind the same interface (PEEBLO_BROWSER_DRIVER).
 //
-// Page results are untrusted (wrapped and screened by the gate, K13). Screenshots go to files in the session
+// Page results are untrusted (wrapped and screened by the gate). Screenshots go to files in the session
 // folder and reach a model only through `look`, which asks the vision model one question. Cookies live in core:
 // a new browser session gets the teammate's saved cookies, and they are saved back before the computer sleeps.
 // When a site blocks the browser or shows a CAPTCHA, the result is a typed blocked_by_site.
@@ -151,7 +151,7 @@ async function perform(ctx: ToolContext, op: string, a: Record<string, any>, wri
   const r = await run(ctx, argv, op === "open" || op === "wait" ? 90_000 : 60_000);
   if (!r.ok) return { text: `${op} failed: ${(r.error ?? r.text ?? r.stderr).toString().slice(0, 600)}`, isError: true };
   if (op === "screenshot") return { text: `Saved ${a.path}. Use look to ask a question about it.`, data: { screenshot: a.path } };
-  // After an action, re-read the page: URL, title and a compact snapshot diff (K7i).
+  // After an action, re-read the page: URL, title and a compact snapshot diff.
   let text = r.text;
   let url = r.url, title = r.title;
   if (write) {

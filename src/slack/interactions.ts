@@ -1,7 +1,7 @@
 // Clicks and views in Slack:
 // - approval buttons: the person who clicked is checked on the server (an approval may name its approvers); the
 //   card then shows who decided;
-// - 👍/👎 on a reply are recorded; 👎 also mutes the thread for unprompted posts (K2);
+// - 👍/👎 on a reply are recorded; 👎 also mutes the thread for unprompted posts;
 // - App Home: each teammate's profile page (its card, model, budget, mode, tools and recent jobs).
 import { pool } from "../db.ts";
 import { answerApproval } from "../durable/approvals.ts";
@@ -200,7 +200,7 @@ export function installSlackInteractions(): void {
       }
       if (a.action_id === "ask_again") return;
     }
-    // Recovering from a failed run (SLACK_UX_SPEC §3.6): retry, or ask the owner.
+    // Recovering from a failed run: retry, or ask the owner.
     if (["retry_run", "ask_owner"].includes(a.action_id)) {
       const r = (await pool.query("SELECT r.session_id, sub.text, sub.person_id, s.teammate_id, s.place FROM runs r JOIN submissions sub ON sub.id = r.submission_id JOIN sessions s ON s.id = r.session_id WHERE r.id = $1", [a.value])).rows[0];
       const tm = r ? await getTeammate(r.teammate_id) : null;

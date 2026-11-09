@@ -1,4 +1,4 @@
-// The fixed list of Peeblo's own tools for a session (K7a): which ones a teammate has is decided when its
+// The fixed list of Peeblo's own tools for a session: which ones a teammate has is decided when its
 // session starts, from its pinned config; modes change what the gate allows, never which tools exist.
 import type { Teammate } from "../store/teammates.ts";
 import { otariTools } from "./otari.ts";

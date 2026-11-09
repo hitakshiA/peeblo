@@ -1,4 +1,4 @@
-// Memory tools (K12). The teammate decides what is worth remembering; code decides where it may read and write
+// Memory tools. The teammate decides what is worth remembering; code decides where it may read and write
 // (its conversation's place), versions every write, and marks writes from runs that read outside content as
 // unverified. memory_grep first; memory_search (Otari embeddings + rerank over the notes) when grep isn't enough.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";

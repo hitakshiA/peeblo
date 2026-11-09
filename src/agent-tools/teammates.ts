@@ -1,5 +1,5 @@
-// Asking another teammate (K18): what you need and in what shape, never how. The asker and payer come from this
-// conversation (K6); depth, call count and spend caps are code (src/chains.ts). Teammates ask each other for
+// Asking another teammate: what you need and in what shape, never how. The asker and payer come from this
+// conversation; depth, call count and spend caps are code (src/chains.ts). Teammates ask each other for
 // intelligence; writes stay with the teammate whose job they are.
 import { answerOf, callTeammate } from "../chains.ts";
 import { findTeammate } from "./manager.ts";

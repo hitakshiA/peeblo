@@ -1,4 +1,4 @@
-// The approval card (SLACK_UX_SPEC §5.2, K15), drawn by code, never by the model, shaped like the landing page:
+// The approval card, drawn by code, never by the model, shaped like the landing page:
 // the service's icon, "Okay to write to Linear?", one quiet line ("Writes 1 comment · GRO-323 · ≈ $0.0002"), and
 // Approve / Not now. "Not now" opens a small form: a reason (optional), or approve with edits, or for the whole job.
 import { approverNames } from "../approvers.ts";

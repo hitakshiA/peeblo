@@ -1,12 +1,12 @@
 // The Slack view of a run: a function of its events (the event log stays the source of truth). It follows the
-// landing page (SLACK_UX_SPEC §5), all in one message:
+// landing page, all in one message:
 //   steps in words ("Read Linear → 3 issues", with numbered source chips) under "Working on it · step 2 of 3";
 //   a write's approval card inline under its step, collapsing in place to "✓ Approved by Maya · 4:31 PM";
 //   the answer; the receipt chip; a Receipt button (opens the receipt modal); 👍 👎. Nothing after that.
 // The message starts as a Slack stream on the first tool call (a plain reply is one message, no stream). Slack
 // can't put buttons inside a live stream, so at the first approval the stream stops with the card attached and the
 // message is redrawn with chat.update from then on (the stopped stream is a plan block, which chat.update accepts).
-// Approval cards come from the harness, never from the model's prose (K15). The server checks who clicked.
+// Approval cards come from the harness, never from the model's prose. The server checks who clicked.
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt } from "../receipts.ts";
@@ -264,7 +264,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
   views.delete(runId);
 }
 
-// The teammate's monthly budget is used up (SLACK_UX_SPEC §3.6): a card with a way to ask its owner for more.
+// The teammate's monthly budget is used up: a card with a way to ask its owner for more.
 async function budgetCard(v: View, d: any): Promise<void> {
   await flushHeld(v);
   const tm = await getTeammate(v.slug);

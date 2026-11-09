@@ -1,4 +1,4 @@
-// The gate for outward actions (DESIGN "Reviewer for Auto mode", K8, K21, K22). Reads and in-computer work never
+// The gate for outward actions. Reads and in-computer work never
 // get here. For an outward write, in order:
 // 1. its risk class, from the tool and its arguments (meta-tools like Stripe's stripe_api_write and PostHog's exec
 //    are read by their operation);
@@ -8,7 +8,7 @@
 // 4. in Auto, the reviewer: a typed judge in its own context, from another model family than the worker. Stage 1
 //    answers allow or block; stage 2 runs only on block and says allow, revise (the reason goes back to the agent)
 //    or ask (a card). It sees the person's own messages, the action, earlier outward actions by name and the names
-//    of untrusted sources read in this job (taint, K22), never tool results or the agent's text. No valid answer
+//    of untrusted sources read in this job (taint), never tool results or the agent's text. No valid answer
 //    means a card. Three reviewer blocks in one job drop the rest of it to Ask.
 import { pool } from "./db.ts";
 import { decide } from "./otari/decisions.ts";

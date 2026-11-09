@@ -25,8 +25,8 @@ import { getSession } from "../store/sessions.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
 import { companyDir } from "../memory/store.ts";
 
-// A session keeps its config, but a lower mode applies at once (K5): the gate uses the stricter of the
-// session's mode and the teammate's current one. The tool list never changes within a session (K7a).
+// A session keeps its config, but a lower mode applies at once: the gate uses the stricter of the
+// session's mode and the teammate's current one. The tool list never changes within a session.
 const STRICTNESS = ["ask", "auto", "trusted", "yolo"] as const;
 export async function effectiveMode(pinned: Teammate): Promise<Teammate["config"]["mode"]> {
   const now = await getTeammate(pinned.id);
@@ -39,7 +39,7 @@ import type { Binding } from "./relay.ts";
 const json = (res: ServerResponse, status: number, body: unknown) => void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 
 // An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule).
-// What a task card shows under a finished tool (SLACK_UX_SPEC §3.3): a short result, from the tool's own output.
+// What a task card shows under a finished tool: a short result, from the tool's own output.
 export function summarize(text: string): string {
   const t = text.trim();
   try {
@@ -88,7 +88,7 @@ function mcpText(data: any): { text: string; isError: boolean } {
   return { text: text.slice(0, 50_000), isError: r?.isError === true || data?.is_error === true };
 }
 
-// Writes in a session run one at a time (K7h), whatever the model sends in parallel.
+// Writes in a session run one at a time, whatever the model sends in parallel.
 const writeLocks = new Map<string, Promise<unknown>>();
 async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T> {
   const prev = writeLocks.get(sessionId) ?? Promise.resolve();
@@ -134,7 +134,7 @@ const hintFor = (server: string, tool: string) => [serverNote(server) && `About 
 
 type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
 
-// K7b: a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
+// a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
 // Connector tools all start deferred (the small start set); find_tools loads what a job needs.
 const DIRECT_CONNECTOR_TOOLS = 0;
@@ -193,7 +193,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
 
   const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), args_preview: JSON.stringify(args ?? {}).slice(0, 300), asked_by: person?.id ?? null, end_user: b.endUser };
   const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
-  // Loop limits (K14), the same on every model: the 3rd identical call in a run gets a factual note, the 6th
+  // Loop limits, the same on every model: the 3rd identical call in a run gets a factual note, the 6th
   // stops the run.
   // Free-text fields some servers ask for (Resend's "context", "conversation_id", "llm_model") change every call,
   // so they don't count when deciding whether a call is a repeat.
@@ -382,7 +382,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       {
         await event({ status: "waiting_approval" });
         const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, grant_fp: perAction ? null : toolFp, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}), ...(mapped ? { approvers: mapped.who, rule: `Why I'm asking: ${mapped.why}` } : {}) };
-        // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no (K11).
+        // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no.
         const ttl = await approvalTtl(b.runId);
         // Who may answer: src/approvers.ts (the owner when unattended, else the person who asked).
         const a = await askApproval(b.runId, b.sessionId, action, ttl);

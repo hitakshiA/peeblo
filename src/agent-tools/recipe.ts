@@ -1,4 +1,4 @@
-// The teammate's own view of its computer setup (K4, K5): it can read its builds and propose a recipe change,
+// The teammate's own view of its computer setup: it can read its builds and propose a recipe change,
 // never apply one. A proposal is validated in code and trial-built in a build VM (the live computer is untouched);
 // only a built proposal reaches the owner, as one approval. Approving writes the new config version, and the
 // already-built disk is adopted at the next boundary (no second build).

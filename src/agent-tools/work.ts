@@ -1,8 +1,8 @@
 // plan: the teammate's own plan for the work in hand, kept as an event (the harness shows it).
 // subagent: a fresh session of the same teammate for side work, one level deep and read-only: it can look
 // things up but not change anything, and it can't open subagents of its own. A subagent is a model
-// boundary (K3): it may run on another open-weight model, and one whose cost estimate is over the price
-// card threshold waits for a person first (K16).
+// boundary: it may run on another open-weight model, and one whose cost estimate is over the price
+// card threshold waits for a person first.
 import { config } from "../config.ts";
 import { startRun } from "../durable/runs.ts";
 import { checkModel } from "../model-change.ts";

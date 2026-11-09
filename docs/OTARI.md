@@ -8,54 +8,60 @@ Slack ─▶ core ─▶ run (DBOS) ─▶ Pi (on the host, no keys)
                                   │  per-session token
                                   ▼
                         Peeblo proxy (loopback) ──▶ hosted Otari ──▶ model providers
-                          · swaps the token for the key           · web search / fetch
-                          · names the person (end user)           · code sandbox
-                          · tags teammate / session / run         · org guardrail
+                          · swaps the token for a key             · role routing policies
+                          · names the person (end user)           · web search / fetch, code sandbox
+                          · tags teammate / session / run         · guardrails, budgets, usage
                           · reads receipt headers → events        · MCP servers (connectors)
                                   │
-                  Pi extension ───┘ connector tools → policy → approval → /mcp/execute
+                  Pi extension ───┘ connector tools → policy → approval → /mcp/execute (the teammate's own key)
 ```
+
+## One wallet, many agents, many people
+
+Peeblo is a crew of agents shared by a whole team, so it leans on the parts of Otari built for that:
+
+- **A key per teammate.** At hire, each teammate gets its own Otari service key with a spend ceiling at its monthly
+  budget. Raising the budget in Slack moves the ceiling at once.
+- **An end user per person.** Each Slack person is an Otari end user (`slack-<team>-<user>`) on a budget tier, on
+  every key that serves them. When Otari refuses for budget, the person gets a sentence with Otari's own numbers,
+  and the owner gets a button to raise it.
+- **Connector access per teammate.** Each teammate's connector calls run on its own key. Otari holds a grant for
+  each server it was given, minus the ones it's read-only on, so Otari itself refuses a write it isn't allowed.
+- **Spend from Otari.** "Who spent what this month" is one read of Otari's org usage summary (by teammate tag, model
+  and end user), with a daily series for a chart.
 
 ## The parts
 
 | Part | What it does | Where |
 |---|---|---|
-| Client and catalog | One client for hosted Otari: region, retries for safe calls, request ids on errors. The model catalog with prices and context windows, and Peeblo's hand-kept list of open-weight families. Cost estimates before a run. | `src/otari/client.ts`, `src/otari/catalog.ts` |
-| Model proxy | Pi talks to a loopback proxy with a per-session token. The proxy swaps in the real key and adds the end user, `Otari-Conversation-Id` (the session), `Otari-Tags` (teammate, session, run) and an idempotency key per attempt. It reads `Otari-Request-ID`, `-Provider`, `-Model`, `-Attempt-Count`, `-Fallback`, `-Guardrails` and the inline `cost_usd` into events. | `src/proxy/relay.ts` |
-| Receipts | A receipt is a fold over a run's events: models, providers, cost, fallbacks, web and code calls, connector calls, approvals, which guard checked it, and links into the dashboard. A call cut off by a crash is reconciled against Otari's usage record. | `src/receipts.ts` |
-| People and budgets | Each Slack person is an Otari end user (`slack-<team>-<user>`) on a budget tier. When Otari refuses a call for budget, the person gets a sentence with Otari's own numbers. | `src/otari/people.ts` |
-| Spend per teammate | With a dashboard session, each teammate gets its own service key with a spend ceiling at its monthly budget. Without one, every call is tagged and Peeblo checks spend by tag before a turn. | `src/otari/spend.ts` |
-| Routing | Every agent runs on a routing policy for its role (`peeblo-manager`, `-worker`, `-reviewer`, `-grader`, `-judge`), all open-weight and picked for cost per task, with Otari's fallback to another family inside each. The reviewer and judge run on a different family from the worker, so a second model really checks. For an unusually hard job an agent can ask Otari's router (`/routing/recommend`) which model fits, and the rest of that job runs on its pick (`pick_model`); the strong model is used rarely, by the agent's choice, and only budgets limit it. | `src/otari/routing.ts`, `config/model-tiers.json`, `src/agent-tools/effort.ts` |
-| Web | Web search (`otari_web_search`) and page reads (Otari fetch) are tools an agent chooses, never attached to every call, limited to each teammate's allowed and blocked sites. Their text is untrusted and screened. | `src/agent-tools/web.ts` |
-| Code | `run_code` runs a short snippet with Otari's `/code/execute` directly (no model call), in one sandbox per session that keeps its state. Agents prefer their own computer and use this only when exact numbers matter. | `src/agent-tools/web.ts` |
-| Connectors | MCP servers stored in Otari. Peeblo lists a teammate's tools, judges each call's risk from its arguments, asks a person when the teammate's mode says so, then runs exactly that call with `/mcp/execute` and the `server_revision` it listed. Vendors without an MCP server Otari can reach (HubSpot, Google Sheets, Grafana, PagerDuty, Sentry) aren't included in this release. | `src/connectors/`, `src/proxy/tools.ts`, `src/pi/peeblo-tools.ts` |
-| Guardrail | `PEEBLO_GUARD` (default `lakera`). Text from outside the company (customer tickets and chats, web pages, other people's files) is checked on demand by Otari's Lakera guardrail; internal tools aren't, so the guard costs nothing on everyday work. Turning on the org-wide mandate in Otari screens every call instead. An open guard model through Otari chat is the fallback. The receipt names which one checked. | `src/guard.ts`, `src/proxy/tools.ts` |
-| Rule engine | Commands and file access on a teammate's computer are checked with `/hooks/check` against `policies/teammate.yaml`: a required gate refuses, an advisory gate asks a person. | `src/otari/rules.ts`, `policies/` |
-| Admin | Keys, budgets, spend ceilings, routing policies, the guardrail switch, MCP servers and web search can only be changed by a signed-in Otari admin. An admin can sign Peeblo in once; Peeblo keeps only the session cookie, sealed. Without a session, Peeblo links to the right dashboard page. | `src/otari/admin.ts`, `src/otari/links.ts` |
-| Search | Embeddings and rerank for memory search (keyword and vector candidates, fused, then reranked). When rerank is unavailable, the fused order stands. | `src/otari/search.ts`, `src/agent-tools/memory.ts` |
-| Vision | A large teammate's `look` asks one question about a screenshot through the `peeblo-vision` routing policy (Nemotron 3.5 Super VL, Qwen3-VL as fallback) and returns text. | `src/agent-tools/browser.ts` |
-| Reviewer gate | In Auto mode, an outward write that isn't money, deletion, shipping or a post outside the thread goes to a typed judge (the judge policy, another model family than the worker), which sees only the person's own words, the action and the names of untrusted sources. | `src/reviewer.ts` |
-| Decisions | Typed yes/no, choice and score questions. Uses `/decisions` when the deployment has a decision provider, and otherwise the judge policy with a strict JSON schema; it switches by itself when a provider appears. | `src/otari/decisions.ts` |
+| Client and catalog | One client for hosted Otari: region, retries for safe calls, request ids on errors. The catalog with prices, context windows and input types. Price cards count tokens with `/messages/count_tokens`. | `src/otari/client.ts`, `src/otari/catalog.ts` |
+| Model proxy | Pi talks to a loopback proxy with a per-session token. The proxy swaps in the teammate's key and adds the end user, `Otari-Conversation-Id`, `Otari-Tags` (teammate, session, run), `session_label` and an idempotency key per attempt. It reads `Otari-Request-ID`, `-Provider`, `-Model`, `-Attempt-Count`, `-Fallback`, `-Guardrails` and the inline `cost_usd` into events. | `src/proxy/relay.ts` |
+| Routing | Every agent runs on a routing policy for its role (manager, worker, reviewer, grader, judge, vision, heavy), all open-weight, with Otari's fallback to another family. Worker and manager step down to a cheaper model when 80% of the key's budget is used (`when: budget_used_pct`). Peeblo creates the policies when an admin connects, and later only the ones whose config changed, so a change an admin makes by talking stays. | `src/otari/routing.ts`, `config/model-tiers.json` |
+| Hard parts | For one hard part of a job, an agent can ask Otari's router (`/routing/recommend`) which model fits. If it picks a stronger model, that part runs as a helper on it and the answer comes back; the job itself never switches model. | `src/agent-tools/effort.ts` |
+| Receipts | A fold over a job's events and its helpers': models, providers, cost, Otari's fallbacks, web and code calls, connector calls, approvals, which guard checked it, links into the dashboard. A call cut off by a crash is reconciled against Otari's usage record. | `src/receipts.ts` |
+| Web | `web_search` uses Otari's direct `/search` when the org has a search tool set up, and otherwise Otari's built-in web search in one small call. `web_fetch` reads one page with `/fetch`. Both are tools the agent picks, limited to each teammate's sites, and their text is screened. | `src/agent-tools/web.ts` |
+| Code | `run_code` runs Python with `/code/execute` (no model call), one sandbox per conversation. It can take small files from the teammate's computer (Otari Files, `file_ids`) and returns the files it writes. The model picks it for exact figures in a conversation; files, repos and long work stay on the teammate's own computer. | `src/agent-tools/web.ts`, `skills/working-with-numbers` |
+| Files | `understand_file` reads what a text-only teammate can't: a voice note, a PDF or an image, with the best open model Otari's catalog lists for that input type (`input_modalities`), falling back to the next. The teammate's computer converts audio to wav first. | `src/agent-tools/media.ts` |
+| Guardrail | Text from outside the company (tickets, chats, web pages, shared files, text a person pastes and the agent checks with `check_text`) is screened by the org's Lakera guardrail through Otari's guardrail test route. Everyday internal work isn't screened, so it costs nothing. An open guard model through Otari is the fallback. The receipt names which one checked. | `src/guard.ts`, `src/proxy/tools.ts`, `src/agent-tools/media.ts` |
+| Privacy | When the workspace requires zero data retention (an Otari setting), every role is pinned to a provider the catalog marks zero-retention. `./peeblo check` says whether that's possible before you turn it on. With `PEEBLO_TRACE_CONTENT=keep`, Otari keeps prompts and answers on traces. | `src/otari/routing.ts`, `src/check.ts` |
 | Traces | Every call carries `session_label` (teammate · place · first ask), so Otari's Sessions view reads like the Slack thread. Receipts link to each request and to that session. | `src/proxy/relay.ts`, `src/otari/traces.ts` |
+| Rule engine | Commands and file access on a teammate's computer are checked with `/hooks/check` against `policies/teammate.yaml`: a required gate refuses, an advisory gate asks a person. | `src/otari/rules.ts`, `policies/` |
+| Admin | Keys, budgets, ceilings, routing policies, MCP grants, the guardrail and web search change only with a signed-in Otari admin. An admin connects once from the console; Peeblo keeps only the session cookie, sealed. Without a session, Peeblo links to the right dashboard page and teammates keep their keys. | `src/otari/admin.ts`, `src/otari/links.ts` |
+| Search | Embeddings and rerank for memory search (keyword and vector candidates, fused, then reranked). | `src/otari/search.ts` |
+| Reviewer gate | In Auto mode, an outward write that isn't money, deletion, shipping or a post outside the thread goes to a typed judge on another model family, which sees only the person's own words, the action and the names of untrusted sources. | `src/reviewer.ts`, `src/otari/decisions.ts` |
 
-## What the agent picks up and what the harness enforces
+## What the agent picks and what code enforces
 
 Teammates are agents: they choose what to do. Code holds only what must always or never happen.
 
 | The agent chooses (tools) | Code enforces |
 |---|---|
-| `models_list`, `routing_recommend`: which model fits work that's about to start, by tier, cost per task and speed (`config/model-tiers.json`) | The open-weight allowlist, who may change a teammate's model, and that it changes at a session boundary (or now, with a note) |
-| `price_estimate`, `budget_status` | The proxy refuses a call whose estimate goes over the teammate's budget or the person's tier, before it reaches Otari |
-| `otari_read_setting`, `otari_prepare_change` | — |
-| `otari_set_web_search`, `otari_set_guardrail`, `otari_set_routing_policy` | Admins only, always a person's yes for that one change, then read back from Otari |
-| `web_search` (Otari's, in the call), `web_fetch` (Otari's `/fetch`), code execution | Each teammate's sites; page text and connector results are labelled `<untrusted source=…>` and screened by the guard, which adds a warning when it flags something |
-| Connector tools (Otari MCP servers) | Risk per call from its arguments, repo scopes, approval by mode (a lower mode applies at once), writes one at a time, the `server_revision` the tools were listed with |
+| `models_list`, `pick_model`, `price_estimate`, `budget_status`, `usage_report` | The open-weight list, who may change a model, and the budget: a call whose estimate goes over the teammate's or the person's budget is refused before it reaches Otari. No other limit stops a job, except a stuck loop. |
+| `web_search`, `web_fetch`, `run_code`, `understand_file`, `check_text` | Each teammate's sites; outside text is labelled `<untrusted source=…>` and screened |
+| Connector tools (Otari MCP servers) | Risk per call from its arguments, scopes, approval by mode, the teammate's own key and grants, the `server_revision` the tools were listed with |
+| `otari_read_setting`, `otari_prepare_change`, `otari_set_web_search`, `otari_set_guardrail`, `otari_set_routing_policy` | Admins only, a person's yes for that one change, then read back from Otari |
 
-Not agent tools: the guardrail itself, receipts, budgets and caps, the rule engine, and **typed judges** (`decisions.ts`). Judges are classifiers that code calls at fixed points (the reviewer gate, the Stop check, routine pre-filters, the input guard); they answer `{value, reason}` or unknown, are validated and retried once, and fall back to the caller's safe default.
-
-A session's tool list is fixed when it starts. Modes change what the gate allows, never which tools exist.
-
-`./peeblo check` shows each part as on, off or missing, with a live call where it matters.
+`./peeblo check` shows each part as ok or missing, with a live call where it matters.
 
 ## Settings
 
@@ -63,32 +69,42 @@ A session's tool list is fixed when it starts. Modes change what the gate allows
 |---|---|---|
 | `OTARI_SERVICE_KEY` | — | Peeblo's key. A service key, so each person can be named and capped. |
 | `OTARI_REGION` / `OTARI_BASE_URL` | US | `eu` for Otari's EU region. |
+| `OTARI_END_USER_BUDGET_ID` | the key's default tier | The tier new people start on. |
 | `PEEBLO_GUARD` | `lakera` | `lakera`, `open` or `off`. |
 | `PEEBLO_GUARD_MODEL` | `alibaba/qwen3guard-gen-8b` | The open guard model. |
-| `PEEBLO_LAKERA_PROJECT` | — | The Lakera project whose policy the org guardrail uses. Peeblo writes it into Otari's guardrail definition. |
+| `PEEBLO_LAKERA_PROJECT` | — | The Lakera project whose policy the guardrail uses. |
+| `PEEBLO_OTARI_CODE` / `PEEBLO_WEB_FETCH` / `PEEBLO_VISION` | `on` | Otari's code sandbox, page reads and vision, offered to agents that may use them. |
+| `PEEBLO_TRACE_CONTENT` | `off` | `keep` asks Otari to keep prompts and answers on traces. |
+| `PEEBLO_READONLY_SERVERS` | — | MCP servers that only read, whatever their tool names say. |
 | `PEEBLO_TEAMMATE_SPEND` | `auto` | `key` (a key per teammate), `tag`, or `auto` (key when an admin session exists). |
-| `PEEBLO_POLICY_FILE` | `policies/teammate.yaml` | The rule engine's policy. |
-| `PEEBLO_ADMINS` | — | Slack user ids who may change Otari settings. |
-| `PEEBLO_DECISION_MODEL` | `typesafe:jev-latest` | Used when Otari has a decision provider. |
-| `PEEBLO_EMBED_MODEL` / `PEEBLO_RERANK_MODEL` | Qwen3 embedding 0.6B / Qwen3 reranker 8B | For memory search. |
+| `PEEBLO_ADMINS` | — | Slack user ids who may change Otari settings and approve money by default. |
+
+## Choices we made, and why
+
+- **Lakera screens outside text, not every call.** With Otari's org-wide mandate on, ordinary agent requests were
+  refused as attacks: an agent's prompt and tool definitions are full of imperative text. Screening what came from
+  outside catches the real attacks (a customer email that says "refund everyone" was flagged with score 1) and
+  leaves the team's own work alone.
+- **Our own open-weight list.** `/catalog/models` has an `open_weights` flag, but it's wrong for about a quarter of
+  the models (reported to the Otari team), so Peeblo keeps a reviewed family list.
+- **Routing at the boundary.** A hard part runs as a helper on the routed model, instead of switching a running
+  conversation to another model mid-way.
+- **No per-job call caps.** Budgets are the limit, enforced by Otari's key ceilings and checked before each call.
 
 ## Known limits
 
-- **No management key.** Admin work needs a person's dashboard session (about 7 days). Peeblo re-asks when it ends and falls back to links.
-- **End users belong to a key.** With a key per teammate, a person is a separate end user on each key, so Peeblo adds up their spend across its keys before a turn.
-- **No per-request fallback list.** Cross-model fallback lives in routing policies; Peeblo adds its own retry for a teammate's chosen fallback model.
-- **A new routing policy takes about 10 seconds to settle.** Right after it's created, calls to it alternate between answers and "unknown model". Peeblo waits until it answers several times in a row before using it.
-- **Policy targets and recommend candidates need pinned names** (`provider:model`). Peeblo learns them from a one-token call.
-- **Gateway tools aren't in the agent's history.** Pi keeps only the answer, so the next turn gets a short note of the web and code calls that ran.
-- **The org guardrail checks the whole input.** A refused message is forked out of the history. Lakera's default policy also refuses ordinary requests (output instructions, multi-step asks), and Otari has no score threshold for it; point the guardrail at a Lakera project with a less sensitive policy (`PEEBLO_LAKERA_PROJECT`), or use the open guard.
-- **Streamed responses carry no guardrail verdict.** Receipts use the mandate state Peeblo last read.
-- **Command rules match per command segment**, so a rule can't say "piped into a shell". The teammate's VM is the sandbox; the rules catch mistakes.
-- **No hosted decision provider** today, so decisions use the judge model.
+- **No management key.** Admin work needs a person's dashboard session (about 7 days). Teammates keep their keys
+  when it ends; `./peeblo check` says when to reconnect.
+- **End users belong to a key.** A person is an end user on each key that serves them; Otari's org usage adds them
+  up by their id.
+- **A new routing policy takes about 10 seconds to settle.** Peeblo waits until it answers several times in a row.
+- **Policy targets need pinned names** (`provider:model`), learned from a one-token call (or from the catalog's
+  zero-retention offerings when that's required). Targets are checked when a policy is saved.
+- **Audio input takes wav or mp3 only**, and of the two models listing audio, one answers with empty text today.
+- **The code sandbox has pandas, numpy, matplotlib and openpyxl, but no PDF library**; PDFs go to a model instead.
+- **Direct `/search` needs a search tool** set up in Otari; without one, the built-in web search is used.
+- **Gateway tools aren't in the agent's history.** The next turn gets a short note of the web and code calls that ran.
+- **Streamed responses carry no guardrail verdict.** Receipts use the state Peeblo last read.
 - **Connector calls aren't billed per person.** `/mcp/execute` has no end-user field.
-- **Trace ids aren't in responses.** Finding one needs the dashboard session; without it, receipts link to a search.
-- **The served-model header names the provider's model id**, not the catalog id (`deepseek-ai/DeepSeek-V4.1-Flash-1017` for `deepseek/deepseek-v4.1-flash-1017`). Receipts show it as Otari sends it.
-- **With a routing policy as the model, the body's `model` is the policy name.** Peeblo reads the served model from `Otari-Model`.
-- **`/decisions` refuses an end-user id in `user`.** Peeblo doesn't send one there.
-- **A code-sandbox outage refuses the whole chat call.** Peeblo retries that call once without the code tool, so the turn goes on.
-- **Rerank can be unavailable for hours.** Memory search falls back to keyword and embedding order.
-- **Some vision models always reason**, and no setting turns it off; `look` gives them room (1,500 tokens).
+- **Trace ids aren't in responses.** Receipts link to the session and to each request.
+- **The served-model header names the provider's model id**, not the catalog id; receipts show readable names.

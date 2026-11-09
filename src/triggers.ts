@@ -1,4 +1,4 @@
-// Schedules and triggers (K11). The agent writes them through tools; code fires them and holds the rails:
+// Schedules and triggers. The agent writes them through tools; code fires them and holds the rails:
 // - cron runs at most hourly; a watch polls at most hourly; webhooks are exempt (they're events);
 // - at most PEEBLO_TRIGGER_RUNS_PER_HOUR triggered runs per teammate per hour;
 // - each run has its own budget (proxy/relay.ts) and posts only where it was allowed to (the origin, or a public

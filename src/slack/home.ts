@@ -1,4 +1,4 @@
-// A teammate's App Home (SLACK_UX_SPEC §3.2): the control surface, drawn per viewer by code. Header and status, the
+// A teammate's App Home: the control surface, drawn per viewer by code. Header and status, the
 // jobs running now (with Open thread and Stop), cards waiting on the viewer, recent jobs with cost and receipt, the
 // budget meter, schedules (Pause), memory to verify, and owner-only Settings / Pause teammate. Viewers from the
 // last 10 minutes get it re-published when a run, approval or budget event fires (at most every 3 s each).

@@ -1,7 +1,7 @@
-// The words and small pieces of a reply, matched to the landing page (SLACK_UX_SPEC §5): steps as a past-tense verb
+// The words and small pieces of a reply, matched to the landing page: steps as a past-tense verb
 // plus the service ("Read Linear", "Searched GitHub", "Updated Google Sheets"), a short result in words ("3 issues"),
 // a one-line summary when done ("Read Linear, searched GitHub"), and the receipt chip (model logo, readable model
-// name, provider, calls, cost). Code draws all of it; the model never writes a receipt (K15).
+// name, provider, calls, cost). Code draws all of it; the model never writes a receipt.
 import { config } from "../config.ts";
 import type { Receipt } from "../receipts.ts";
 

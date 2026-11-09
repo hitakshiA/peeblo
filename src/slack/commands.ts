@@ -1,4 +1,4 @@
-// Commands, shortcuts and the settings modal (SLACK_UX_SPEC §3.7). Code draws the surfaces; work still goes through
+// Commands, shortcuts and the settings modal. Code draws the surfaces; work still goes through
 // teammates' runs and the same authority checks as anywhere else.
 // - /peeblo (Peeblo's own app only): crew (a carousel of the crew), hire (a form that starts a hire with Peeblo),
 //   budget, settings @teammate.

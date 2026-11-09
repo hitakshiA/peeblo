@@ -1,4 +1,4 @@
-// Repos (K7e): plain git does the local work in the session's checkout; these two tools exist only where the
+// Repos: plain git does the local work in the session's checkout; these two tools exist only where the
 // harness must act or check. repo_open makes (or restores) the session's checkout on its own branch; repo_publish
 // pushes that branch from the host-owned mirror and can open a draft PR. Branch names, refusals and the push
 // itself are code (environment/repos.ts).

@@ -1,4 +1,4 @@
-// Teammates calling teammates (K18). A call is a submission to the callee in the same Slack thread, through its own app
+// Teammates calling teammates. A call is a submission to the callee in the same Slack thread, through its own app
 // (so every person there sees the hand-off and each teammate's own receipt), billed to the person who started the chain. Code owns the
 // guards: at most 3 deep, at most 6 calls per chain, and a spend cap per chain; "stop" in the thread stops the chain.
 // A busy callee gets a new session for the call, so a call never waits behind another conversation.
@@ -85,7 +85,7 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
       place = { app_id: own, team: here.team, channel: dm.channel.id, channel_type: "im", thread_ts: top.ts, trigger_ts: top.ts, user: who!.slack_user!, direct: true };
     }
   }
-  // The hand-off is visible (SLACK_UX_SPEC §3.5): the caller's line in its thread, with a real mention of the callee.
+  // The hand-off is visible: the caller's line in its thread, with a real mention of the callee.
   if (here && place) {
     const { slack } = await import("./slack/api.ts");
     const bot = (await pool.query("SELECT bot_user_id FROM slack_apps WHERE app_id = $1", [place.app_id])).rows[0]?.bot_user_id;

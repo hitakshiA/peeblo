@@ -1,6 +1,6 @@
-// Peeblo's own tools as the crew's manager (K2–K6, K17, K18). The asker, payer, thread and owner come from the
-// session (K6); authority is checked in code. Hiring is the hiring-a-teammate skill plus these tools: the agent
-// talks and drafts, and the ID card is the one approval, on the finished result (K4).
+// Peeblo's own tools as the crew's manager (K2–K6). The asker, payer, thread and owner come from the
+// session; authority is checked in code. Hiring is the hiring-a-teammate skill plus these tools: the agent
+// talks and drafts, and the ID card is the one approval, on the finished result.
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { callTeammate } from "../chains.ts";
@@ -68,7 +68,7 @@ export function configFrom(a: any): Partial<TeammateConfig> {
   };
 }
 
-// Asking the person a question (K15): every teammate has it.
+// Asking the person a question: every teammate has it.
 export const askHumanTool: AgentTool = {
     name: "ask_human",
     description: "Ask the person a clarifying question you need answered before you can do the work (at most 2 at once). Their reply arrives as their next message; end your turn after asking.",
@@ -249,7 +249,7 @@ export const managerTools: AgentTool[] = [
       const r: any = await (async () => {
       const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
       // A model change goes through changeModel: allowlist, authority and budget checked, the fallback kept, and a
-      // running session told (K3).
+      // running session told.
       if (a.field === "model") {
         try {
           const r = await changeModel(t.slug, { model: a.value, fallback: t.config.model.fallback ?? null, personId: ctx.person!.id, why: a.reason });

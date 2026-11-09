@@ -171,7 +171,7 @@ export async function personSpend(externalId: string): Promise<{ spent: number; 
   return { spent: r.spent, cap: r.cap, tier: r.label || null };
 }
 
-// The proxy's check before a model call leaves for Otari (K16): the call's estimate must fit the teammate's
+// The proxy's check before a model call leaves for Otari: the call's estimate must fit the teammate's
 // monthly budget and the person's tier, across every key Peeblo holds.
 export type CapRefusal = { scope: "teammate" | "user" | "unchecked"; spent: number; cap: number; estimate: number; message: string };
 export async function capCheck(tm: Teammate, endUser: string | null, model: string, estimate: number): Promise<CapRefusal | null> {

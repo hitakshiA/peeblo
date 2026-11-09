@@ -1,4 +1,4 @@
-// Speaking in Slack is a deliberate tool call (K2); a turn's final text is private. Both tools act only on the
+// Speaking in Slack is a deliberate tool call; a turn's final text is private. Both tools act only on the
 // conversation the session belongs to (its own thread or DM): there is no channel argument to point elsewhere.
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
@@ -82,7 +82,7 @@ export const slackTools: AgentTool[] = [
       }
       if (!place) { await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post", data: { text, outside_slack: true } }); return { text: "Posted.", endTurn }; }
       // Unprompted posts (no one asked this teammate in this conversation) are rate-limited per channel, and a
-      // thread someone marked 👎 gets none (K2).
+      // thread someone marked 👎 gets none.
       if (!place.direct) {
         const s = await getSession(ctx.sessionId);
         if ((s?.place as any)?.muted) return { text: "Someone marked a reply here as not helpful, so you stay quiet in this thread unless asked.", isError: true };

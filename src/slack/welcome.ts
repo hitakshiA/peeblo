@@ -1,4 +1,4 @@
-// First contact (SLACK_UX_SPEC §3.2): the first time a person opens a teammate's Messages tab (and for whoever
+// First contact: the first time a person opens a teammate's Messages tab (and for whoever
 // installed it), code draws the frame (its face card) and starts a short run in which the teammate writes its own
 // welcome with slack_post, from facts code gives it. Then its starter prompts are set on the Messages tab.
 import { pool } from "../db.ts";

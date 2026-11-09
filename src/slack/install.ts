@@ -81,7 +81,7 @@ export async function waitingInstalls(personId: string | null, all: boolean): Pr
   return out.length ? [{ type: "header", text: { type: "plain_text", text: "Waiting for install" } }, ...out] : [];
 }
 
-// The intro card once installed (SLACK_UX_SPEC §5.4): the ID card as the hero, the app's own face, the name, a
+// The intro card once installed: the ID card as the hero, the app's own face, the name, a
 // one-line subtitle (the role, cut at a word, never repeating the body), the agent's bio, and one button: Open home.
 // Settings live in App Home for the owner.
 export async function hireCard(tm: Teammate, appId: string, team: string, image: string | null): Promise<any> {

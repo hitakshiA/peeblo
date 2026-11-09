@@ -58,7 +58,7 @@ export async function approverNames(ids: string[], plain = false): Promise<strin
   return names.length <= 2 ? names.join(" or ") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
 }
 
-// What people actually wrote for this job (the reviewer's only source of intent, K11): the person-written messages
+// What people actually wrote for this job (the reviewer's only source of intent): the person-written messages
 // where the chain started. For a schedule or trigger, that is the creator's request when they set it up; the stored
 // prompt and any payload were written by an agent or a service, so they come back separately and never count.
 const PERSON_SOURCES = ["slack", "api"];

@@ -1,4 +1,4 @@
-// A teammate's Slack profile (SLACK_UX_SPEC §3.1): its app manifest, built from its config. Code draws the frame and
+// A teammate's Slack profile: its app manifest, built from its config. Code draws the frame and
 // checks the limits; the words (bio, agent description, starter prompts) are the agent's, written at hire and
 // approved on the ID card. After any config change the manifest is updated (Slack allows about one update a
 // minute, so updates queue). agent_view is Slack's agent messaging model; moving an app to it is one-way.

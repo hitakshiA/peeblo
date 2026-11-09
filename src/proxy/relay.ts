@@ -120,7 +120,7 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   // uses the smaller of the two (Otari's own caps still count the full allowance).
   const out = Math.min(Number(j.max_tokens ?? j.max_completion_tokens ?? j.max_output_tokens ?? 1000), 8192);
   const est = await estimateCost(model, roughTokens(" ".repeat(Math.min(promptChars, 4_000_000))), out);
-  // No price, no call: money fails closed (K16).
+  // No price, no call: money fails closed.
   if (est === null) return unchecked(`${model} has no price in Otari's catalog`);
   let cap = await capCheck(tm, b.endUser, model, est);
   // A role that steps down near its budget is served by the cheaper model there (Otari's policy decides), so price
@@ -137,7 +137,7 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
 // A call whose cost can't be checked doesn't run.
 const unchecked = (why: string): CapRefusal => ({ scope: "unchecked", spent: 0, cap: 0, estimate: 0, message: `Peeblo couldn't check this call against the budget (${why}), so it didn't run.` });
 
-// A scheduled or triggered run has its own budget (K11); a run a person started has only the teammate's and theirs.
+// A scheduled or triggered run has its own budget; a run a person started has only the teammate's and theirs.
 async function runBudget(runId: string | null, est: number): Promise<CapRefusal | null> {
   if (!runId) return null;
   const { rows } = await pool.query(
@@ -210,7 +210,7 @@ export function startProxy(): Promise<Server> {
 
     // After the guardrail refused this turn's input, Pi's retries would only be refused again (and spend guard
     // checks): answer them here with Otari's own refusal.
-    // Loop rail (K14): a stuck run gets no more model calls.
+    // Loop rail: a stuck run gets no more model calls.
     if (isInference) {
       // A tool that runs inside the agent (find_tools) never reaches core: a request that ends on a tool result means
       // the last turn did something, so it isn't a silent one.
@@ -221,7 +221,7 @@ export function startProxy(): Promise<Server> {
           if (msgs.at(-1)?.role === "tool" && lastCalls.some((c) => c.function?.name === "find_tools")) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.local", data: {} }).catch(() => {});
         } catch { /* not JSON */ }
       }
-      // K14: three model turns in a row with nothing visible in between (no tool ran, nothing posted) stop the run.
+      // three model turns in a row with nothing visible in between (no tool ran, nothing posted) stop the run.
       const silent = b.runId ? Number((await pool.query(
         `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
            AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'tool.local')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
@@ -237,7 +237,7 @@ export function startProxy(): Promise<Server> {
     }
     if (isInference && b.blocked && b.blocked.runId === b.runId && b.blocked.turn === b.turn) return void res.writeHead(b.blocked.status, { "content-type": "application/json" }).end(b.blocked.body);
 
-    // Money is code (K16): a call whose estimate would take the teammate or the person over their budget is
+    // Money is code: a call whose estimate would take the teammate or the person over their budget is
     // refused here, before it reaches Otari, in Otari's own refusal shape.
     if (isInference && raw) {
       // A budget check that fails refuses the call (fail closed).

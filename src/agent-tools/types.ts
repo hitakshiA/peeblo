@@ -22,7 +22,7 @@ export type AgentTool = {
   name: string;
   description: string;
   input_schema: Schema;
-  // read: runs at once. write: always waits for a person (Otari settings, K17), after an authority check.
+  // read: runs at once. write: always waits for a person (Otari settings), after an authority check.
   // local: changes only the teammate's own computer; no card, but one at a time.
   kind: "read" | "write" | "local";
   // Who may call it at all; returns a refusal sentence, or null.
@@ -36,6 +36,6 @@ export type AgentTool = {
   // or null when this call doesn't (a list, a pause). The gate then treats it like a connector write: the mode
   // rule, the reviewer in Auto, a card (src/proxy/tools.ts).
   outward?: (ctx: ToolContext, args: any) => Promise<"write" | "shipping" | "outside_thread" | null> | "write" | "shipping" | "outside_thread" | null;
-  // Loaded on demand with find_tools instead of at session start (K7b: fewer than 20 tools up front).
+  // Loaded on demand with find_tools instead of at session start (fewer than 20 tools up front).
   deferred?: boolean;
 };

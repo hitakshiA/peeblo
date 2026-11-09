@@ -1,4 +1,4 @@
-// Skills (K4): instructions a teammate loads when a task matches, from Peeblo's own skills/ folder (Anthropic's
+// Skills: instructions a teammate loads when a task matches, from Peeblo's own skills/ folder (Anthropic's
 // SKILL.md format: name and description frontmatter, the body read on demand, more files beside it if needed).
 // Pi lists skills only when a tool named read or bash exists, and Peeblo's teammates have neither (their files are
 // in a VM; the manager has no computer). So Peeblo writes the same <available_skills> list into the system prompt,

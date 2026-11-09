@@ -1,6 +1,6 @@
-// The receipt modal (SLACK_UX_SPEC §5.3), opened by the Receipt button under a reply: the facts (model, provider,
+// The receipt modal, opened by the Receipt button under a reply: the facts (model, provider,
 // attempts, any fallback, the guard that checked it, cost, the asker's budget), the steps, and one link, "Open full
-// trace", into Otari. Built from the event log; the model never writes any of it (K15).
+// trace", into Otari. Built from the event log; the model never writes any of it.
 import { pool } from "../db.ts";
 import { buildReceipt } from "../receipts.ts";
 import { money, readableModel, readableProvider, stepOutput, stepTitle } from "./look.ts";

@@ -1,6 +1,6 @@
 // The console's side of the API (console/API.md): a password login (an httpOnly cookie), the read views every screen
 // needs, and the actions that mirror Slack. Actions are made as the console's admin person (the first of
-// PEEBLO_ADMINS): the server fills it in, the browser never sends one (K6).
+// PEEBLO_ADMINS): the server fills it in, the browser never sends one.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";

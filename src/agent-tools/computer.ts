@@ -106,11 +106,11 @@ export const computerTools: AgentTool[] = [
       await sessionFolder(ctx);
       const cwd = (await checkout(ctx)) ?? `${GUEST}/${sessionDir(ctx)}`;
       const r = await vmExec(ctx.teammate.id, ["sh", "-c", a.command], { cwd, timeoutMs: (a.timeout_seconds ?? 120) * 1000, sessionId: ctx.sessionId, env: CACHE_ENV });
-      // A fact (K10): ad-hoc installs land on the working disk, which a reset throws away.
+      // A fact: ad-hoc installs land on the working disk, which a reset throws away.
       const install = /\b(apk add|npm (i|install)\b.*(-g|--global)|pip3? install|uv pip install|uv tool install|apt(-get)? install)\b/.test(a.command);
       const note = install && r.exitCode === 0 ? "\n[peeblo: this install is lost at the next computer reset unless it's in your recipe.]" : "";
       const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${tail(r.stdout)}${r.stderr ? `\n[stderr]\n${tail(r.stderr)}` : ""}${note}`;
-      // Untrusted only when it really came from outside (K13, K22): a repo checkout (other people's code) or the
+      // Untrusted only when it really came from outside: a repo checkout (other people's code) or the
       // network. The teammate's own files and commands in its workspace are its own work.
       const outside = Boolean(await checkout(ctx)) || NETWORK.test(a.command);
       return { text, isError: r.exitCode !== 0, ...(outside ? { untrusted: "computer:bash" } : {}), data: { exit_code: r.exitCode, ms: r.ms } };

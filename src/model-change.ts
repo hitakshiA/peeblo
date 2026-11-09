@@ -1,4 +1,4 @@
-// Changing a teammate's model (K3). The model is chosen at a boundary: at hire, when a session or job starts,
+// Changing a teammate's model. The model is chosen at a boundary: at hire, when a session or job starts,
 // or because a person asked. Code checks the open-weight allowlist, the requester's authority and the budget,
 // writes a new config version (new sessions pick it up), and, if the person wants it now, moves one running
 // session onto it; that session's next turn starts with a note, and its system prompt is never edited.

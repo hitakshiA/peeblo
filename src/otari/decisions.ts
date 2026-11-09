@@ -1,4 +1,4 @@
-// Typed judges (K8): small classifiers that code calls at fixed hook points: the reviewer gate's first stage,
+// Typed judges: small classifiers that code calls at fixed hook points: the reviewer gate's first stage,
 // the Stop check, routine pre-filters over unstructured data, and the input guard. They never drive the
 // conversation and are not agent tools. Each question gets its evidence in a context of its own and comes
 // back as {value, reason}, where value null means "unknown". Answers are validated against the question,

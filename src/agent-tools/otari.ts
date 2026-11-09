@@ -1,4 +1,4 @@
-// The Otari features a teammate chooses to use (K3, K16, K17). Reads run at once; otari_set_* are admin-only,
+// The Otari features a teammate chooses to use. Reads run at once; otari_set_* are admin-only,
 // always wait for a person's yes, and are read back from Otari before the tool reports success.
 import { isOtariAdmin } from "../authority.ts";
 import { config } from "../config.ts";

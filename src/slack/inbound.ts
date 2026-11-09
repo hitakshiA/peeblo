@@ -1,6 +1,6 @@
 // Slack → sessions. A DM to a teammate's app is that teammate's DM session; a mention in a channel starts a thread
 // session (the thread is the conversation); later messages in that thread go to the same session without a
-// mention. Attention plumbing only (K2): edits never trigger, bots are context only, and a person's quick follow-ups
+// mention. Attention plumbing only: edits never trigger, bots are context only, and a person's quick follow-ups
 // are batched into one submission. "stop" in a thread stops the run in progress.
 import { onSlackMessage } from "../ingress/slack.ts";
 import { pool } from "../db.ts";
@@ -33,7 +33,7 @@ export function installSlackInbound(): void {
     const placeKey = dm ? `${ev.channel}:${threadTs}` : `${ev.channel}:${threadTs}`;
     const kind: SessionKind = dm ? "dm" : "thread";
     // In a channel, a message counts only with a mention, or in a thread this teammate is already in. Peeblo reads
-    // along only in a channel someone asked it to keep an eye on (channel_watch); the default is mentions only (R1′).
+    // along only in a channel someone asked it to keep an eye on (channel_watch); the default is mentions only.
     let kindNow: SessionKind = kind;
     let keyNow = placeKey;
     let inThread = false;
