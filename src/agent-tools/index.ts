@@ -25,7 +25,9 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
   // The start set is small (NIGHT_PLAN_NOV9 §1): how to reply, find more tools, read a skill, recall, plan, hand
   // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) loads with find_tools.
   const START = new Set(["slack_post", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
-    "computer_bash", "computer_read", "computer_write", "computer_edit"]);
+    "computer_bash", "computer_read", "computer_write", "computer_edit",
+    // A teammate with repos opens and publishes them with its own tools, never with git on the computer.
+    ...((((tm.config.computer as any)?.repos ?? []).length) ? ["repo_open", "repo_publish"] : [])]);
   const listed = all.map((t) => (START.has(t.name) ? t : { ...t, deferred: true }));
   return opts.subagent ? listed.filter((t) => t.kind === "read") : listed;
 }
