@@ -141,11 +141,18 @@ export function alwaysPhrase(a: any): string | null {
 
 // The Edit form: one input per argument (top level; nested ones as JSON), prefilled.
 export function editModal(a: any, id: string, teammate: string): any {
-  const inputs = Object.entries(a.arguments ?? {}).slice(0, 20).map(([k, v]) => {
+  // One field per value, in words: a nested object (Stripe's "parameters") opens up one level, and routing ids
+  // (which API operation) stay fixed and hidden, since a person never edits those.
+  const field = (key: string, label: string, v: unknown) => {
     const text = typeof v === "string" ? v : JSON.stringify(v);
-    return { type: "input", block_id: `arg:${k}`, label: { type: "plain_text", text: human(k).slice(0, 2000) }, optional: true,
+    return { type: "input", block_id: `arg:${key}`, label: { type: "plain_text", text: label.slice(0, 2000) }, optional: true,
       element: { type: "plain_text_input", action_id: "v", initial_value: text.slice(0, 3000), multiline: text.length > 60 } };
-  });
+  };
+  const cents = a.server === "stripe" || /stripe/.test(String(a.tool ?? ""));
+  const inputs = Object.entries(a.arguments ?? {}).filter(([k]) => !/operation_id$/.test(k)).flatMap(([k, v]) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.entries(v as Record<string, unknown>).map(([k2, v2]) => field(`${k}.${k2}`, `${human(k2)}${cents && k2 === "amount" ? " (in cents: 3700 is 37.00)" : ""}`, v2))
+      : [field(k, human(k), v)]).slice(0, 20);
   return {
     type: "modal", callback_id: "edit_approval", private_metadata: id,
     title: { type: "plain_text", text: "Edit, then approve" }, submit: { type: "plain_text", text: "Approve edited" }, close: { type: "plain_text", text: "Cancel" },
@@ -156,15 +163,22 @@ export function editModal(a: any, id: string, teammate: string): any {
 // Back from the form: the edited arguments, with numbers, booleans and JSON values restored to their types.
 export function editedArgs(original: Record<string, unknown>, values: Record<string, any>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...original };
+  const typed = (before: unknown, raw: string): unknown => {
+    if (typeof before === "number") return Number(raw);
+    if (typeof before === "boolean") return raw === "true";
+    if (before && typeof before === "object") { try { return JSON.parse(raw); } catch { return before; } }
+    return raw;
+  };
   for (const [blockId, v] of Object.entries(values)) {
     const k = blockId.replace(/^arg:/, "");
     const raw = v?.v?.value;
     if (raw == null) continue;
-    const before = original[k];
-    if (typeof before === "number") out[k] = Number(raw);
-    else if (typeof before === "boolean") out[k] = raw === "true";
-    else if (before && typeof before === "object") { try { out[k] = JSON.parse(raw); } catch { out[k] = before; } }
-    else out[k] = raw;
+    const [top, sub] = k.split(".", 2);
+    if (sub !== undefined) {
+      const parent = { ...((out[top] as Record<string, unknown>) ?? {}) };
+      parent[sub] = typed((original[top] as Record<string, unknown> | undefined)?.[sub], raw);
+      out[top] = parent;
+    } else out[k] = typed(original[k], raw);
   }
   return out;
 }
