@@ -23,9 +23,9 @@ A number people act on has to be right, defined, and comparable. How it looks co
   finance sheet may be in EUR. Reconcile before you report, or say which you used and why.
 - A surprising number is a reason to check, not to report. Re-run the query; look at a few raw rows.
 - **If one source refuses, get the number another way** before you call it missing. MRR when Stripe's analytics
-  won't answer: list subscriptions with status active, 8 at a time (bigger pages get cut), following
+  won't answer: list subscriptions with status active, 40 at a time, following
   `starting_after` until `has_more` is false. The call: `stripe_api_read` with `stripe_api_operation_id`
-  "GetSubscriptions" and `parameters` {"status": "active", "limit": 8, "starting_after": "<last id of the page
+  "GetSubscriptions" and `parameters` {"status": "active", "limit": 40, "starting_after": "<last id of the page
   before>"} (leave starting_after out for the first page). Each line shows price (in cents), currency, interval, quantity and
   any percent_off: MRR is price × quantity ÷ 100, divided by 12 for yearly, less the discount, summed per currency
   on your computer. Trials aren't MRR.

@@ -85,7 +85,7 @@ function mcpText(data: any): { text: string; isError: boolean } {
   const r = data?.result ?? data;
   const blocks = Array.isArray(r?.content) ? r.content : null;
   const text = blocks ? blocks.map((b: any) => (b?.type === "text" ? b.text : JSON.stringify(b))).join("\n") : JSON.stringify(r);
-  return { text: text.slice(0, 50_000), isError: r?.isError === true || data?.is_error === true };
+  return { text: text.slice(0, MAX_RESULT), isError: r?.isError === true || data?.is_error === true };
 }
 
 // Writes in a session run one at a time, whatever the model sends in parallel.
@@ -104,6 +104,8 @@ const identical = new Map<string, number>();
 const readCache = new Map<string, string>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
+// The most of one connector result Peeblo keeps (about 1 MB); Otari sends results whole.
+const MAX_RESULT = 1_000_000;
 
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();
@@ -113,7 +115,7 @@ const invalidStreak = new Map<string, number>();
 const TOOL_HINTS: Record<string, string> = {
   "apify:apify--web-search": "For a plain web search, web_search is cheaper and screened; use this only for what it can't do (many results, a specific engine).",
   "apify:apify--web-fetch": "For one public page, web_fetch is cheaper and screened; use this only to scrape many pages or a page web_fetch can't read.",
-  "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 8, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
+  "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 40, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
 };
 // Connection facts per server: ids the model would otherwise guess (vendors answer a wrong id with a misleading
 // auth error), plan limits, and the query shapes that work.
@@ -428,7 +430,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
 const toolCallIdOf = (base: Record<string, unknown>) => String(base.id ?? newId("tc"));
 
 // How many records a JSON result holds: the longest array at the top or one level down.
-// A JSON list cut mid-record (Otari stops MCP results at 50,000 characters): the complete records before the cut,
+// A JSON list cut mid-record (a result over MAX_RESULT): the complete records before the cut,
 // as {"data": [...], "has_more": true}. Null when the text isn't the start of a JSON list.
 export function salvageList(text: string): { data: any[]; has_more: true } | null {
   const at = text.search(/\[\s*\{/);
@@ -492,9 +494,10 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
   }
   if (r.isError && hintFor(t.server, t.tool)) return { ...r, chars, text: `${r.text}\n[peeblo: ${hintFor(t.server, t.tool)}]` };
   if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
-  // Otari cuts MCP results at 50,000 characters: keep the records that arrived whole.
+  // Over MAX_RESULT, Peeblo kept only the start: keep the records that are whole.
+  const over = chars >= MAX_RESULT;
   let salvaged: ReturnType<typeof salvageList> = null;
-  if (chars >= 50_000 && recordCount(r.text) === null) salvaged = salvageList(r.text);
+  if (over && recordCount(r.text) === null) salvaged = salvageList(r.text);
   if (salvaged) r = { ...r, text: JSON.stringify(salvaged) };
   const n = recordCount(r.text);
   const head = compactList(r.text) ?? r.text.slice(0, 3000);
@@ -503,11 +506,12 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
   try {
     const w = write ? await write.run(ctx, { path, content: r.text }) : { text: "no computer", isError: true };
     if (w.isError) throw new Error(w.text);
-    // Otari cuts MCP results at 50,000 characters: say so, or the model works on half a record without knowing.
+    // Say when the result was too big to keep whole, or the model works on half a list without knowing.
+    const max = MAX_RESULT.toLocaleString("en-US");
     let cut = "";
-    if (salvaged) cut = ` Otari cut this result at 50,000 characters: the ${n} complete records that arrived are below and in the file (valid JSON), the rest are missing. Before you total anything, get the rest: ask for the next page (Stripe: limit 8 and starting_after the last id; others: their cursor or page), and add them up together.`;
-    else if (chars >= 50_000 && n === null) { try { JSON.parse(r.text); } catch { cut = " Otari cut this result at 50,000 characters, so the file ends mid-record and some records are missing. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything."; } }
-    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo:${cut} the full result is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
+    if (salvaged) cut = ` This result was over ${max} characters, so Peeblo kept only the start: the ${n} complete records in it are below and in the file (valid JSON), the rest are missing. Before you total anything, get the rest: ask for smaller pages (a lower limit, then its cursor or starting_after the last id), and add them up together.`;
+    else if (over && n === null) { try { JSON.parse(r.text); } catch { cut = ` This result was over ${max} characters, so Peeblo kept only the start and the file ends mid-record. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything.`; } }
+    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo:${cut} ${over ? "what was kept" : "the full result"} is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
   } catch {
     return { ...r, chars, text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]` };
   }
