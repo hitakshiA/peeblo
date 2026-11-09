@@ -19,7 +19,7 @@ function siteRefusal(ctx: ToolContext, url: string): string | null {
 
 export const webFetch: AgentTool = {
   name: "web_fetch",
-  description: "Read one web page (its text). For finding pages, use web_search first.",
+  description: "Read one public web page (its text). Each read costs real money, so read only the one or two pages that answer the question, never to browse: search first, and never for internal docs (use their connectors).",
   input_schema: object({ url: { type: "string", description: "The full https:// address." } }),
   kind: "read",
   authorize: (ctx, a) => siteRefusal(ctx, a.url),
@@ -42,7 +42,7 @@ export const webFetch: AgentTool = {
 // limited to the teammate's sites, answered as a list of results; the text is untrusted like any page.
 export const webSearchTool: AgentTool = {
   name: "web_search",
-  description: "Search the public web. Returns up to 5 results (title, link, one line). Cite what you use.",
+  description: "Search the public web (it costs a paid call): only for facts that live outside the company, like a competitor's page or a vendor's docs, never for company data. Returns up to 5 results (title, link, one line). Cite what you use.",
   input_schema: object({ query: { type: "string" } }),
   kind: "read",
   async run(ctx, a) {
@@ -58,6 +58,29 @@ export const webSearchTool: AgentTool = {
     } catch (e) {
       const o = e as OtariError;
       return { text: `Web search failed: ${o.message.slice(0, 200)}`, isError: true, data: { request_id: o.requestId } };
+    }
+  },
+};
+
+// run_code: a short Python snippet in Otari's code sandbox, chosen by the agent for the cases its own computer is
+// the wrong tool for (quick exact math, a date calculation, parsing a pasted table). It is never attached to every
+// model call: one small call with Otari's code tool, and its output comes back as the result.
+export const runCodeTool: AgentTool = {
+  name: "run_code",
+  description: "Run a short Python snippet in Otari's sandbox (a paid call) and get its printed output. Your own computer runs code for free, so use computer_bash for almost everything; use this only when you have no computer at hand and the numbers matter (money, credits, percentages) and must be exact.",
+  input_schema: object({ code: { type: "string", description: "Python 3 that prints its answer." } }),
+  kind: "read",
+  async run(ctx, a) {
+    try {
+      const r = await otari<any>("POST", "/chat/completions", {
+        model: "peeblo-worker", max_tokens: 800, temperature: 0, tools: [{ type: "otari_code_execution", container: "auto" }], ...(ctx.endUser ? { user: ctx.endUser } : {}),
+        messages: [{ role: "user", content: `Run this Python with the code execution tool, exactly as written, then reply with only what it printed (no commentary):\n\n\`\`\`python\n${String(a.code).slice(0, 8000)}\n\`\`\`` }],
+      });
+      const text = String(r.data?.choices?.[0]?.message?.content ?? "").trim() || "(no output)";
+      return { text: `Output (Otari sandbox):\n${text.slice(0, 4000)}`, data: { request_id: r.requestId } };
+    } catch (e) {
+      const err = e as OtariError;
+      return { text: `The sandbox didn't run it: ${err.message.slice(0, 300)}`, isError: true };
     }
   },
 };

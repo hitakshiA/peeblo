@@ -133,7 +133,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   lap("prompt written");
   const key = await teammateKey(tm);
   lap("key");
-  const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: tm.config.tools.includes("code") && config.otariCode, otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
+  const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: false, /* code runs through the run_code tool when the agent chooses it, never on every call */ otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
   const child = spawn(process.execPath, [PI_CLI, "--mode", "rpc",
     "--no-extensions", "-e", PI_OTARI, "-e", PEEBLO_TOOLS,
     "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",

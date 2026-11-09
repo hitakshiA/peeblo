@@ -16,7 +16,7 @@ const CANDIDATES: Record<string, string> = {
 
 export const pickModelTool: AgentTool = {
   name: "pick_model",
-  description: "When a job is clearly harder (or simpler) than everyday work, ask Otari's router which model fits it, and run the rest of this job on its pick. Everyday work doesn't need this. Typical reasons: sources that disagree and must be reconciled, a long plan with dependent steps, a subtle bug, careful money math, or a second opinion from another model family. Describe the work in a line or two.",
+  description: "Rarely: when a job is clearly harder than everyday work, ask Otari's router which model fits it, and run the rest of this job on its pick. The strong model costs about 20x the everyday one, so almost every job, including most analysis, stays on the everyday model; use this only when getting it wrong would be costly and the everyday model is likely to. Typical reasons: sources that disagree and must be reconciled, a long plan with dependent steps, a subtle bug, careful money math, or a second opinion from another model family. Describe the work in a line or two.",
   input_schema: object({ work: { type: "string", description: "What the rest of this job has to do, and what makes it hard." } }),
   kind: "local",
   async run(ctx, a) {

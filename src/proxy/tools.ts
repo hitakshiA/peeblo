@@ -243,7 +243,9 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     let text = r.text;
     let screened = null;
     if (source && !r.isError) {
-      screened = await screen(text, b.endUser).catch(() => null);
+      // Only text from outside the company is screened (customer tickets and chats, web pages and scrapers, other
+      // people's files, other bots): internal tools stay labelled as untrusted but cost no guard call.
+      screened = OUTSIDE.test(source) ? await screen(text, b.endUser).catch(() => null) : null;
       text = wrapUntrusted(text, source, screened);
     }
     if (!r.isError && (extra.kind ?? base.kind) === "read") {
@@ -550,3 +552,6 @@ export async function warmGithubVisible(): Promise<void> {
 function firewallHint(t: { server: string; tool: string }): string {
   return `A gateway filter in front of ${t.server} blocked this request's shape before it reached the service (not a permission problem, and nothing ran). Rewrite it more simply and try once more: for SQL, no comments (-- or /* */), no sub-selects inside the select list, no UNION, split into two plain queries if needed; for an email or page body, send plain text (the text field) with no HTML tags or <!DOCTYPE>. If it's blocked again, say the gateway refused it and stop.${hintFor(t.server, t.tool) ? ` ${hintFor(t.server, t.tool)}` : ""}`;
 }
+
+// Sources whose text comes from outside the company, so a guard model checks it for injected instructions.
+const OUTSIDE = /^(web:|computer:bash|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot)\.)/;
