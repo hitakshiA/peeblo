@@ -116,7 +116,8 @@ export function receiptChip(r: Receipt | null): any {
   const models = r.models.map(readableModel);
   const first = models[0] ?? { name: "a model", logo: null };
   const rest = [...(r.providers.length ? [`via ${readableProvider(r.providers[0])}`] : []), `${r.calls} call${r.calls === 1 ? "" : "s"}`,
-    ...(r.fallbacks && models[1] ? [`fell back to ${models[1].name}`] : []), money(r.cost_usd)];
+    // Otari's fallback, said whenever it happened (the served model may be the only one on the receipt).
+    ...(r.fallbacks ? [models[1] ? `fell back to ${models[1].name}` : `Otari's fallback answered ${r.fallbacks === 1 ? "once" : `${r.fallbacks} times`}`] : []), money(r.cost_usd)];
   // One text element after the logo, as receipt.tsx draws it: "*DeepSeek V4.1 Flash*  via DeepInfra · 6 calls · $0.0017".
   return { type: "context", elements: [...(first.logo ? [{ type: "image", image_url: first.logo, alt_text: first.name }] : []), { type: "mrkdwn", text: `*${first.name}*  ${rest.join(" · ")}` }] };
 }
