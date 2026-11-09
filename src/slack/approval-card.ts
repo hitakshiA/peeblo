@@ -55,6 +55,7 @@ export function preview(a: any): string {
 
 // "Writes 1 comment", "Moves money", "Removes 1 issue": the action in a few words, from the tool's name.
 function what(a: any): string | null {
+  if (a.kind === "teammate_change") return String(a.summary ?? "").split("\n")[0] || "Changes a teammate's setup";
   if (a.risk === "money") return "Moves money";
   if (a.risk === "outside_thread") return "Posts outside this thread";
   if (a.risk === "shipping") return "Ships a change";
@@ -69,7 +70,7 @@ function what(a: any): string | null {
     const VERBS: Record<string, string> = { get: "Reads", list: "Lists", search: "Searches", run: "Runs", invoke: "Runs", submit: "Submits", generate: "Generates", execute: "Runs", send: "Sends", trigger: "Triggers", manage: "Changes" };
     const v = VERBS[words[0]];
     const rest = (v ? words.slice(1) : words).join(" ");
-    return v ? `${v} ${rest}${svc ? ` in ${svc}` : ""}` : `Reads ${svc ? `${svc} ` : ""}${rest}`;
+    return v ? `${v} ${rest}${svc ? ` in ${svc}` : ""}` : `Uses ${svc ? `${svc} ` : ""}${rest}`;
   }
   const noun = m[2].replace(/_/g, " ").replace(/s$/, "");
   const verb = /delete|remove|archive/.test(m[1]) ? "Removes" : /update|edit|set|close/.test(m[1]) ? "Changes" : "Writes";

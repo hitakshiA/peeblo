@@ -202,9 +202,15 @@ export const managerTools: AgentTool[] = [
     async describe(_ctx, a) {
       const t = await getTeammate(String(a.teammate)).catch(() => null);
       const name = t?.config.name ?? String(a.teammate);
-      const what = a.field === "github_repos" ? `${name}'s GitHub repos: ${String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean).join(", ")}`
-        : a.field === "connectors" || a.field === "tools" ? `Give ${name}: ${String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean).join(", ")}`
-        : a.field === "budget_usd" ? `${name}'s budget: $${a.value} a month` : a.field === "mode" ? `${name}'s mode: ${a.value}` : `${name}'s ${String(a.field).replace(/_/g, " ")}: ${String(a.value).slice(0, 200)}`;
+      const items = String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean);
+      const cur: string[] = a.field === "github_repos" ? ((t?.config as any)?.connector_scopes?.github ?? []) : a.field === "connectors" ? (t?.config.connectors ?? []) : a.field === "tools" ? (t?.config.tools ?? []) : [];
+      const add = items.filter((x: string) => !cur.includes(x)), drop = cur.filter((x: string) => !items.includes(x));
+      const label = a.field === "github_repos" ? "GitHub repos" : a.field === "connectors" ? "connectors" : "tools";
+      const change = [add.length ? `Add ${add.join(", ")} to ${name}'s ${label}` : "", drop.length ? `${add.length ? "; remove" : "Remove"} ${drop.join(", ")}` : ""].join("");
+      const what = ["github_repos", "connectors", "tools"].includes(a.field) ? (change || `${name}'s ${label} stay the same`)
+        : a.field === "budget_usd" ? `${Number(a.value) > (t?.config.budget.monthly_usd ?? 0) ? "Raise" : "Set"} ${name}'s budget to $${a.value} a month (now $${t?.config.budget.monthly_usd ?? "?"})`
+        : a.field === "mode" ? `Change ${name}'s mode from ${t?.config.mode ?? "?"} to ${a.value}`
+        : a.field === "instructions" ? `Change ${name}'s instructions` : a.field === "computer_size" ? `Give ${name} a ${a.value} computer` : `Change ${name}'s ${String(a.field).replace(/_/g, " ")} to ${String(a.value).slice(0, 200)}`;
       return { kind: "teammate_change", target_name: name, summary: `${what}${a.reason ? `\nWhy: ${String(a.reason).slice(0, 200)}` : ""}` };
     },
     async authorize(ctx, a) {
