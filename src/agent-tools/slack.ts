@@ -54,7 +54,7 @@ export const slackTools: AgentTool[] = [
   },
   {
     name: "slack_post",
-    description: "Reply in this Slack conversation (your thread or DM); your final text is not shown to anyone. Posting your answer ends your turn, so post it last and on its own (not alongside other tool calls). Set more: true only for a progress note when you will keep working. Slack markdown; for a table or other layout, pass Block Kit blocks.",
+    description: "Post where this conversation lives: your thread or DM, or, for a routine, watch or trigger, the channel it was set up to post in (a new message there, which starts the thread). Your final text is not shown to anyone, so anything people should see goes through here. Posting your answer ends your turn, so post it last and on its own (not alongside other tool calls). Set more: true only for a progress note when you will keep working. Slack markdown; for a table or other layout, pass Block Kit blocks.",
     input_schema: object({
       text: { type: "string", description: "What to say (Slack markdown). Also the fallback text when blocks are given." },
       blocks: { type: ["array", "null"], description: "Optional Block Kit blocks, e.g. [{type: 'table', rows: [...]}].", items: { type: "object", additionalProperties: true } as any },
