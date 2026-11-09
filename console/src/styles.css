@@ -35,8 +35,10 @@ h1 { font-size: 34px; } h2 { font-size: 22px; } h3 { font-size: 17px; }
 
 .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
 .side { padding: 24px 16px; border-right: 1px solid var(--line); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; }
-.brand { font-family: var(--display); font-size: 26px; font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
-.brand-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 0 4px var(--moss-soft); }
+.brand { font-family: var(--display); font-size: 26px; font-weight: 700; display: flex; align-items: center; gap: 10px; margin: 0 0 20px 6px; color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
+.brand-face { width: 30px; height: 30px; border-radius: 9px; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.nav-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); padding: 0 12px 4px; }
 .nav { padding: 8px 12px; border-radius: 10px; text-decoration: none; color: var(--ink-2); font-weight: 600; transition: background 0.2s var(--ease-out); }
 .nav:hover { background: var(--paper-2); }
 .nav.on { background: var(--card); color: var(--ink); box-shadow: var(--lift); }
@@ -47,7 +49,11 @@ h1 { font-size: 34px; } h2 { font-size: 22px; } h3 { font-size: 17px; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: var(--lift); }
-.card.link { text-decoration: none; transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out); display: block; }
+.card.link { text-decoration: none; color: inherit; transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out); display: flex; flex-direction: column; gap: 10px; }
+.card.link .mate { display: flex; align-items: center; gap: 12px; }
+.card.link .mate h3 { margin: 0; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card.link .tags { margin-top: auto; }
 .card.link:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
 .mate { display: flex; gap: 14px; align-items: center; }
 .face { width: 56px; height: 56px; border-radius: 16px; background: var(--paper-2); flex: none; }

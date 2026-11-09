@@ -35,6 +35,17 @@ export async function runChecks(): Promise<Result[]> {
     await access(join(p, "manifest.json"), constants.R_OK).catch(() => { throw new Error(`no VM image at ${p}; run: ./peeblo image`); });
     return `${config.vmArch} image at ${p}`;
   });
+  await check("Slack app configuration token", async () => {
+    // Peeblo makes each teammate's app with this token, and rotates it every 12 hours.
+    const { configToken } = await import("./slack/admin.ts");
+    await configToken();
+    return "valid (Peeblo rotates it before it expires)";
+  });
+  await check("Peeblo's Slack app", async () => {
+    const { rows } = await pool.query("SELECT a.app_id, a.team_id, a.bot_user_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' AND a.bot_user_id IS NOT NULL LIMIT 1");
+    if (!rows[0]) throw new Error("not installed: run ./peeblo slack-app, open the link it prints and click Allow");
+    return `installed in workspace ${rows[0].team_id} as <@${rows[0].bot_user_id}>`;
+  });
   await check("teammates waiting for install", async () => {
     // A teammate works only through its own Slack app; these won't run until someone clicks "Add to Slack".
     const { waitingTeammates } = await import("./slack/install.ts");
@@ -112,7 +123,7 @@ export async function runChecks(): Promise<Result[]> {
     if (!(await session())) return "Lakera org guardrail (state not readable without a dashboard session)";
     const m = await lakeraMandate();
     if (!m) throw new Error(`no org guardrail with profile ${config.guardProfile}`);
-    return `Lakera org guardrail ${m.enabled ? "on (block)" : "defined but off"}`;
+    return m.enabled ? "Lakera through Otari, on every call (org guardrail on)" : "Lakera through Otari, on text from outside the company (org-wide mandate off)";
   });
   await check("Otari MCP connectors", async () => {
     const { session } = await import("./otari/admin.ts");

@@ -28,7 +28,12 @@ function Login({ onIn }: { onIn: () => void }) {
   );
 }
 
-const NAV: [string, string][] = [["crew", "Crew"], ["approvals", "Approvals"], ["sessions", "Sessions"], ["people", "People"], ["schedules", "Schedules"], ["computers", "Computers"], ["otari", "Otari"], ["feedback", "Feedback"], ["setup", "Setup"]];
+// Grouped like the work: the crew and what it's doing, then what helps you debug it, then the system around it.
+const NAV: [string, [string, string][]][] = [
+  ["Work", [["crew", "Crew"], ["sessions", "Sessions"], ["approvals", "Approvals"], ["schedules", "Schedules"]]],
+  ["Debug", [["people", "People"], ["computers", "Computers"], ["feedback", "Feedback"]]],
+  ["System", [["otari", "Otari"], ["setup", "Setup"]]],
+];
 
 export default function App() {
   const [me, setMe] = useState<"loading" | "out" | { display_name: string | null } | null>("loading");
@@ -42,8 +47,9 @@ export default function App() {
   return (
     <div className="shell">
       <nav className="side">
-        <div className="brand"><span className="brand-dot" />Peeblo</div>
-        {NAV.map(([k, label]) => <a key={k} className={`nav ${route.page === k || (k === "crew" && route.page === "teammate") ? "on" : ""}`} href={`#/${k}`}>{label}{k === "approvals" && n > 0 && <span className="badge">{n}</span>}</a>)}
+        <a className="brand" href="#/crew"><img className="brand-face" src="/v1/teammates/peeblo/face.png" alt="" />peeblo</a>
+        {NAV.map(([group, items]) => <div key={group} className="nav-group"><div className="nav-label">{group}</div>
+          {items.map(([k, label]) => <a key={k} className={`nav ${route.page === k || (k === "crew" && route.page === "teammate") ? "on" : ""}`} href={`#/${k}`}>{label}{k === "approvals" && n > 0 && <span className="badge">{n}</span>}</a>)}</div>)}
         <div className="side-foot">Signed in as {(me as any)?.display_name ?? "admin"}<br /><a href="#" onClick={(e) => { e.preventDefault(); post("/v1/console/logout").then(() => setMe("out")); }}>Sign out</a></div>
       </nav>
       <main className="main">
@@ -72,14 +78,15 @@ function Crew() {
   const [hiring, setHiring] = useState(false);
   const crew = (data?.teammates ?? []).filter((t) => !hidden(t));
   return (
-    <Page title="Your crew" sub="Every teammate, its model, budget and approval mode. Open one to talk to it, change it, or read its memory.">
+    <Page title="Your crew" sub="Open a teammate to talk to it, adjust it, or read its memory.">
       <div className="row" style={{ marginBottom: 16 }}><button className="moss" onClick={() => setHiring(!hiring)}>{hiring ? "Close" : "Hire a teammate"}</button><span className="muted">Or ask Peeblo in Slack: "I need someone who…"</span></div>
       {hiring && <Hire onDone={() => { setHiring(false); reload(); }} />}
       <div className="grid">
         {crew.map((t) => (
           <a key={t.id} className="card link" href={`#/teammate/${t.slug}`}>
-            <div className="mate"><Face slug={t.slug} /><div><h3>{t.config.name}</h3><div className="muted">{t.config.role}</div></div></div>
-            <div className="row" style={{ marginTop: 12 }}><span className="pill">{t.config.model.default.split("/").pop()}</span><span className="pill">${t.config.budget.monthly_usd}/mo</span><span className="pill">{t.config.mode}</span></div>
+            <div className="mate"><Face slug={t.slug} /><h3>{t.config.name}</h3></div>
+            <div className="muted clamp">{t.config.role}</div>
+            <div className="row tags"><span className="pill">{t.config.model.default.replace(/^peeblo-/, "").split("/").pop()}</span><span className="pill">${t.config.budget.monthly_usd}/mo</span><span className="pill">{t.config.mode}</span></div>
           </a>
         ))}
       </div>
@@ -301,9 +308,9 @@ function Otari() {
   const pill = (v: boolean | null, on = "on", off = "off") => v == null ? <span className="pill">unknown</span> : v ? <span className="pill ok">{on}</span> : <span className="pill">{off}</span>;
   const signOut = () => { if (confirm("Disconnect Peeblo from your Otari dashboard? Teammates keep working; admin changes fall back to links.")) api("DELETE", "/v1/otari/session").then(reload); };
   const missing = data.roles.filter((r: string) => !data.routing_policies.includes(r));
-  return <Page title="Otari" sub="Every model call, tool, budget and guardrail goes through Otari. Configure it in Otari's dashboard; this page shows what Peeblo uses and where to change it.">
+  return <Page title="Otari" sub="Every model call, tool and budget runs through Otari. Change settings in Otari's dashboard; this page shows what Peeblo uses.">
     {!data.session ? <ConnectOtari onDone={reload} /> :
-      <div className="card row"><span className="pill ok">connected</span><span>as <b>{data.session.signed_in_as}</b> until {when(data.session.expires_at)}</span><button className="ghost" onClick={signOut}>Disconnect</button></div>}
+      <div className="card row" style={{ marginBottom: 16 }}><span className="pill ok">connected</span><span>as <b>{data.session.signed_in_as}</b> until {when(data.session.expires_at)}</span><button className="ghost" onClick={signOut}>Disconnect</button></div>}
     <div className="grid">
       <div className="card stack"><h3>Routing</h3><div>{data.session ? (missing.length ? <span className="pill bad">{missing.length} missing</span> : <span className="pill ok">in sync</span>) : <span className="pill">not connected</span>}</div>
         <div className="muted">One policy per role ({data.roles.join(", ")}), kept in sync by Peeblo from config/model-tiers.json: the model, Otari's fallback, and a cheaper model when a teammate's budget is mostly used. Edit the file and restart to change them.</div>
@@ -334,9 +341,14 @@ function Feedback() {
 function Setup() {
   const { data, reload } = useLoad<{ checks: any[] }>("/v1/setup");
   const otari = useLoad<any>("/v1/otari");
-  return <Page title="Setup" sub="The same checks as ./peeblo check: every key, URL and service Peeblo needs, and what to fix.">
+  return <Page title="Setup" sub="Everything Peeblo needs, checked live (the same as ./peeblo check). Anything to fix says how.">
     {otari.data && !otari.data.session && <div style={{ marginBottom: 12 }}><ConnectOtari onDone={() => { otari.reload(); reload(); }} /></div>}
     <div className="row" style={{ marginBottom: 12 }}><button className="ghost" onClick={reload}>Check again</button></div>
-    <div className="card"><table><tbody>{(data?.checks ?? []).map((c) => <tr key={c.name}><td>{c.ok ? <span className="pill ok">ok</span> : <span className="pill bad">fix</span>}</td><td><b>{c.name}</b></td><td>{c.detail}</td></tr>)}</tbody></table>{!data && <div className="muted">Checking…</div>}</div>
+    {!data && <div className="muted">Checking…</div>}
+    {data && [["Otari", (n: string) => /^Otari/.test(n)], ["Slack", (n: string) => /slack|install|public URL/i.test(n)], ["This machine", () => true]].reduce((acc: { title: string; rows: any[] }[], [title, test]: any) => {
+      const taken = new Set(acc.flatMap((g) => g.rows.map((r) => r.name)));
+      acc.push({ title, rows: data.checks.filter((c) => !taken.has(c.name) && test(c.name)) }); return acc;
+    }, []).map((g) => <section key={g.title} style={{ marginBottom: 18 }}><h3 style={{ marginBottom: 10 }}>{g.title} {g.rows.every((r) => r.ok) ? <span className="pill ok">all ok</span> : <span className="pill bad">{g.rows.filter((r) => !r.ok).length} to fix</span>}</h3>
+      <div className="card"><table><tbody>{g.rows.map((c) => <tr key={c.name}><td>{c.ok ? <span className="pill ok">ok</span> : <span className="pill bad">fix</span>}</td><td><b>{c.name.replace(/^Otari /, "")}</b></td><td>{c.detail}</td></tr>)}</tbody></table></div></section>)}
   </Page>;
 }
