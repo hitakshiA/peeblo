@@ -1,7 +1,7 @@
 // The console's side of the API (console/API.md): a password login (an httpOnly cookie), the read views every screen
 // needs, and the actions that mirror Slack. Actions are made as the console's admin person (the first of
 // PEEBLO_ADMINS): the server fills it in, the browser never sends one.
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -11,14 +11,17 @@ import { buildReceipt, receiptLine } from "../receipts.ts";
 import { getTeammate, listTeammates } from "../store/teammates.ts";
 import type { Router } from "./http.ts";
 
-const sessions = new Map<string, { at: number }>();
 const COOKIE = "peeblo_console";
 const DAY = 24 * 3600_000;
 
+// A sign-in is a signed cookie (expiry + HMAC over it and the password), so it survives core restarts (setup restarts
+// core) and a new password signs everyone out.
+const sign = (exp: number) => createHmac("sha256", config.secretKey).update(`${exp}:${config.consolePassword}`).digest("hex");
 export function consoleCookie(req: IncomingMessage): boolean {
-  const c = /(?:^|;\s*)peeblo_console=([a-f0-9]{48})/.exec(String(req.headers.cookie ?? ""))?.[1];
-  const s = c ? sessions.get(c) : null;
-  return Boolean(s && Date.now() - s.at < 7 * DAY);
+  const c = /(?:^|;\s*)peeblo_console=(\d+)\.([a-f0-9]{64})/.exec(String(req.headers.cookie ?? ""));
+  if (!c || !config.consolePassword || Number(c[1]) < Date.now()) return false;
+  const want = Buffer.from(sign(Number(c[1])), "hex"), got = Buffer.from(c[2], "hex");
+  return want.length === got.length && timingSafeEqual(want, got);
 }
 export async function consolePerson(): Promise<{ id: string; display_name: string | null } | null> {
   const admin = config.admins[0];
@@ -34,13 +37,10 @@ export async function login(req: IncomingMessage, res: ServerResponse, body: any
     await new Promise((r) => setTimeout(r, 1000));
     return void res.writeHead(401, { "content-type": "application/json" }).end(JSON.stringify({ error: "wrong password" }));
   }
-  const id = randomBytes(24).toString("hex");
-  sessions.set(id, { at: Date.now() });
-  res.writeHead(200, { "content-type": "application/json", "set-cookie": `${COOKIE}=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${7 * 24 * 3600}` }).end(JSON.stringify({ ok: true }));
+  const exp = Date.now() + 7 * DAY;
+  res.writeHead(200, { "content-type": "application/json", "set-cookie": `${COOKIE}=${exp}.${sign(exp)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${7 * 24 * 3600}` }).end(JSON.stringify({ ok: true }));
 }
 export function logout(req: IncomingMessage, res: ServerResponse): void {
-  const c = /(?:^|;\s*)peeblo_console=([a-f0-9]{48})/.exec(String(req.headers.cookie ?? ""))?.[1];
-  if (c) sessions.delete(c);
   res.writeHead(200, { "content-type": "application/json", "set-cookie": `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` }).end(JSON.stringify({ ok: true }));
 }
 
