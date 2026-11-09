@@ -37,6 +37,8 @@ export const config = {
   // Otari's server-side tools and vision, each switchable (on by default). The agent chooses them; nothing
   // attaches them to every call.
   otariCode: (process.env.PEEBLO_OTARI_CODE ?? "on") !== "off",
+  // Otari keeps each call's prompt and answer on its trace only when asked (Otari-Trace-Content: keep). Off by default.
+  traceContent: (process.env.PEEBLO_TRACE_CONTENT ?? "off").trim() === "keep",
   webFetch: (process.env.PEEBLO_WEB_FETCH ?? "on") !== "off",
   vision: (process.env.PEEBLO_VISION ?? "on") !== "off",
   guard: process.env.PEEBLO_GUARD ?? "lakera",                       // lakera | open | off (see src/guard.ts)

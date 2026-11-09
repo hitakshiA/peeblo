@@ -145,7 +145,7 @@ export const workMemoryTools: AgentTool[] = [
   },
   {
     name: "person_note",
-    description: "Note how a person likes to work with you, so every teammate answers them well: \"Maya wants numbers first, no tables\", \"Jun reads on his phone; keep it to 2 lines\". Style and preferences only, never private content.",
+    description: "Note how a person likes to work with you, so every teammate answers them well: \"wants numbers first, no tables\", \"reads on a phone; keep it to 2 lines\". Style and preferences only, never private content.",
     input_schema: object({ person: { type: "string", description: "Their name or Slack id." }, note: { type: "string" } }),
     kind: "local",
     async run(ctx, a) {
@@ -157,7 +157,7 @@ export const workMemoryTools: AgentTool[] = [
   },
   {
     name: "promise",
-    description: "Keep track of something you said you'd do later (\"I'll check again Thursday\", \"I'll send it once Maya replies\"): make records it and, with due_at, wakes you then to do it or update them; done closes it; list shows open ones.",
+    description: "Keep track of something you said you'd do later (\"I'll check again Thursday\", \"I'll send it once they reply\"): make records it and, with due_at, wakes you then to do it or update them; done closes it; list shows open ones.",
     input_schema: object({
       action: { type: "string", enum: ["make", "done", "list"] },
       what: { type: ["string", "null"], description: "make: what you promised, in a line." },

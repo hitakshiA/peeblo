@@ -133,7 +133,7 @@ export function notNowModal(a: any, id: string, teammate: string): any {
     title: { type: "plain_text", text: "Not now" }, submit: { type: "plain_text", text: "Send" }, close: { type: "plain_text", text: "Skip" },
     blocks: [
       { type: "context", elements: [{ type: "mrkdwn", text: question(a, teammate).slice(0, 300) }] },
-      { type: "input", block_id: "reason", optional: true, label: { type: "plain_text", text: `Tell ${teammate} why` }, element: { type: "plain_text_input", action_id: "v", max_length: 300, placeholder: { type: "plain_text", text: "e.g. wait until Maya has seen it" } } },
+      { type: "input", block_id: "reason", optional: true, label: { type: "plain_text", text: `Tell ${teammate} why` }, element: { type: "plain_text_input", action_id: "v", max_length: 300, placeholder: { type: "plain_text", text: "e.g. wait until the owner has seen it" } } },
     ],
   };
 }

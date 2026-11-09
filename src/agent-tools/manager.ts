@@ -41,7 +41,7 @@ const slugOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").
 const placeOf = async (ctx: ToolContext): Promise<SlackPlace | null> => ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
 const hireSpec = {
   name: { type: "string", description: "A short first name, e.g. Ledger." },
-  role: { type: "string", description: "What it does, for whom, e.g. 'Watches Stripe refunds for Maya'." },
+  role: { type: "string", description: "What it does, for whom, e.g. 'Watches Stripe refunds for the finance lead'." },
   instructions: { type: ["string", "null"], description: "Standing instructions, in the person's words." },
   model: { type: ["string", "null"], description: "An open-weight model id from routing_recommend; empty for the worker default." },
   budget_usd: { type: "number", minimum: 0, maximum: 500, description: "Monthly budget in USD." },

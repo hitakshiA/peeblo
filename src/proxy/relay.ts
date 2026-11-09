@@ -206,6 +206,7 @@ export function startProxy(): Promise<Server> {
     if (isInference) {
       headers["otari-conversation-id"] = b.sessionId;
       headers["otari-tags"] = `teammate=${b.teammateSlug},session=${b.sessionId}${b.runId ? `,run=${b.runId}` : ""}`;
+      if (config.traceContent) headers["otari-trace-content"] = "keep";
     }
 
     // After the guardrail refused this turn's input, Pi's retries would only be refused again (and spend guard
