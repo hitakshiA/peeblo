@@ -52,3 +52,19 @@ export function budgetReply(r: BudgetRefusal, teammate: string): string {
   return `I can't run this: it would go over ${who}${nums}. An admin can raise the limit, or try again when it resets.`;
 }
 const fmt = (usd: number) => (usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`);
+
+// On Connect: a new Otari org has no budgets, and a service key without a default end-user budget can't serve
+// anyone. With the dashboard session, Peeblo gives its key one ($2 a day per person, changeable in Budgets).
+// A key that already has a default keeps it.
+export async function ensureDefaultTier(): Promise<string | null> {
+  const { admin, budgets, createBudget } = await import("./admin.ts");
+  const { config } = await import("../config.ts");
+  const { links } = await import("./links.ts");
+  const r: any = await admin("GET", "/organizations/me/keys", undefined, "listing keys", links.keys());
+  const key = ((r.data ?? r) as any[]).find((k) => k.key_prefix && config.otariKey.startsWith(k.key_prefix) && config.otariKey.endsWith(k.key_suffix ?? ""));
+  if (!key || key.end_user_budget_id) return null;
+  const name = "peeblo-person-daily-2";
+  const tier = (await budgets()).find((b) => b.name === name) ?? (await createBudget(name, 2, "day"));
+  await admin("PATCH", `/organizations/me/keys/${key.id}`, { end_user_budget_ids: [...new Set([...(key.end_user_budget_ids ?? []), tier.id])], end_user_budget_id: tier.id }, "setting the key's default budget per person", links.keys());
+  return name;
+}

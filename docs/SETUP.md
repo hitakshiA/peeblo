@@ -35,10 +35,12 @@ It prints the console's address: `http://127.0.0.1:7340/console/`. Open it in yo
 The console walks you through six steps and checks each one live. What you'll need for each:
 
 1. **A console password** you choose.
-2. **An Otari service key.** In Otari: Keys → New key → Service key, and give it a default end-user budget (a tier
-   in Budgets, for example $2 a day; every person in Slack gets one). Paste it in.
+2. **An Otari service key.** In Otari's dashboard: API keys → Create key → Advanced → tick Service key. Paste it in.
+   Leave its budget fields alone: the next step gives each person in Slack $2 a day (change it in Budgets).
 3. **Your Otari dashboard login**, once, so Peeblo can set itself up in your Otari: a routing policy per role, a key
-   and spend ceiling per teammate, the guardrail screening, connector access. The password isn't stored.
+   and spend ceiling per teammate, a default budget per person, the guardrail screening, connector access. The
+   password isn't stored. Signed up with Google or GitHub? Set a password first at Otari's sign-in page
+   ("Forgot that password, or didn't sign up?").
 4. **The Otari checklist.** The console checks what Peeblo needs and links each fix in Otari's dashboard: web search
    and code execution on (Tools), a Lakera guardrail named **`peeblo-lakera`** (Guardrails), and your connectors
    (Tools → MCP servers: Linear, GitHub, Stripe, Notion, PostHog, Intercom, … any service with an MCP server).

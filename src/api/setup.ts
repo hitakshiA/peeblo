@@ -67,7 +67,7 @@ export async function setupState(): Promise<any> {
       return r ? { id, label, ok: r.ok, required: id !== "access", detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) } : null;
     };
     return [
-      pick("Otari service key (bills each person)", "tier", "A default budget for each person", links.budgets(), "Budgets → make a tier, then Keys → your key → default end-user budget"),
+      pick("Otari service key (bills each person)", "tier", "A default budget for each person", links.budgets(), "Sign in again on Connect Otari (it sets one), or Budgets → make a tier, then API keys → your key → default end-user budget"),
       pick("Otari web search and code execution", "tools", "Web search and code execution", `${links.webSearch()}`, "Tools → turn on web search and code execution"),
       pick("Otari guardrail", "guardrail", "The Lakera guardrail", links.guardrails(), "Guardrails → add Lakera Guard with the profile name peeblo-lakera"),
       pick("Otari MCP connectors", "connectors", "Connectors (MCP servers)", links.mcpServers(), "Tools → MCP servers → add the services your team uses"),
@@ -91,7 +91,7 @@ export async function setupState(): Promise<any> {
       key_set: Boolean(config.otariKey), key_ok: otariKey ? otariKey.ok : null, ...(otariKey?.error ? { key_error: otariKey.error } : {}), region,
       used_usd: otariKey?.used ?? null, limit_usd: otariKey?.limit ?? null,
       connected: Boolean(s), signed_in_as: s?.signedInAs ?? null, session_expires_at: s?.expiresAt ?? null,
-      links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), tools: links.webSearch(), mcp: links.mcpServers() },
+      links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), tools: links.webSearch(), mcp: links.mcpServers(), set_password: links.setPassword() },
     },
     public_url: { value: config.publicUrl || null, reachable: pub ? pub.ok : null, ...(pub?.error ? { error: pub.error } : {}),
       hint: "On a server, a domain with HTTPS in front of port 8787 (Caddy does it in two lines). On a Mac, a tunnel to port 8787: a reserved zrok share without its warning page, a Cloudflare named tunnel, or Tailscale Funnel." },
@@ -108,14 +108,15 @@ export function addSetupRoutes(router: Router): void {
     .add("GET", "/v1/setup/state", async () => setupState())
     .add("POST", "/v1/setup/otari", async ({ body }) => {
       const key = String(body?.key ?? "").trim();
-      const region = body?.region === "eu" ? "eu" : "us";
       if (!key) throw bad("Paste the service key from Otari.");
+      // Otari keys name their region (otk_v1_us_…); the menu is only for keys that don't.
+      const region = key.match(/^otk_v\d+_(us|eu)_/)?.[1] ?? (body?.region === "eu" ? "eu" : "us");
       const r = await keyBudget(key, region);
       if (!r.ok) return { ok: false, error: r.error, restarting: false };
       saveSettings({ OTARI_SERVICE_KEY: key, OTARI_REGION: region === "eu" ? "eu" : null });
       forget("key", "ready");
       restartSoon();
-      return { ok: true, restarting: true };
+      return { ok: true, restarting: true, region, used: r.used, limit: r.limit };
     })
     .add("POST", "/v1/setup/public-url", async ({ body }) => {
       const url = String(body?.url ?? "").trim().replace(/\/+$/, "");

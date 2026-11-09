@@ -131,7 +131,7 @@ export function ConnectOtari({ onDone, compact = false }: { onDone: () => void; 
 
 // ---- steps ---------------------------------------------------------------------------------------------------------
 
-type StepProps = { s: SetupState; reload: () => Promise<void>; advance: () => void; restart: () => void };
+type StepProps = { s: SetupState; reload: () => Promise<void>; advance: () => void; restart: (note?: string) => void };
 const Continue = ({ advance, label = "Continue" }: { advance: () => void; label?: string }) => <div className="step-foot"><button className="moss" onClick={advance}>{label}</button></div>;
 
 function PasswordStep({ s, signedIn, reload, advance }: StepProps & { signedIn: boolean }) {
@@ -169,14 +169,16 @@ function OtariStep({ s, reload, advance, restart }: StepProps) {
   const o = s.otari;
   const [key, setKey] = useState("");
   const [region, setRegion] = useState((o.region || "us").toLowerCase());
+  // Otari keys name their region (otk_v1_us_…); the menu only shows for a key that doesn't.
+  const keyRegion = key.trim().match(/^otk_v\d+_(us|eu)_/)?.[1];
   const { busy, err, setErr, run } = useBusy();
   const go = (e: FormEvent) => {
     e.preventDefault();
-    run(() => post<{ ok: boolean; error?: string; restarting?: boolean }>("/v1/setup/otari", { key: key.trim(), region })).then((r) => {
+    run(() => post<{ ok: boolean; error?: string; restarting?: boolean; region?: string }>("/v1/setup/otari", { key: key.trim(), region: keyRegion ?? region })).then((r) => {
       if (!r) return;
       if (!r.ok) return setErr(r.error ? friendly(new ApiError(400, r.error)) : "Otari didn't accept that key.");
       setKey("");
-      if (r.restarting) restart(); else { reload(); advance(); }
+      if (r.restarting) restart(`The key works (Otari ${(r.region ?? "us").toUpperCase()}).`); else { reload(); advance(); }
     });
   };
   return <>
@@ -184,12 +186,17 @@ function OtariStep({ s, reload, advance, restart }: StepProps) {
     {o.key_set && (o.key_ok
       ? <Status ok>The key works{o.org ? ` for ${o.org}` : ""}.{o.used_usd != null && <span className="muted"> {money(o.used_usd)}{o.limit_usd != null ? ` of ${money(o.limit_usd)}` : ""} used.</span>}</Status>
       : <Status ok={false}>{o.key_error ? friendly(new ApiError(400, o.key_error)) : "The saved key doesn't work. Paste a new one."}</Status>)}
-    <Howto steps={[<>In Otari, open <b>Keys</b>.</>, <>Choose <b>New key</b>, then <b>Service key</b>.</>, <>Copy it and paste it below.</>]} />
-    <div><Ext href={o.links?.keys}>Open Otari keys</Ext></div>
+    <Howto steps={[
+      <>In Otari's dashboard, open <b>API keys</b> and choose <b>Create key</b>.</>,
+      <>Name it (say, peeblo), open <b>Advanced</b> and tick <b>Service key</b>. A service key lets Otari bill and cap each person separately.</>,
+      <>Leave the budget fields as they are: when you connect in the next step, Peeblo gives each person $2 a day, which you can change in Otari's Budgets.</>,
+      <>Choose <b>Create key</b>, copy the key and paste it below.</>,
+    ]} />
+    <div><Ext href={o.links?.keys}>Open Otari API keys</Ext></div>
     <form className="stack" onSubmit={go}>
       <div className="form key">
         <label>Service key<input type="password" autoComplete="off" spellCheck={false} placeholder={o.key_set ? "Paste a new key to replace it" : "Paste your key"} value={key} onChange={(e) => setKey(e.target.value)} /></label>
-        <label>Region<select value={region} onChange={(e) => setRegion(e.target.value)}><option value="us">US</option><option value="eu">EU</option></select></label>
+        {!keyRegion && <label>Region<select value={region} onChange={(e) => setRegion(e.target.value)}><option value="us">US</option><option value="eu">EU</option></select></label>}
       </div>
       <Err msg={err} />
       <div className="row"><button className="moss" disabled={busy || !key.trim()}>{busy ? "Checking…" : "Save key"}</button>{o.key_set && o.key_ok && <button type="button" className="ghost" onClick={advance}>Keep the current key</button>}</div>
@@ -201,7 +208,8 @@ function ConnectStep({ s, reload, advance }: StepProps) {
   const o = s.otari;
   const [again, setAgain] = useState(false);
   return <>
-    <Head title="Connect your Otari dashboard">Peeblo sets up its routing, a key and budget per teammate, the guardrail, and connector access in your Otari for you. Sign in once; the password isn't stored.</Head>
+    <Head title="Connect your Otari dashboard">The service key can call models, but it can't make keys, budgets or routing. Sign in once with your Otari dashboard login and Peeblo sets those up for you: a key and budget per teammate, a budget per person, its model routing, the guardrail, and connector access.</Head>
+    <div className="muted">The password is used for this one sign-in and isn't stored. Peeblo keeps the session (about a week) sealed on this machine and asks again when it ends. Signed up with Google or GitHub? <Ext className="" href={o.links?.set_password}>Set an Otari password</Ext> first (same email).</div>
     {o.connected && !again
       ? <>
         <Status ok>Connected{o.signed_in_as ? <> as <b>{o.signed_in_as}</b></> : null}{o.session_expires_at ? `, until ${when(o.session_expires_at)}` : ""}.</Status>
@@ -359,13 +367,14 @@ export function Wizard({ setup }: { setup: Setup }) {
   const { state: s, signedIn, reload, error } = setup;
   const [sel, setSel] = useState<StepId | null>(null);
   const [restarting, setRestarting] = useState<"no" | "yes" | "slow">("no");
+  const [note, setNote] = useState<string | null>(null);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   const panel = useRef<HTMLElement>(null);
 
-  const restart = () => {
-    setRestarting("yes");
-    waitForCore(() => alive.current, () => setRestarting("slow")).then(async () => { await reload(); setSel(null); setRestarting("no"); });
+  const restart = (n?: string) => {
+    setNote(n ?? null); setRestarting("yes");
+    waitForCore(() => alive.current, () => setRestarting("slow")).then(async () => { await reload(); setSel(null); setRestarting("no"); setNote(null); });
   };
 
   if (!s) return <div className="setup"><div className="setup-empty card stack">
@@ -411,6 +420,7 @@ export function Wizard({ setup }: { setup: Setup }) {
         {restarting !== "no"
           ? <div className="restarting">
             <Face slug="peeblo" face={PEEBLO_FACE} size={72} mood="thinking" />
+            {note && <Status ok>{note}</Status>}
             <h2>Restarting Peeblo…</h2>
             <p className="muted">{restarting === "slow" ? "Still restarting. Keep this page open; it carries on when Peeblo is back." : "This takes a few seconds."}</p>
           </div>

@@ -147,13 +147,15 @@ export function addConsoleRoutes(router: Router): void {
       if (!body?.email || !body?.password) throw bad("email and password are required");
       const { signIn } = await import("../otari/admin.ts");
       const r = await signIn(String(body.email), String(body.password));
+      const { ensureDefaultTier } = await import("../otari/people.ts");
+      const tier = await ensureDefaultTier().catch((e) => { console.error("default tier:", (e as Error).message); return null; });
       const { syncRolePolicies } = await import("../otari/routing.ts");
       const policies = await syncRolePolicies().catch(() => false);
       const { listTeammates } = await import("../store/teammates.ts");
       const { teammateKey } = await import("../otari/spend.ts");
       let keys = 0;
       for (const t of await listTeammates()) if (await teammateKey(t).catch(() => null)) keys++;
-      return { ok: true, expires_at: r.expiresAt, policies, teammate_keys: keys };
+      return { ok: true, expires_at: r.expiresAt, policies, teammate_keys: keys, ...(tier ? { default_tier: tier } : {}) };
     })
     .add("DELETE", "/v1/otari/session", async () => {
       const { signOut } = await import("../otari/admin.ts");

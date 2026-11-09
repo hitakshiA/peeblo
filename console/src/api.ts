@@ -42,7 +42,7 @@ export type SetupState = {
   otari: {
     key_set: boolean; key_ok: boolean; key_error?: string; region: string; org?: string; used_usd?: number; limit_usd?: number;
     connected: boolean; signed_in_as?: string; session_expires_at?: string;
-    links: { dashboard: string; keys: string; budgets: string; guardrails: string; tools: string; mcp: string };
+    links: { dashboard: string; keys: string; budgets: string; guardrails: string; tools: string; mcp: string; set_password?: string };
   };
   public_url: { value: string | null; reachable: boolean; error?: string; hint: string };
   slack: { token_set: boolean; token_ok: boolean; app_created: boolean; install_url: string | null; installed: boolean; workspace?: string; peeblo_dm_url?: string };
