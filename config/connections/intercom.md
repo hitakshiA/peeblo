@@ -1,0 +1,1 @@
+search_conversations needs at least one filter (state, or updated_at with an operator and a unix time). To page, pass starting_after exactly as the previous response's pages.next.starting_after cursor, never a conversation id. The official MCP adds internal notes but can't send a customer-visible reply; draft replies for a person to send.

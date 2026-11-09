@@ -24,6 +24,7 @@ import { appendEvent } from "../store/events.ts";
 import { getPerson } from "../store/people.ts";
 import { getSession } from "../store/sessions.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
+import { companyDir } from "../memory/store.ts";
 
 // A session keeps its config, but a lower mode applies at once (K5): the gate uses the stricter of the
 // session's mode and the teammate's current one. The tool list never changes within a session (K7a).
@@ -120,14 +121,22 @@ const TOOL_HINTS: Record<string, string> = {
 };
 // Connection facts an admin sets per server (dataDir/server-notes.json, e.g. {"sanity": "projectId uxjk1mer, dataset
 // production"}): ids the model would otherwise guess, and vendors answer a wrong id with a misleading auth error.
-let notes: { at: number; v: Record<string, string> } | null = null;
+// Connection notes, in three layers read fresh each minute: what ships with Peeblo for that vendor
+// (config/connections/<server>.md, generic quirks), this workspace's company memory (connections/<server>.md: ids,
+// plan limits, lessons the crew learned; changed by talking, approved by an admin), and the older server-notes.json.
+let notes: { at: number; v: Record<string, string> } = { at: 0, v: {} };
+const body = (file: string) => { try { return readFileSync(file, "utf8").replace(/^---[\s\S]*?---\n/, "").trim(); } catch { return ""; } };
 function serverNote(server: string): string {
-  if (!notes || Date.now() - notes.at > 60_000) {
-    try { notes = { at: Date.now(), v: JSON.parse(readFileSync(join(config.dataDir, "server-notes.json"), "utf8")) }; } catch { notes = { at: Date.now(), v: {} }; }
-  }
-  return notes.v[server] ?? "";
+  if (Date.now() - notes.at > 60_000) notes = { at: Date.now(), v: {} };
+  if (notes.v[server] !== undefined) return notes.v[server];
+  let legacy = "";
+  try { legacy = JSON.parse(readFileSync(join(config.dataDir, "server-notes.json"), "utf8"))[server] ?? ""; } catch { /* none */ }
+  const shipped = body(join(process.cwd(), "config", "connections", `${server}.md`));
+  const company = body(join(companyDir(), "connections", `${server}.md`));
+  notes.v[server] = [shipped, company || legacy].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  return notes.v[server];
 }
-const hintFor = (server: string, tool: string) => [serverNote(server) && `This connection: ${serverNote(server)}. Use these exact ids, never a guess.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
+const hintFor = (server: string, tool: string) => [serverNote(server) && `This connection (company memory connections/${server}): ${serverNote(server)} Use these exact ids, never a guess; if you learn something lasting about it, propose a change to that note.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
 
 type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
 

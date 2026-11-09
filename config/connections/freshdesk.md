@@ -1,0 +1,1 @@
+Freshdesk search has no free text and no name search. Ticket search takes a filter query in double quotes over fields like status, priority, tag, type, company_id, created_at and updated_at, e.g. "company_id:123 AND status:2". Look up the company id first, then filter its tickets; contacts filter by email, not name.

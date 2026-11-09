@@ -55,7 +55,7 @@ async function vectors(slug: string, notes: Note[], endUser?: string): Promise<n
 export const memoryTools: AgentTool[] = [
   {
     name: "memory_write",
-    description: "Remember something for later: a fact, a decision, a person's preference or a correction. Write or replace one note (a path like customers/acme-billing). It is kept for this conversation's place (this DM, this private channel, or the team).",
+    description: "Remember something for later: a fact, a decision, a person's preference or a correction. Write or replace one note (a path like customers/acme-billing). It is kept for this conversation's place (this DM, this private channel, or the team). Keep memory tidy the way a careful person would: grep first and update the existing note on the same thing instead of adding another; when a note turns out wrong, write the right one and memory_forget the old; one fact per note, with where it came from. Things every teammate should know go to company memory (company_memory_propose) instead.",
     input_schema: object({ path: { type: "string" }, title: { type: "string" }, body: { type: "string", description: "The note, in plain words. Say where it came from." } }),
     kind: "local",
     async run(ctx, a) {
@@ -197,16 +197,21 @@ export const workMemoryTools: AgentTool[] = [
 // Peeblo's company memory: the company-setup skill drafts it; one approval from an admin commits the version.
 export const companyMemoryTool: AgentTool = {
   name: "company_memory_propose",
-  description: "Propose the company memory you've drafted (from the sources you read and the admin's answers) as one new version. An admin approves it once, seeing every note.",
-  input_schema: object({ notes: { type: "array", maxItems: 40, items: { type: "object", properties: { path: { type: "string" }, title: { type: "string" }, body: { type: "string" }, source: { type: "string" } }, required: ["path", "title", "body", "source"], additionalProperties: false } } }),
+  description: "Change company memory, the notes every teammate reads: policies, where things live, decisions, approvals, and how each connection works (connections/<server>, e.g. connections/stripe: ids to use, limits of the plan, the query shapes that work). Add or change notes, or remove ones that are wrong or out of date. First look at what's there (memory_grep or memory_read in the company bank) and change that note instead of adding a second one about the same thing. When you learn something lasting about a connection the hard way (a wrong id, a plan limit, the right query shape), propose it under connections/ so nobody repeats it. An admin approves the whole change once.",
+  input_schema: object({
+    notes: { type: "array", maxItems: 40, items: { type: "object", properties: { path: { type: "string" }, title: { type: "string" }, body: { type: "string" }, source: { type: "string" } }, required: ["path", "title", "body", "source"], additionalProperties: false } },
+    remove: { type: ["array", "null"], maxItems: 20, items: { type: "object", properties: { path: { type: "string" }, why: { type: "string" } }, required: ["path", "why"], additionalProperties: false }, description: "Notes to delete, each with why." },
+  }),
   kind: "write",
-  authorize(ctx) { return ctx.person ? null : "Company memory needs an admin in the conversation."; },
   describe(_ctx, a) {
-    return { kind: "company_memory", approvers: [], diff: a.notes.map((n: any) => `${n.path}: ${n.title}`).join("\n").slice(0, 2500), notes: a.notes.length };
+    const adds = (a.notes ?? []).map((n: any) => `${n.path}: ${n.title}`);
+    const dels = (a.remove ?? []).map((r: any) => `remove ${r.path} (${r.why})`);
+    return { kind: "company_memory", approvers: [], diff: [...adds, ...dels].join("\n").slice(0, 2500), notes: adds.length + dels.length };
   },
   async run(ctx, a) {
-    if (!isOtariAdmin(ctx.person)) return { text: "Only an admin can confirm company memory; ask one to approve it.", isError: true };
-    const v = writeCompany(a.notes, ctx.person?.display_name ?? "an admin");
-    return { text: `Company memory version ${v} is saved (${a.notes.length} notes). Every teammate can read it from now on.` };
+    // Approval comes from an admin (the card's approvers default to admins), so whoever asked, the change is approved.
+    const v = writeCompany(a.notes ?? [], ctx.person?.display_name ?? "an admin", (a.remove ?? []).map((r: any) => r.path));
+    return { text: `Company memory version ${v} is saved (${(a.notes ?? []).length} added or changed, ${(a.remove ?? []).length} removed). Every teammate reads it from now on.` };
   },
 };
+

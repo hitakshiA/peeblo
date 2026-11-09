@@ -9,7 +9,7 @@
 // The company bank is Peeblo's company memory, shared by every teammate; it changes only through an approved version.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
@@ -133,9 +133,14 @@ export function indexFor(slug: string, place: Place): string {
 }
 
 // Company memory: a proposed new version is written in full and committed only once an admin approves it.
-export function writeCompany(notes: { path: string; title: string; body: string; source: string }[], by: string): string {
+export function companyDir(): string { return COMPANY(); }
+export function writeCompany(notes: { path: string; title: string; body: string; source: string }[], by: string, remove: string[] = []): string {
   const dir = COMPANY();
   ensureRepo(dir);
+  for (const r of remove) {
+    const p = notePath(r);
+    if (p && existsSync(join(dir, p))) rmSync(join(dir, p));
+  }
   for (const n of notes) {
     const p = notePath(n.path);
     if (!p || n.body.length > MAX_NOTE) continue;
@@ -143,7 +148,7 @@ export function writeCompany(notes: { path: string; title: string; body: string;
     writeFileSync(join(dir, p), front({ title: n.title, verified: true, source: n.source }) + n.body.trim() + "\n");
   }
   git(dir, ["add", "-A"]);
-  git(dir, ["commit", "-q", "--allow-empty", "-m", `company memory: ${notes.length} notes, approved by ${by}`]);
+  git(dir, ["commit", "-q", "--allow-empty", "-m", `company memory: ${notes.length} notes${remove.length ? `, ${remove.length} removed` : ""}, approved by ${by}`]);
   return git(dir, ["rev-parse", "--short", "HEAD"]);
 }
 
