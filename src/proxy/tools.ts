@@ -166,6 +166,14 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     return json(res, 200, { tools, missing: cat.missing, failed: cat.failed });
   }
   if (req.method !== "POST" || path !== "/tools/call") return json(res, 404, { detail: "no such tool route" });
+  // A call can wait on a person's card for up to 30 minutes; the agent's HTTP client gives up on a request with no
+  // response after 5. Send the headers now and a space every minute until the answer (leading spaces are valid JSON).
+  res.writeHead(200, { "content-type": "application/json" });
+  const keep = setInterval(() => { try { res.write(" "); } catch { /* closed */ } }, 60_000);
+  const end = res.end.bind(res);
+  res.writeHead = (() => res) as any;
+  res.end = ((chunk?: any, ...rest: any[]) => { clearInterval(keep); return (end as any)(chunk, ...rest); }) as any;
+  req.on("close", () => clearInterval(keep));
 
   const { name, arguments: args = {}, tool_call_id: toolCallId = newId("tc") } = JSON.parse(body?.toString("utf8") || "{}");
   const person = b.personId ? await getPerson(b.personId) : null;

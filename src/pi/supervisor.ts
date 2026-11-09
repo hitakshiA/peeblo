@@ -29,7 +29,7 @@ const PI_CLI = join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", 
 const PI_OTARI = join(ROOT, "node_modules", "@mozilla-ai", "pi-otari", "index.ts");
 const PEEBLO_TOOLS = join(import.meta.dirname, "peeblo-tools.ts");
 
-type Live = { child: ChildProcess; rpc: PiRpc; token: string; teammateVersion: number; queue: Promise<unknown>; idle?: NodeJS.Timeout };
+type Live = { child: ChildProcess; rpc: PiRpc; token: string; teammateVersion: number; queue: Promise<unknown>; idle?: NodeJS.Timeout; busy?: number };
 const live = new Map<string, Live>();
 
 // The system prompt is short and the same on every turn of a session (a stable prefix for Otari's prompt cache).
@@ -182,7 +182,8 @@ export async function prewarm(sessionId: string, teammateId: string): Promise<vo
 
 function touch(sessionId: string, l: Live): void {
   if (l.idle) clearTimeout(l.idle);
-  l.idle = setTimeout(() => { l.child.stdin?.end(); }, config.piIdleMs);
+  // Idle means no turn in flight: a turn waiting on a person's card keeps its process.
+  l.idle = setTimeout(() => { if (l.busy) return touch(sessionId, l); l.child.stdin?.end(); }, config.piIdleMs);
 }
 
 // Otari runs web and code tools inside the model call, so Pi's history keeps only the answer, not what ran.
@@ -316,6 +317,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   const job = l.queue.then(async () => {
     bindRun(l.token, ctx.run.id, person?.end_user_id ?? null, turnNo, person?.id ?? null);
     touch(ctx.session.id, l);
+    l.busy = (l.busy ?? 0) + 1;
     const from = person ? `${person.display_name ?? person.slack_user} (${person.slack_user})` : "api";
     // Time waiting on a person's answer (an open approval card for this run) doesn't count toward the turn timeout.
     const settled = l.rpc.settled(config.turnTimeoutMs, async () => Boolean((await pool.query(
@@ -351,6 +353,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     }
     return { text, stopReason: lastAssistant?.stopReason ?? null, error: lastAssistant?.errorMessage ?? null, blocked, money, stuck };
   });
+  void job.finally(() => { l.busy = Math.max(0, (l.busy ?? 1) - 1); touch(ctx.session.id, l); }).catch(() => {});
   l.queue = job.catch(() => {});
   const r = await job;
   if (r.blocked) return { text: blockedReply("Lakera, Otari's org guardrail"), stopReason: "guard_blocked" };

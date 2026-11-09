@@ -478,7 +478,7 @@ export function installSlackView(): void {
         const { rows } = await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [e.run_id]);
         // Clean final text: no thinking tags, and no "Peeblo:" style name prefix.
         const name = v.teammate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        fallback = String(rows[0]?.data?.text ?? "").replace(/<think(ing)?>[\s\S]*?<\/think(ing)?>/g, "").trim().replace(new RegExp(`^\\**${name}\\**\\s*:\\s*`, "i"), "").trim() || (e.type === "run.failed" ? `I hit a problem and stopped: ${String(d.error ?? "").slice(0, 300)}` : null);
+        fallback = String(rows[0]?.data?.text ?? "").replace(/<think(ing)?>[\s\S]*?<\/think(ing)?>/g, "").trim().replace(new RegExp(`^\\**${name}\\**\\s*:\\s*`, "i"), "").trim() || (e.type === "run.failed" ? (/pi exited|turn timed out|ECONN|socket/i.test(String(d.error ?? "")) ? "I was interrupted before I could finish (a restart or a stall on my side). Press Try again and I'll pick up from here." : `I hit a problem and stopped: ${String(d.error ?? "").slice(0, 300)}`) : null);
       }
       // A run that ended on a typed stop (budget, a stuck loop, the guard, a model error) gets the recovery buttons.
       const stop = (await pool.query("SELECT data->>'stop_reason' AS r FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [e.run_id])).rows[0]?.r;
