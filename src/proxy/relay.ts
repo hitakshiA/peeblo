@@ -60,9 +60,11 @@ async function body(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
+function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string, label?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
+  // Otari's Sessions view names the job the way people know it ("Rivet · #incidents · checkout timeouts").
+  if (label && (path === "/chat/completions" || path === "/messages" || path === "/responses")) j.session_label = label;
   // Name the paying person the way each API shape expects; drop any user the agent tried to set itself.
   if (path === "/messages") {
     j.metadata = { ...(j.metadata ?? {}) };
@@ -273,7 +275,7 @@ export function startProxy(): Promise<Server> {
     const attempt = async (model?: string, sandbox?: string) => {
       model ??= routed;
       sandbox ??= isInference && b.code ? await sandboxFor(b.sessionId) : undefined;
-      const p = isInference && raw ? prepare(path, raw, b, model, sandbox) : { buf: raw, model: null, stream: false };
+      const p = isInference && raw ? prepare(path, raw, b, model, sandbox, await sessionLabel(b).catch(() => undefined)) : { buf: raw, model: null, stream: false };
       const t0 = Date.now();
       const upstream = await fetch(config.otariBaseUrl + url.slice("/api/v1".length), {
         method: req.method, headers: { ...headers, ...(isInference ? { "idempotency-key": randomUUID() } : {}) },
@@ -371,4 +373,33 @@ async function record(b: Binding, path: string, a: { upstream: Response; model: 
       completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens), end_user: b.endUser, key: b.keyId ?? "core", guard_mandate: await freshLakeraState(), tools_declared: (a as { tools?: number }).tools ?? null, ms: Date.now() - a.t0, ...extra,
     },
   }).catch((e) => console.error("proxy: could not record model call:", (e as Error).message));
+}
+
+// The session's label in Otari: teammate, where the work lives, and what was asked first. Cached per session.
+const labels = new Map<string, string>();
+async function sessionLabel(b: Binding): Promise<string | undefined> {
+  const hit = labels.get(b.sessionId);
+  if (hit) return hit;
+  const { rows } = await pool.query(
+    `SELECT t.config->>'name' AS name, s.kind, s.place->'slack'->>'channel' AS channel,
+            (SELECT left(data->>'text', 120) FROM events WHERE session_id = s.id AND type = 'submission.received' ORDER BY id LIMIT 1) AS ask
+       FROM sessions s JOIN teammate_versions t ON t.teammate_id = s.teammate_id AND t.version = (SELECT max(version) FROM teammate_versions WHERE teammate_id = s.teammate_id)
+      WHERE s.id = $1`, [b.sessionId]).catch(() => ({ rows: [] as any[] }));
+  const r = rows[0];
+  if (!r) return undefined;
+  const where = r.kind === "dm" ? "DM" : r.channel ? await channelName(r.channel) : r.kind;
+  const ask = String(r.ask ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  const label = [r.name ?? b.teammateSlug, where, ask].filter(Boolean).join(" · ").slice(0, 255);
+  labels.set(b.sessionId, label);
+  return label;
+}
+const channelNames = new Map<string, string>();
+async function channelName(id: string): Promise<string> {
+  if (channelNames.has(id)) return channelNames.get(id)!;
+  const { slack } = await import("../slack/api.ts");
+  const app = (await pool.query("SELECT app_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1")).rows[0]?.app_id;
+  const info: any = app ? await slack(app, "conversations.info", { channel: id }).catch(() => null) : null;
+  const name = info?.channel?.name ? `#${info.channel.name}` : id;
+  channelNames.set(id, name);
+  return name;
 }
