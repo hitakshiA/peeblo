@@ -1,6 +1,7 @@
 // Reads settings from the environment once at startup.
 // Secrets are removed from process.env right away, so child processes never inherit them.
 
+import { totalmem } from "node:os";
 import { loadSettingsIntoEnv } from "./settings.ts";
 // What the console's setup saved (settings.json in the data directory) fills in what the environment leaves empty.
 loadSettingsIntoEnv();
@@ -61,6 +62,13 @@ export const config = {
   approvalTtlSeconds: Number(process.env.PEEBLO_APPROVAL_TTL_S ?? 1800),
   turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 10 * 60_000),
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
+  // The most jobs working at once on this machine; the rest wait in line, in order. A job waiting on a person's card
+  // doesn't count. Default: one per GB of memory above 2 GB, at least 2.
+  maxRunning: Number(process.env.PEEBLO_MAX_RUNNING || Math.max(2, Math.floor((totalmem() / 2 ** 30) - 2))),
+  // A workspace anyone can join: off means people who aren't admins read connected tools but never change them.
+  memberWrites: (process.env.PEEBLO_MEMBER_WRITES ?? "on").trim() !== "off",
+  // The most teammates one person who isn't an admin may have hired and kept (0: no limit).
+  memberHires: Number(process.env.PEEBLO_MEMBER_HIRES || 0),
 };
 
 for (const name of SECRET_VARS) delete process.env[name];

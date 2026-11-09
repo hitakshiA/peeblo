@@ -433,6 +433,16 @@ export function installSlackView(): void {
       await start(e.run_id, place, s!.teammate_id);
       return;
     }
+    // Every working slot is taken (PEEBLO_MAX_RUNNING): the person who asked hears it privately; it starts by itself.
+    if (e.type === "run.queued") {
+      const place = await placeOf(e.session_id);
+      if (!place?.user) return;
+      const s = await getSession(e.session_id!);
+      const tm = s ? await getTeammate(s.teammate_id) : null;
+      const ahead = Number((e.data as any).ahead ?? 1);
+      await slack(place.app_id, "chat.postEphemeral", { channel: place.channel, user: place.user, ...(place.channel_type === "im" ? {} : { thread_ts: place.thread_ts }), text: `The crew is busy right now (${(e.data as any).max_running} jobs at once on this machine). ${tm?.config.name ?? "Your teammate"} starts on this by itself in a moment${ahead > 1 ? `; ${ahead - 1} job${ahead - 1 === 1 ? " is" : "s are"} ahead of it` : ""}.` }).catch(() => null);
+      return;
+    }
     // A paused teammate doesn't work; the person who asked hears it privately, with who can resume it.
     if (e.type === "run.refused" && (e.data as any).reason === "paused") {
       const place = await placeOf(e.session_id);

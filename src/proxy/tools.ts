@@ -24,6 +24,7 @@ import { getPerson } from "../store/people.ts";
 import { getSession } from "../store/sessions.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
 import { companyDir } from "../memory/store.ts";
+import { isOtariAdmin } from "../authority.ts";
 
 // A session keeps its config, but a lower mode applies at once: the gate uses the stricter of the
 // session's mode and the teammate's current one. The tool list never changes within a session.
@@ -319,6 +320,11 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
   Object.assign(base, { via: "otari_mcp", server: t.server, server_id: t.serverId, server_revision: t.revision });
   const kind = classify(t, args);
   base.kind = kind;
+  // A workspace anyone can join (PEEBLO_MEMBER_WRITES=off): only admins' requests change connected tools.
+  if (kind !== "read" && !config.memberWrites && !isOtariAdmin(ctx.person)) {
+    await event({ status: "refused", reason: "member writes are off" });
+    return reply({ text: `Not run: in this workspace only an admin's request can change ${t.server}; anyone can read it. Nothing changed. Tell the person plainly, and show exactly what you would have done (the ${t.tool} call in words, with its values), so they see how it would go.`, isError: true });
+  }
   // Internal pages go through their own connector, never a web scraper (that dodges access rules and fails anyway).
   if (["apify", "exa", "context7", "deepwiki"].includes(t.server)) {
     const internal = JSON.stringify(args).match(/https?:\/\/[^"\s]*(notion\.so|notion\.site|atlassian\.net|linear\.app|slack\.com|docs\.google\.com|drive\.google\.com|sanity\.io|hubspot\.com|airtable\.com|monday\.com)[^"\s]*/i);

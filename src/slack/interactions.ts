@@ -312,6 +312,15 @@ export function installSlackInteractions(): void {
       await slack(appId, "agents.sessions.setStatus", { channel_id: channel, thread_ts: thread, status: "active" }).catch(() => null);
       return;
     }
+    // Someone joined the workspace: Peeblo sets up their budget and DMs them a welcome (once).
+    if (event.type === "team_join" && teammateId && event.user?.id && !event.user.is_bot) {
+      const tm = await getTeammate(teammateId);
+      if (tm?.slug !== "peeblo") return;
+      const team = String((await getApp(appId))?.team_id ?? event.user.team_id ?? "");
+      const { welcomeOnce } = await import("./welcome.ts");
+      await welcomeOnce(appId, teammateId, team, event.user.id, "joined");
+      return;
+    }
     // The Messages tab: a first-time visitor gets the teammate's welcome; everyone sees its starter prompts.
     if (event.type === "app_home_opened" && event.tab === "messages" && teammateId) {
       const team = String((await getApp(appId))?.team_id ?? "");

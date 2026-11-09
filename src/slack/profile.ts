@@ -63,7 +63,7 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
     },
     oauth_config: { redirect_urls: [`${base}/slack/oauth/callback`], scopes: { bot: BOT_SCOPES } },
     settings: {
-      event_subscriptions: { request_url: `${base}/slack/events`, bot_events: EVENTS },
+      event_subscriptions: { request_url: `${base}/slack/events`, bot_events: tm.slug === "peeblo" ? [...EVENTS, "team_join"] : EVENTS },
       interactivity: { is_enabled: true, request_url: `${base}/slack/interactions` },
       org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false,
     },

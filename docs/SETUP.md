@@ -161,3 +161,8 @@ the "Refund created" rule on, you approve twice: once on Peeblo's card, then aga
 - Money, deletes, shipping and posts outside the thread always ask, in every mode but YOLO (which only an admin can set).
 - Routines run in the time zone of the person who set them (from their Slack profile), daylight saving included.
 - Everything a teammate does is in the console under **Sessions**, with a receipt for each job.
+- On a small server, cap the work: `PEEBLO_MAX_RUNNING` (jobs at once; extra ones wait in line and the person is
+  told) and `PEEBLO_AWAKE_CAP_SMALL` / `_LARGE` (computers awake at once). On an 8 GB server: 6 jobs, 6 small, 1 large.
+- A workspace anyone can join: set `PEEBLO_MEMBER_WRITES=off` (only admins' requests change connected tools; the
+  rest see what would have run) and `PEEBLO_MEMBER_HIRES=2`. New people get a budget and a welcome from Peeblo when
+  they join; the starting budget is the service key's default end-user budget in Otari.

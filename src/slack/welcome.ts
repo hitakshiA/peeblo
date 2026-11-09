@@ -10,9 +10,9 @@ import { getTeammate, type Teammate } from "../store/teammates.ts";
 import { displayName, slack } from "./api.ts";
 import type { SlackPlace } from "./inbound.ts";
 
-async function facts(tm: Teammate, who: string, why: "installed" | "opened"): Promise<string> {
+async function facts(tm: Teammate, who: string, why: Why, budget?: string | null): Promise<string> {
   const c = tm.config;
-  if (tm.slug === "peeblo") return peebloFacts(who, why);
+  if (tm.slug === "peeblo") return peebloFacts(who, why, budget);
   const owner = tm.owner_person ? (await pool.query("SELECT display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.display_name : null;
   return [
     `<peeblo_event>first contact: ${why === "installed" ? `${who} just installed you, so from now on you post as yourself, from your own Slack app.` : `${who} opened your DM for the first time.`}`,
@@ -22,9 +22,11 @@ async function facts(tm: Teammate, who: string, why: "installed" | "opened"): Pr
 }
 
 type Where = { channel: string; thread_ts?: string | null; channel_type: string };
+// installed: they added its app; opened: they opened its DM; joined: they just joined the workspace (Peeblo only).
+export type Why = "installed" | "opened" | "joined";
 
 // Starts the welcome in a place (the person's DM with the teammate, or the hire thread for a channel hire).
-export async function firstContact(tm: Teammate, appId: string, team: string, slackUser: string, why: "installed" | "opened", where?: Where): Promise<void> {
+export async function firstContact(tm: Teammate, appId: string, team: string, slackUser: string, why: Why, where?: Where): Promise<void> {
   let place = where;
   if (!place) {
     const dm: any = await slack(appId, "conversations.open", { users: slackUser }).catch(() => null);
@@ -39,8 +41,10 @@ export async function firstContact(tm: Teammate, appId: string, team: string, sl
   const thread = place.thread_ts ?? frame.ts;
   const p: SlackPlace = { app_id: appId, team, channel: place.channel, channel_type: place.channel_type, thread_ts: thread, trigger_ts: frame.ts, user: slackUser, direct: true };
   const person = await personForSlack(team, slackUser, { displayName: (await displayName(appId, slackUser)) ?? undefined });
+  // Someone new to the workspace gets their Otari budget now, so the welcome can say what it is.
+  const budget = why === "joined" ? await joinBudget(person).catch((e) => { console.error("join budget:", (e as Error).message); return null; }) : null;
   const session = await openSession(tm.id, place.channel_type === "im" ? "dm" : "thread", `${place.channel}:${thread}`, { slack: p });
-  const { run, created } = await submit({ sessionId: session.id, personId: person.id, requestId: `welcome:${appId}:${slackUser}:${why}`, text: await facts(tm, person.display_name ?? "someone", why), source: "welcome" });
+  const { run, created } = await submit({ sessionId: session.id, personId: person.id, requestId: `welcome:${appId}:${slackUser}:${why}`, text: await facts(tm, person.display_name ?? "someone", why, budget), source: "welcome" });
   if (created) await startRun(run.id);
   await appendEvent({ sessionId: session.id, runId: run.id, type: "slack.welcome", data: { teammate_id: tm.id, app_id: appId, user: slackUser, why } });
   if (place.channel_type === "im") await setPrompts(tm, appId, place.channel);
@@ -54,7 +58,7 @@ export async function setPrompts(tm: Teammate, appId: string, channel: string): 
 }
 
 // Once per person per teammate.
-export async function welcomeOnce(appId: string, teammateId: string, team: string, slackUser: string, why: "installed" | "opened", where?: Where): Promise<boolean> {
+export async function welcomeOnce(appId: string, teammateId: string, team: string, slackUser: string, why: Why, where?: Where): Promise<boolean> {
   const ins = await pool.query("INSERT INTO welcomes (app_id, slack_user) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING 1", [appId, slackUser]);
   if (!ins.rowCount) return false;
   const tm = await getTeammate(teammateId);
@@ -64,7 +68,7 @@ export async function welcomeOnce(appId: string, teammateId: string, team: strin
 }
 
 // Peeblo's first words to a new owner: where setup stands (from Otari and the crew, read now) and the next steps.
-async function peebloFacts(who: string, why: "installed" | "opened"): Promise<string> {
+async function peebloFacts(who: string, why: Why, budget?: string | null): Promise<string> {
   const { listTeammates } = await import("../store/teammates.ts");
   const { serverList } = await import("../connectors/mcp.ts");
   const { session } = await import("../otari/admin.ts");
@@ -73,9 +77,31 @@ async function peebloFacts(who: string, why: "installed" | "opened"): Promise<st
   const crew = (await listTeammates()).filter((t) => t.slug !== "peeblo" && !(t as any).hidden);
   const tools = ((await serverList().catch(() => [])) as any[]).map((s) => serviceName(s.name));
   const connected = Boolean(await session().catch(() => null));
+  if (why === "joined") {
+    const { config } = await import("../config.ts");
+    return [
+      `<peeblo_event>first contact: ${who} just joined this Slack workspace.`,
+      `Facts: the crew is ${crew.map((t) => `${t.config.name} (${t.config.role})`).join("; ") || "empty so far"}; ${budget ? `their own AI budget is ${budget}, set when they joined` : "their AI budget is set by an admin"}; ${config.memberWrites ? "they can ask teammates to read and change the connected tools" : "they can ask any teammate to read the connected tools, while changes to those tools run only for admins (teammates show what they would have done)"}; they can hire a teammate of their own by describing the job to you${config.memberHires ? ` (up to ${config.memberHires})` : ""}; DMs are private, and channels show others' examples.`,
+      `Write ${who} a short welcome with slack_post: one line on who you are; their budget in a line; then three things to try, as a short list: DM a teammate (name two from the crew, with a real question each could answer), tag a teammate in a channel, and ask you to hire one. Plain words, a few lines, no setup talk.</peeblo_event>`,
+    ].join("\n");
+  }
   return [
     `<peeblo_event>first contact: ${why === "installed" ? `${who} just added you to Slack` : `${who} opened your DM for the first time`}.`,
     `Facts: the crew has ${crew.length ? `${crew.length} teammate${crew.length === 1 ? "" : "s"} (${crew.map((t) => t.config.name).join(", ")})` : "no teammates yet"}; connectors in Otari: ${tools.length ? tools.join(", ") : "none yet"}; Otari dashboard ${connected ? "connected (routing, budgets and guardrail are set up)" : "not connected yet (the console's setup does it)"}; add connectors at ${links.mcpServers()}.`,
     `Write ${who} a short welcome with slack_post, as their new chief of staff: one line on what you do; then where things stand in a line (the tools you can already reach, by name); then, ${crew.length ? "what the crew can do for them" : "as a short numbered list, the next steps: tell you about the company (or let you read the connected tools and draft company notes for their approval), hire a first teammate by describing the job (\"I need a teammate who…\"), and add more connectors in Otari, then give them to a teammate by asking you"}. Plain words, no setup jargon, a few lines.</peeblo_event>`,
   ].join("\n");
+}
+
+// Registers a new person in Otari on the starting tier and says it in words ("$0.50 a day").
+async function joinBudget(person: { end_user_id: string | null; display_name: string | null }): Promise<string | null> {
+  const { config } = await import("../config.ts");
+  if (!person.end_user_id || config.otariKeyKind !== "service") return null;
+  const { ensureEndUser, endUser, tiers } = await import("../otari/people.ts");
+  await ensureEndUser(person.end_user_id, person.display_name, config.otariEndUserBudget || undefined);
+  const mine = await endUser(person.end_user_id);
+  const t = (await tiers()).find((x) => x.budget_id === mine?.budget_id);
+  if (!t?.max_budget) return null;
+  const per = t.budget_duration_sec ?? 0;
+  const span = per === 86400 ? "a day" : per === 604800 ? "a week" : per >= 2419200 && per <= 2678400 ? "a month" : per ? `every ${Math.round(per / 3600)} hours` : "in total";
+  return `$${t.max_budget.toFixed(2)} ${span}`;
 }

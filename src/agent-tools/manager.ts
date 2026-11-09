@@ -142,6 +142,12 @@ export const managerTools: AgentTool[] = [
       // The authority rules (src/hire-rules.ts): YOLO for admins, an allowed model, a budget within the hirer's tier.
       const bad = await configProblems(ctx.person, { mode: a.mode, model: a.model || null, budget_usd: a.budget_usd, tools: a.tools ?? [], connectors: a.connectors ?? [] });
       if (bad) return bad;
+      const { config } = await import("../config.ts");
+      const { isOtariAdmin } = await import("../authority.ts");
+      if (config.memberHires > 0 && !isOtariAdmin(ctx.person)) {
+        const mine = (await pool.query("SELECT count(*)::int AS n FROM teammates WHERE owner_person = $1 AND archived_at IS NULL", [ctx.person.id])).rows[0].n;
+        if (mine >= config.memberHires) return `You already have ${mine} teammate${mine === 1 ? "" : "s"}, the most one person can keep here (${config.memberHires}). Retire one first (ask me to retire it), then hire the new one.`;
+      }
       // Names and slugs are unique, so a name always means one teammate.
       const all = await listTeammates();
       const name = String(a.name).toLowerCase().trim();

@@ -83,10 +83,13 @@ async function setState(teammateId: string, state: "asleep" | "booting" | "awake
 // Makes room before a wake: the tier's awake cap, then free host memory. Only idle computers are put to sleep.
 async function makeRoom(size: Tier): Promise<void> {
   const idle = (pred: (l: Live) => boolean) => [...live.entries()].filter(([, l]) => l.inflight === 0 && pred(l)).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+  // Every computer of this size is busy: wait up to 3 minutes for one to go idle, then give up.
+  const until = Date.now() + 180_000;
   while ([...live.values()].filter((l) => l.size === size).length >= awakeCap(size)) {
     const victim = idle((l) => l.size === size)[0];
-    if (!victim) throw new Error(`all ${awakeCap(size)} ${size} computers are busy; try again in a moment`);
-    await sleep(victim[0], "evicted: awake cap");
+    if (victim) { await sleep(victim[0], "evicted: awake cap"); continue; }
+    if (Date.now() > until) throw new Error(`all ${awakeCap(size)} ${size} computers are still busy after 3 minutes; try again in a moment`);
+    await new Promise((r) => setTimeout(r, 2000));
   }
   const need = TIERS[size].footprintMb + RESERVE_MB;
   while (availableMb() < need) {
