@@ -70,7 +70,11 @@ export function installSlackInbound(): void {
     if (ev.files?.length) text = `${text}\n${await saveFiles(appId, teammateId, session.id, ev.files).catch((e) => `[files: couldn't save them (${(e as Error).message.slice(0, 120)})]`)}`.trim();
     // The kill switch works where the teammate was asked directly or is in the thread; a "stop" said in a channel
     // Peeblo only reads along in is for the people there.
-    if (kindNow !== "channel" && /^(stop|cancel|stop please)[.!]?$/i.test(text)) {
+    // A short message that asks to stop ("stop", "actually stop, not needed", "nvm", "cancel that"), never "don't stop".
+    const words = text.trim().split(/\s+/).length;
+    const wantsStop = /^(stop|cancel|stop please)[.!]?$/i.test(text)
+      || (words <= 7 && /\b(stop|cancel|abort|never ?mind|nvm|not needed|forget it|don'?t bother|scrap (it|that))\b/i.test(text) && !/\b(don'?t|do not|never|no need to) (stop|cancel)\b/i.test(text));
+    if (kindNow !== "channel" && wantsStop) {
       // Only the person who asked for the running job, the teammate's owner or an admin can stop it (the stop
       // tool's rule); anyone else is told whose job it is, privately.
       const { threadSessions } = await import("../chains.ts");
