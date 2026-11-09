@@ -16,5 +16,5 @@ export function askedLabel(text: string | null): string {
 // Short text cut at a word, with an ellipsis, never mid-word.
 export function cutWords(s: string, n: number): string {
   const t = s.replace(/\s+/g, " ").trim();
-  return t.length <= n ? t : `${t.slice(0, n - 1).replace(/\s+\S*$/, "")}…`;
+  return t.length <= n ? t : `${t.slice(0, n - 1).replace(/\s+\S*$/, "").replace(/[.,;:!?]+$/, "")}…`;
 }

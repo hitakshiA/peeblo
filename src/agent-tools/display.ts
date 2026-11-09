@@ -30,10 +30,11 @@ function chart(a: any): any[] | string {
   // Slack refuses repeated category labels (two $99 charges), so a repeat gets its count: "$99.00 (2)".
   const seen = new Map<string, number>();
   const cats: string[] = (a.categories ?? []).map((c: unknown) => {
-    const base = cut(c, 15);
-    const n = (seen.get(base) ?? 0) + 1;
-    seen.set(base, n);
-    return n === 1 ? cut(c, 20) : `${base} (${n})`;
+    // Only an exact repeat gets a count; distinct labels keep their full 20 characters.
+    const full = cut(c, 20);
+    const n = (seen.get(full) ?? 0) + 1;
+    seen.set(full, n);
+    return n === 1 ? full : `${cut(c, 15)} (${n})`;
   });
   const series: { name: string; values: unknown[] }[] = a.series ?? [];
   if (!cats.length || cats.length > 20) return "A chart needs 1 to 20 categories (labels of 20 characters at most).";

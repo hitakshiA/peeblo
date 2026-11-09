@@ -77,8 +77,10 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   const lines: string[] = [];
   for (const r of recent) {
     const { buildReceipt } = await import("../receipts.ts");
-    const link = await buildReceipt(r.id).then((x) => x.links?.session ?? null).catch(() => null);
-    lines.push(`${r.status === "done" ? "✅" : "⚠️"} ${cutWords(askedLabel(r.asked).replace(/<[^>]+>/g, ""), 110) || "(a job)"} · ${usd(Number(r.cost))}${link ? ` · <${link}|receipt>` : ""}`);
+    // The receipt's own total (model calls plus code execution), so Home and the reply's footer agree.
+    const rec = await buildReceipt(r.id).catch(() => null);
+    const link = rec?.links?.session ?? null;
+    lines.push(`${r.status === "done" ? "✅" : "⚠️"} ${cutWords(askedLabel(r.asked).replace(/<[^>]+>/g, ""), 110) || "(a job)"} · ${usd(rec?.cost_usd ?? Number(r.cost))}${link ? ` · <${link}|receipt>` : ""}`);
   }
   blocks.push({ type: "section", text: { type: "mrkdwn", text: lines.join("\n") || "No jobs yet." } });
   // Budget meter: the teammate's month, and the viewer's share of it.
