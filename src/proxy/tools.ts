@@ -229,6 +229,10 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     if (!r.isError && (extra.kind ?? base.kind) === "read") {
       if (readCache.size > 2000) readCache.clear();
       readCache.set(repeatKey, text);
+    } else if (!r.isError && name !== "slack_post") {
+      // Anything that changed something makes this job's earlier reads stale: the next read asks again.
+      for (const k of readCache.keys()) if (k.startsWith(`${b.runId}:`)) readCache.delete(k);
+      for (const k of identical.keys()) if (k.startsWith(`${b.runId}:`) && !k.startsWith(`${b.runId}:${name}:`)) identical.delete(k);
     }
     await event({ status: r.isError ? "failed" : "completed", ...extra, ...(r.isError ? { error: r.text.slice(0, 500) } : { summary: summarize(r.text), lines: r.text.split("\n").filter((l) => /^\s*(- |• |\d+\. )/.test(l)).length, sources: urlsIn(r.text) }), untrusted: source, guard: screened ? { checked_by: screened.checked_by, flagged: screened.flagged, score: screened.score, request_id: screened.requestId } : null });
     return reply({ ...r, text });

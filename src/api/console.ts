@@ -67,25 +67,6 @@ export function addConsoleRoutes(router: Router): void {
     .add("GET", "/v1/console/me", async () => ({ person: await consolePerson() }))
     // A hire from the console form does what a hire through Peeblo does: the config, the Slack app with its face, and
     // the install link (the form is its approval).
-    .add("POST", "/v1/console/hire", async ({ body }) => {
-      const { createTeammate } = await import("../store/teammates.ts");
-      const { createTeammateApp } = await import("../slack/admin.ts");
-      const { facePng, pickFace } = await import("../slack/idcard.ts");
-      const { slug, person_id, ...cfg } = body ?? {};
-      // Like a hire through Peeblo: the worker role policy (unless a model was named), its own computer, and its own Otari
-      // key with a spend ceiling.
-      const tm = await createTeammate(String(slug ?? ""), { ...cfg, model: cfg.model?.default ? cfg.model : { default: "peeblo-worker" }, tools: [...new Set([...(cfg.tools ?? []), "computer"])] }, { personId: person_id ?? null, label: "hired in the console" });
-      void import("../otari/spend.ts").then((m) => m.teammateKey(tm)).catch(() => null);
-      const face = pickFace(tm.slug);
-      await pool.query("INSERT INTO hires (teammate_id, hired_by, avatar) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [tm.id, person_id ?? null, face]);
-      try {
-        const app = await createTeammateApp(tm, face.color, await facePng(face));
-        await pool.query("UPDATE hires SET app_id = $2, install_url = $3 WHERE teammate_id = $1", [tm.id, app.appId, app.installUrl]);
-        return { teammate: tm, install_url: app.installUrl };
-      } catch (e) {
-        return { teammate: tm, install_url: null, app_error: (e as Error).message };
-      }
-    })
     .add("GET", "/v1/setup", async () => {
       const { runChecks } = await import("../check.ts");
       return { checks: await runChecks() };

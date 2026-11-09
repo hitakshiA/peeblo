@@ -211,6 +211,7 @@ export const managerTools: AgentTool[] = [
       const change = [add.length ? `Add ${add.join(", ")} to ${name}'s ${label}` : "", drop.length ? `${add.length ? "; remove" : "Remove"} ${drop.join(", ")}` : ""].join("");
       const what = ["github_repos", "connectors", "tools"].includes(a.field) ? (change || `${name}'s ${label} stay the same`)
         : a.field === "budget_usd" ? `${Number(a.value) > (t?.config.budget.monthly_usd ?? 0) ? "Raise" : "Set"} ${name}'s budget to $${a.value} a month (now $${t?.config.budget.monthly_usd ?? "?"})`
+        : a.field === "model" ? `Move ${name} to ${await modelWords(String(a.value))}`
         : a.field === "mode" ? `Change ${name}'s mode from ${t?.config.mode ?? "?"} to ${a.value}`
         : a.field === "instructions" ? `Change ${name}'s instructions` : a.field === "computer_size" ? `Give ${name} a ${a.value} computer` : `Change ${name}'s ${String(a.field).replace(/_/g, " ")} to ${String(a.value).slice(0, 200)}`;
       return { kind: "teammate_change", target_name: name, summary: `${what}${a.reason ? `\nWhy: ${String(a.reason).slice(0, 200)}` : ""}` };
@@ -366,4 +367,12 @@ async function retryMissingApp(t: Teammate, ctx: any): Promise<string> {
   const hired = (await pool.query("SELECT run_id FROM events WHERE type = 'teammate.hired' AND data->>'teammate_id' = $1 ORDER BY id DESC LIMIT 1", [t.id])).rows[0];
   await offerOnCard(t, hired?.run_id ?? null, app.installUrl, ctx.person?.slack_user ?? null).catch((e) => console.error("install card:", e));
   return ` Its Slack app is made now; the install button is on its ID card.`;
+}
+
+// A model in words for cards: a role policy reads as its usual model ("its usual model, DeepSeek V4.1 Flash"),
+// a catalog id as its name ("Kimi K3.1 Pro").
+async function modelWords(id: string): Promise<string> {
+  const { readableModel } = await import("../slack/look.ts");
+  const role = ROLES[id];
+  return role ? `its usual model, ${readableModel(role.default).name}` : readableModel(id).name;
 }

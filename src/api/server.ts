@@ -36,6 +36,12 @@ export const router = new Router()
   .add("GET", "/v1/teammates/:slug", async ({ params }) => (await getTeammate(params.slug)) ?? Promise.reject(notFound("teammate")))
   .add("PATCH", "/v1/teammates/:slug", async ({ params, body }) => {
     const { note, ...patch } = body ?? {};
+    // The same checks as a change by talking (the console acts as the first admin); a model goes through /model.
+    if ((patch as any).model) throw bad("change the model with POST /v1/teammates/:slug/model (it checks the model and who asks)");
+    const { configProblems } = await import("../hire-rules.ts");
+    const admin = config.admins[0] ? (await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [config.admins[0]])).rows[0] ?? { slack_user: config.admins[0] } : null;
+    const problem = await configProblems(admin, { mode: (patch as any).mode, budget_usd: (patch as any).budget?.monthly_usd, tools: (patch as any).tools, connectors: (patch as any).connectors });
+    if (problem) throw bad(problem);
     const t = await updateTeammate(params.slug, patch, { label: "api" }, note);
     if ((patch as any)?.computer) await import("../environment/recipes.ts").then((r) => r.queueIfNeeded(t.id)).catch(() => {});
     return t;

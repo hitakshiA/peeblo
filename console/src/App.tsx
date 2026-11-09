@@ -71,16 +71,14 @@ export default function App() {
 const Face = ({ slug, big }: { slug: string; big?: boolean }) => <img className={`face ${big ? "big" : ""}`} src={`/v1/teammates/${encodeURIComponent(slug)}/face.png`} alt="" />;
 const Status = ({ s }: { s: string }) => <span className={`pill ${s === "done" || s === "approved" || s === "awake" ? "ok" : s === "failed" || s === "denied" ? "bad" : s === "running" || s === "waiting" || s === "pending" ? "warn" : ""}`}>{s}</span>;
 const Page = ({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) => <><h1>{title}</h1>{sub && <p className="sub">{sub}</p>}{children}</>;
-const hidden = (t: Teammate) => /^(eval-|vm-)|-check$/.test(t.slug);
+const hidden = (t: Teammate) => Boolean((t as any).hidden);
 
 function Crew() {
-  const { data, reload } = useLoad<{ teammates: Teammate[] }>("/v1/teammates");
-  const [hiring, setHiring] = useState(false);
+  const { data } = useLoad<{ teammates: Teammate[] }>("/v1/teammates");
   const crew = (data?.teammates ?? []).filter((t) => !hidden(t));
   return (
     <Page title="Your crew" sub="Open a teammate to talk to it, adjust it, or read its memory.">
-      <div className="row" style={{ marginBottom: 16 }}><button className="moss" onClick={() => setHiring(!hiring)}>{hiring ? "Close" : "Hire a teammate"}</button><span className="muted">Or ask Peeblo in Slack: "I need someone who…"</span></div>
-      {hiring && <Hire onDone={() => { setHiring(false); reload(); }} />}
+      <p className="muted" style={{ marginBottom: 16 }}>To hire, ask Peeblo in Slack: “I need a teammate who…”. Peeblo proposes the role, tools and budget, and you approve its ID card there.</p>
       <div className="grid">
         {crew.map((t) => (
           <a key={t.id} className="card link" href={`#/teammate/${t.slug}`}>
@@ -91,32 +89,6 @@ function Crew() {
         ))}
       </div>
     </Page>
-  );
-}
-
-function Hire({ onDone }: { onDone: () => void }) {
-  const [f, setF] = useState({ name: "", role: "", instructions: "", budget: 10, mode: "auto", connectors: "", tools: "web", size: "small" });
-  const [err, setErr] = useState<string | null>(null);
-  const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
-  const submit = () => {
-    const slug = f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    post("/v1/console/hire", { slug, name: f.name, role: f.role, instructions: f.instructions, model: { default: "peeblo-worker" }, budget: { monthly_usd: Number(f.budget) }, mode: f.mode, tools: f.tools.split(",").map((x) => x.trim()).filter(Boolean), connectors: f.connectors.split(",").map((x) => x.trim()).filter(Boolean), computer: { size: f.size } }).then(onDone, (e) => setErr(e.message));
-  };
-  return (
-    <div className="card stack" style={{ marginBottom: 20 }}>
-      <div className="form">
-        <label>Name<input value={f.name} onChange={set("name")} placeholder="Ledger" /></label>
-        <label>Role<input value={f.role} onChange={set("role")} placeholder="Watches Stripe refunds for Maya" /></label>
-        <label>Budget (USD a month)<input type="number" value={f.budget} onChange={set("budget")} /></label>
-        <label>Approvals<select value={f.mode} onChange={set("mode")}><option value="ask">Ask before every write</option><option value="auto">Auto (asks before outward writes)</option><option value="trusted">Trusted</option></select></label>
-        <label>Connectors<input value={f.connectors} onChange={set("connectors")} placeholder="linear, posthog" /></label>
-        <label>Tools<input value={f.tools} onChange={set("tools")} placeholder="web, code, computer" /></label>
-        <label>Computer<select value={f.size} onChange={set("size")}><option value="small">Small</option><option value="large">Large (browser)</option></select></label>
-      </div>
-      <label>Standing instructions<textarea value={f.instructions} onChange={set("instructions")} /></label>
-      {err && <div className="err">{err}</div>}
-      <div><button className="moss" onClick={submit} disabled={!f.name || !f.role}>Hire</button></div>
-    </div>
   );
 }
 

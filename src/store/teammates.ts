@@ -145,7 +145,7 @@ export async function teammateAt(id: string, version: number): Promise<Teammate 
 
 export async function listTeammates(): Promise<Teammate[]> {
   const { rows } = await pool.query<Teammate>(
-    `SELECT t.id, t.slug, t.owner_person, t.version, v.config, t.created_at
+    `SELECT t.id, t.slug, t.owner_person, t.version, v.config, t.created_at, t.hidden
        FROM teammates t JOIN teammate_versions v ON v.teammate_id = t.id AND v.version = t.version
       WHERE t.archived_at IS NULL ORDER BY t.created_at`,
   );
