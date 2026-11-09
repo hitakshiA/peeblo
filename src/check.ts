@@ -22,7 +22,10 @@ export async function runChecks(): Promise<Result[]> {
   });
   await check("Peeblo core", async () => {
     // check runs on its own; this asks the running core.
-    const r = await fetch(`http://127.0.0.1:${config.apiPort}/healthz`).catch(() => null);
+    // On Linux, check runs in its own container next to core's: core is the "peeblo" service there.
+    const { existsSync } = await import("node:fs");
+    const base = process.env.PEEBLO_CORE_URL ?? (existsSync("/.dockerenv") ? "http://peeblo:7340" : `http://127.0.0.1:${config.apiPort}`);
+    const r = await fetch(`${base}/healthz`).catch(() => null);
     if (!r?.ok) throw new Error("not running: start it with ./peeblo up (logs: ./peeblo logs)");
     return "running";
   });
