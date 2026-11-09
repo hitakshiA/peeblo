@@ -192,7 +192,11 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
   // Loop limits (K14), the same on every model: the 3rd identical call in a run gets a factual note, the 6th
   // stops the run.
-  const repeatKey = `${b.runId}:${name}:${base.args_fingerprint}`;
+  // Free-text fields some servers ask for (Resend's "context", "conversation_id", "llm_model") change every call,
+  // so they don't count when deciding whether a call is a repeat.
+  const NOTE_KEYS = new Set(["context", "conversation_id", "llm_model", "reason_for_call", "intent_note"]);
+  const loopArgs = Object.fromEntries(Object.entries((args ?? {}) as Record<string, unknown>).filter(([k]) => !NOTE_KEYS.has(k)));
+  const repeatKey = `${b.runId}:${name}:${fingerprint(loopArgs)}`;
   const repeats = (identical.get(repeatKey) ?? 0) + 1;
   identical.set(repeatKey, repeats);
   if (repeats >= LOOP_STOP) {
