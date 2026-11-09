@@ -343,12 +343,12 @@ function Setup() {
   const otari = useLoad<any>("/v1/otari");
   return <Page title="Setup" sub="Everything Peeblo needs, checked live (the same as ./peeblo check). Anything to fix says how.">
     {otari.data && !otari.data.session && <div style={{ marginBottom: 12 }}><ConnectOtari onDone={() => { otari.reload(); reload(); }} /></div>}
-    <div className="row" style={{ marginBottom: 12 }}><button className="ghost" onClick={reload}>Check again</button></div>
+    <div className="row" style={{ marginBottom: 22 }}><button className="ghost" onClick={reload}>Check again</button></div>
     {!data && <div className="muted">Checking…</div>}
     {data && [["Otari", (n: string) => /^Otari/.test(n)], ["Slack", (n: string) => /slack|install|public URL/i.test(n)], ["This machine", () => true]].reduce((acc: { title: string; rows: any[] }[], [title, test]: any) => {
       const taken = new Set(acc.flatMap((g) => g.rows.map((r) => r.name)));
       acc.push({ title, rows: data.checks.filter((c) => !taken.has(c.name) && test(c.name)) }); return acc;
     }, []).map((g) => <section key={g.title} style={{ marginBottom: 18 }}><h3 style={{ marginBottom: 10 }}>{g.title} {g.rows.every((r) => r.ok) ? <span className="pill ok">all ok</span> : <span className="pill bad">{g.rows.filter((r) => !r.ok).length} to fix</span>}</h3>
-      <div className="card"><table><tbody>{g.rows.map((c) => <tr key={c.name}><td>{c.ok ? <span className="pill ok">ok</span> : <span className="pill bad">fix</span>}</td><td><b>{c.name.replace(/^Otari /, "")}</b></td><td>{c.detail}</td></tr>)}</tbody></table></div></section>)}
+      <div className="card"><table className="checks"><tbody>{g.rows.map((c) => <tr key={c.name}><td>{c.ok ? <span className="pill ok">ok</span> : <span className="pill bad">fix</span>}</td><td><b>{c.name.replace(/^Otari /, "")}</b></td><td>{c.detail}</td></tr>)}</tbody></table></div></section>)}
   </Page>;
 }
