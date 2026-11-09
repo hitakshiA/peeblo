@@ -415,6 +415,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       const e = error as Error & { status?: number; requestId?: string | null; code?: string | null };
       if (e.status === 409 || /revision/i.test(e.message)) forgetServer(t.serverId);
       await event({ status: "failed", request_id: e.requestId ?? null, ms: Date.now() - t0, error: e.message.slice(0, 500), error_code: e.code ?? null });
+      if (/403/.test(e.message) && /<html|nginx|403 Forbidden/i.test(e.message)) return reply({ text: firewallHint(t), isError: true });
       return reply({ text: `The ${t.server} call failed: ${e.message.slice(0, 400)}${base.edited ? ` (It had the approver's edits: ${JSON.stringify(args).slice(0, 400)}. Keep their values if you try another way.)` : ""}`, isError: true });
     }
   };
@@ -484,7 +485,7 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
   // Otari's web firewall answers some request shapes with a bare nginx 403 page (no request id): a filter, not a
   // permission problem. Seen on SQL with comments or a sub-select inside the select list.
   if (r.isError && /403/.test(r.text) && /<html|nginx|403 Forbidden<\/title>/i.test(r.text)) {
-    return { ...r, chars, text: `A gateway filter in front of ${t.server} blocked this request's shape before it reached the service (not a permission problem, and the data is there). Rewrite it more simply and try once more: no SQL comments (-- or /* */), no sub-selects inside the select list, no UNION; split it into two plain queries if needed.${hintFor(t.server, t.tool) ? ` ${hintFor(t.server, t.tool)}` : ""}` };
+    return { ...r, chars, text: firewallHint(t) };
   }
   if (r.isError && hintFor(t.server, t.tool)) return { ...r, chars, text: `${r.text}\n[peeblo: ${hintFor(t.server, t.tool)}]` };
   if (r.isError || chars <= RESULT_CAP) return { ...r, chars };
@@ -533,4 +534,10 @@ async function githubVisible(tools: ConnectorTool[]): Promise<string> {
 export async function warmGithubVisible(): Promise<void> {
   const peeblo = await getTeammate("peeblo");
   if (peeblo) await githubVisible((await catalogFor(peeblo.config)).tools).catch(() => "");
+}
+
+// Otari's web firewall answers some request shapes with a bare nginx 403 page: a filter on the request's content,
+// not a permission problem. Seen on SQL (comments, sub-selects in the select list) and on HTML email bodies.
+function firewallHint(t: { server: string; tool: string }): string {
+  return `A gateway filter in front of ${t.server} blocked this request's shape before it reached the service (not a permission problem, and nothing ran). Rewrite it more simply and try once more: for SQL, no comments (-- or /* */), no sub-selects inside the select list, no UNION, split into two plain queries if needed; for an email or page body, send plain text (the text field) with no HTML tags or <!DOCTYPE>. If it's blocked again, say the gateway refused it and stop.${hintFor(t.server, t.tool) ? ` ${hintFor(t.server, t.tool)}` : ""}`;
 }
