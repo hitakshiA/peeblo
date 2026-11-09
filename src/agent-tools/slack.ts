@@ -59,7 +59,7 @@ export const slackTools: AgentTool[] = [
       text: { type: "string", description: "What to say (Slack markdown). Also the fallback text when blocks are given." },
       blocks: { type: ["array", "null"], description: "Optional Block Kit blocks, e.g. [{type: 'table', rows: [...]}].", items: { type: "object", additionalProperties: true } as any },
       more: { type: ["boolean", "null"], description: "true if you will keep working after this post (a progress note). Leave it out for your answer." },
-      private: { type: ["boolean", "null"], description: "true to show this reply only to the person who asked (\"only you can see this\"), e.g. numbers asked for in a busy channel." },
+      private: { type: ["boolean", "null"], description: "true to show this reply only to the person who asked (\"only you can see this\"), e.g. numbers asked for in a busy channel. Ignored in a DM, which is already private." },
       thread_title: { type: ["string", "null"], description: "A short title for this conversation in the person's sidebar (under 60 characters), on your first reply." },
     }),
     kind: "read", // it posts only into the conversation the person started; no approval
@@ -72,7 +72,8 @@ export const slackTools: AgentTool[] = [
       // The conversation's title in the sidebar, in the agent's words.
       if (place && a.thread_title) await slack(place.app_id, "agents.sessions.rename", { channel_id: place.channel, thread_ts: place.thread_ts, title: String(a.thread_title).slice(0, 60) }).catch(() => null);
       // "Only you can see this": an ephemeral reply to the asker; nothing public is posted for this turn.
-      if (place && a.private) {
+      // In a DM (and its assistant threads) everything is already private: post it as the normal reply.
+      if (place && a.private && place.channel_type !== "im") {
         const who = ctx.person?.slack_user ?? place.user;
         const r: any = await slack(place.app_id, "chat.postEphemeral", { channel: place.channel, user: who, thread_ts: place.channel_type === "im" ? undefined : place.thread_ts, text, ...(a.blocks?.length ? { blocks: a.blocks } : {}) }).catch((e) => ({ ok: false, error: (e as Error).message }));
         if (r.ok === false) return { text: `Slack refused the private reply (${r.error}).`, isError: true };
