@@ -202,7 +202,7 @@ export const managerTools: AgentTool[] = [
     kind: "local",
     // The card in plain words: "Okay to change Rivet's setup?" / "Give Rivet: Sentry, Grafana".
     async describe(_ctx, a) {
-      const t = await getTeammate(String(a.teammate)).catch(() => null);
+      const t = await findTeammate(String(a.teammate)).catch(() => null);
       const name = t?.config.name ?? String(a.teammate);
       const items = String(a.value).split(",").map((x: string) => x.trim()).filter(Boolean);
       const cur: string[] = a.field === "github_repos" ? ((t?.config as any)?.connector_scopes?.github ?? []) : a.field === "connectors" ? (t?.config.connectors ?? []) : a.field === "tools" ? (t?.config.tools ?? []) : [];
