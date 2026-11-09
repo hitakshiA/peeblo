@@ -48,7 +48,6 @@ export const config = {
   guardModel: process.env.PEEBLO_GUARD_MODEL ?? "alibaba/qwen3guard-gen-8b",
   // A spend guard for building and testing: model calls to anything priced above these (USD per 1M tokens
   // in,out) are refused before they leave Peeblo. Unset in production.
-  buildPriceCap: (process.env.PEEBLO_BUILD_PRICE_CAP ?? "").split(",").map(Number).filter((n) => n > 0),
   managerAppId: process.env.PEEBLO_SLACK_APP_ID?.trim() || "",   // Peeblo's own Slack app
   consolePassword: process.env.PEEBLO_CONSOLE_PASSWORD ?? "",   // the console's one password
   admins: (process.env.PEEBLO_ADMINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),   // Slack user ids of Otari admins

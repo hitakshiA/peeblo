@@ -6,7 +6,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { otari, OtariError } from "../../src/otari/client.ts";
 import { pinnedName, ROLES } from "../../src/otari/routing.ts";
 import { tierFile } from "../../src/otari/catalog.ts";
-import { overBuildCap } from "../../src/otari/price-cap.ts";
 
 type Schema = { type: string | string[]; properties?: Record<string, Schema>; required?: string[]; enum?: unknown[]; minimum?: number; maximum?: number; additionalProperties?: boolean; items?: Schema };
 const fn = (name: string, description: string, properties: Record<string, Schema>, strict: boolean) =>
@@ -165,9 +164,6 @@ const picked = Object.entries(tierFile.models).filter(([, t]) => ["S", "A", "B"]
 const deferred: Record<string, string> = {};
 for (const model of picked) {
   const role = model;
-  // Big models are configured but tested at the end (PEEBLO_BUILD_PRICE_CAP).
-  const capped = await overBuildCap(model);
-  if (capped) { deferred[model] = capped; console.log(`\n# deferred to the end: ${capped}`); continue; }
   console.log(`\n# ${tierFile.models[model].tier} ${model}${roleOf(model).length ? ` (default for ${roleOf(model).join(", ")})` : ""}`);
   const strict = await triggerAndSchema(model, true);
   const loose = await triggerAndSchema(model, false);

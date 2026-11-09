@@ -22,7 +22,7 @@ const PROFILE = {
 export async function ensureManager(): Promise<void> {
   if (!(await getTeammate(MANAGER))) {
     await createTeammate(MANAGER, {
-      name: "Peeblo", role: ROLE, instructions: "", profile: PROFILE, model: { default: "deepseek/deepseek-v4.1-flash-1017", fallback: "xiaomi/mimo-v2.6-pro" },
+      name: "Peeblo", role: ROLE, instructions: "", profile: PROFILE, model: { default: "peeblo-manager" },
       budget: { monthly_usd: 20 }, tools: ["web", "code"], connectors: ["all"], mode: "auto",
     }, { personId: null, label: "Peeblo's first start" });
   }

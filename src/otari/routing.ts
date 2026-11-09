@@ -74,11 +74,13 @@ export async function recommend(q: { sessionId: string; toolUseId: string; agent
     for (const [id, purpose] of Object.entries(q.candidates)) { const p = id.includes(":") ? id : `otari:${id}`; byPinned.set(p, id); candidates[p] = purpose; }
     const r = await otari<{ model: string; reason?: string; probabilities?: Record<string, number> }>("POST", "/routing/recommend", {
       harness: "pi", session_id: q.sessionId, tool_use_id: q.toolUseId, agent_type: q.agentType, description: q.description,
-      prompt: q.prompt.slice(0, 8000), parent_model: q.parentModel, candidates, ...(q.endUser ? { user: q.endUser } : {}),
+      prompt: q.prompt.slice(0, 8000), parent_model: q.parentModel, candidates,
     });
     const probabilities = Object.fromEntries(Object.entries(r.data.probabilities ?? {}).map(([k, v]) => [byPinned.get(k) ?? k, v]));
     return { model: byPinned.get(r.data.model) ?? q.parentModel, probabilities, reason: r.data.reason ?? null, requestId: r.requestId, fallback: !byPinned.has(r.data.model) };
-  } catch {
-    return { model: q.parentModel, probabilities: {}, reason: null, requestId: null, fallback: true };
+  } catch (e) {
+    const err = e as { status?: number; requestId?: string | null; message?: string };
+    console.error(`otari: /routing/recommend failed (${err.status ?? "?"} ${err.requestId ?? "no request id"}): ${String(err.message).slice(0, 200)}`);
+    return { model: q.parentModel, probabilities: {}, reason: null, requestId: err.requestId ?? null, fallback: true };
   }
 }

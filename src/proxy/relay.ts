@@ -15,7 +15,6 @@ import { estimateCost, roughTokens } from "../otari/catalog.ts";
 import { ROLES } from "../otari/routing.ts";
 import { capCheck, noteSpend, type CapRefusal } from "../otari/spend.ts";
 import { teammateAt } from "../store/teammates.ts";
-import { overBuildCap } from "../otari/price-cap.ts";
 
 export type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
 export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; modelCalls?: { runId: string | null; n: number }; runCost?: { runId: string | null; usd: number; cap: number; warned?: boolean }; finalStatus?: { runId: string | null; calls: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
@@ -121,7 +120,9 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   const { getTeammate } = await import("../store/teammates.ts");
   const tm = (await getTeammate(b.teammateId)) ?? (await teammateAt(b.teammateId, b.teammateVersion));
   if (!tm) return unchecked("its teammate's setup couldn't be found");
-  const model = typeof j.model === "string" ? (j.model in ROLES ? ROLES[j.model].default : j.model) : tm.config.model.default;
+  const { jobModel } = await import("../agent-tools/effort.ts");
+  const sent = (b.runId && jobModel.get(b.runId)) || (typeof j.model === "string" ? j.model : tm.config.model.default);
+  const model = sent in ROLES ? ROLES[sent].default : sent;
   const promptChars = JSON.stringify(j.messages ?? j.input ?? "").length + JSON.stringify(j.tools ?? []).length + String(j.system ?? "").length;
   // Agents send the model's whole output limit as max_tokens; a turn rarely writes more than 8k, so the estimate
   // uses the smaller of the two (Otari's own caps still count the full allowance).
@@ -252,18 +253,6 @@ export function startProxy(): Promise<Server> {
       await mkdir(process.env.PEEBLO_DUMP_SYSTEM, { recursive: true }).catch(() => {});
       await writeFile(`${process.env.PEEBLO_DUMP_SYSTEM}/${b.sessionId}.txt`, typeof sys === "string" ? sys : JSON.stringify(sys)).catch(() => {});
     }
-    // The night cap (a hard stop on total Otari spend since the run's baseline).
-    if (isInference) {
-      const { overNightCap } = await import("../otari/night-cap.ts");
-      const t0 = Date.now();
-      const why = await overNightCap();
-      if (Date.now() - t0 > 1000) console.error(`slow: night cap ${Date.now() - t0} ms`);
-      if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "night_cap", "peeblo-refused": "night_cap" }).end(JSON.stringify({ detail: why, code: "night_cap" }));
-    }
-    if (isInference && raw && config.buildPriceCap.length) {
-      const why = await overBuildCap(JSON.parse(raw.toString("utf8")).model).catch(() => null);
-      if (why) return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "build_price_cap", "peeblo-refused": "build_price_cap" }).end(JSON.stringify({ detail: why, code: "build_price_cap" }));
-    }
     if (isInference && raw) {
       // A budget check that fails refuses the call (fail closed).
       const t1 = Date.now();
@@ -363,7 +352,6 @@ export function startProxy(): Promise<Server> {
       if (usage?.cost_usd !== undefined) {
         noteSpend(b.teammateId, b.endUser, Number(usage.cost_usd) || 0);
         if (b.runCost?.runId === b.runId) b.runCost.usd += Number(usage.cost_usd) || 0;
-        void import("../otari/night-cap.ts").then((m) => m.noteNightSpend(Number(usage.cost_usd) || 0));
       }
     }
   });

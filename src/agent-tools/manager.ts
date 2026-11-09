@@ -57,8 +57,8 @@ const hireSpec = {
 };
 export function configFrom(a: any): Partial<TeammateConfig> {
   return {
-    // The default model is the worker role's, from config/model-tiers.json.
-    name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || ROLES["peeblo-worker"].default, fallback: ROLES["peeblo-worker"].fallback[0] },
+    // Teammates run on the worker role policy in Otari (config/model-tiers.json), unless a person picked a model.
+    name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || "peeblo-worker" }, // the worker role policy: Otari owns the fallback
     // Every teammate has its own computer (small unless it browses); code and data work run there.
     budget: { monthly_usd: a.budget_usd }, tools: [...new Set([...(a.tools ?? []), "computer"])], connectors: [...new Set([...(a.connectors ?? []), ...(a.github_repos?.length ? ["github"] : [])])], mode: a.mode ?? "auto",
     computer: { size: a.computer_size ?? "small", allowed_hosts: [], ...(a.github_repos?.length ? { repos: a.github_repos.map((r: string) => ({ name: r.split("/")[1], remote: `https://github.com/${r}.git`, base: "main", credential: "GH_TOKEN", protected: [], worktree: { setup: [], include: [], setup_inputs: [] } })) } : {}) } as any,
