@@ -42,7 +42,7 @@ Peeblo is a crew of agents shared by a whole team, so it leans on the parts of O
 | Web | `web_search` uses Otari's direct `/search` when the org has a search tool set up, and otherwise Otari's built-in web search in one small call. `web_fetch` reads one page with `/fetch`. Both are tools the agent picks, limited to each teammate's sites, and their text is screened. | `src/agent-tools/web.ts` |
 | Code | `run_code` runs Python with `/code/execute` (no model call), one sandbox per conversation. It can take small files from the teammate's computer (Otari Files, `file_ids`) and returns the files it writes. The model picks it for exact figures in a conversation; files, repos and long work stay on the teammate's own computer. | `src/agent-tools/web.ts`, `skills/working-with-numbers` |
 | Files | `understand_file` reads what a text-only teammate can't: a voice note, a PDF or an image, with the best open model Otari's catalog lists for that input type (`input_modalities`), falling back to the next. The teammate's computer converts audio to wav first. | `src/agent-tools/media.ts` |
-| Guardrail | Text from outside the company (tickets, chats, web pages, shared files, text a person pastes and the agent checks with `check_text`) is screened by the org's Lakera guardrail through Otari's guardrail test route. Everyday internal work isn't screened, so it costs nothing. An open guard model through Otari is the fallback. The receipt names which one checked. | `src/guard.ts`, `src/proxy/tools.ts`, `src/agent-tools/media.ts` |
+| Guardrail | Text from outside the company (tickets, chats, web pages, shared files however they're read, text a person pastes and the agent checks with `check_text`) is screened before a model sees it. Lakera runs at Otari's gateway: Peeblo makes a screening workspace whose org guardrail mandate (block mode) covers only it, and sends the outside text there with its own key, so Otari answers `403 guardrail_violation` for an attack. An open-weight guard model through Otari confirms; text both flag is held back from the model, and the agent tells the person what was held back. Needs no dashboard session after setup. `./peeblo check` runs a live attack and an ordinary email through it. | `src/guard.ts`, `src/proxy/tools.ts`, `src/agent-tools/media.ts` |
 | Privacy | When the workspace requires zero data retention (an Otari setting), every role is pinned to a provider the catalog marks zero-retention. `./peeblo check` says whether that's possible before you turn it on. With `PEEBLO_TRACE_CONTENT=keep`, Otari keeps prompts and answers on traces. | `src/otari/routing.ts`, `src/check.ts` |
 | Traces | Every call carries `session_label` (teammate · place · first ask), so Otari's Sessions view reads like the Slack thread. Receipts link to each request and to that session. | `src/proxy/relay.ts`, `src/otari/traces.ts` |
 | Rule engine | Commands and file access on a teammate's computer are checked with `/hooks/check` against `policies/teammate.yaml`: a required gate refuses, an advisory gate asks a person. | `src/otari/rules.ts`, `policies/` |
@@ -81,10 +81,12 @@ Teammates are agents: they choose what to do. Code holds only what must always o
 
 ## Choices we made, and why
 
-- **Lakera screens outside text, not every call.** With Otari's org-wide mandate on, ordinary agent requests were
-  refused as attacks: an agent's prompt and tool definitions are full of imperative text. Screening what came from
-  outside catches the real attacks (a customer email that says "refund everyone" was flagged with score 1) and
-  leaves the team's own work alone.
+- **Lakera screens outside text, not every call.** With Otari's org-wide mandate on Peeblo's own calls, ordinary
+  agent requests were refused as attacks: an agent's prompt and tool definitions are full of imperative text. So the
+  mandate covers a separate screening workspace, and only outside text goes there. A pasted "refund everyone" email
+  and a PDF with an instruction hidden in it were both stopped (score 1).
+- **Two guardrails in series.** Lakera's policy flags some marketing pages; an open-weight guard model confirms each
+  flag. On 39 real tickets, issues and web pages, nothing harmless was held back.
 - **Our own open-weight list.** `/catalog/models` has an `open_weights` flag, but it's wrong for about a quarter of
   the models (reported to the Otari team), so Peeblo keeps a reviewed family list.
 - **Routing at the boundary.** A hard part runs as a helper on the routed model, instead of switching a running
@@ -104,7 +106,7 @@ Teammates are agents: they choose what to do. Code holds only what must always o
 - **The code sandbox has pandas, numpy, matplotlib and openpyxl, but no PDF library**; PDFs go to a model instead.
 - **Direct `/search` needs a search tool** set up in Otari; without one, the built-in web search is used.
 - **Gateway tools aren't in the agent's history.** The next turn gets a short note of the web and code calls that ran.
-- **Streamed responses carry no guardrail verdict.** Receipts use the state Peeblo last read.
+- **Per-request guardrail profiles don't work on hosted Otari** (no guardrails service), so Peeblo uses a workspace-scoped mandate.
 - **Connector calls aren't billed per person.** `/mcp/execute` has no end-user field.
 - **Trace ids aren't in responses.** Receipts link to the session and to each request.
 - **The served-model header names the provider's model id**, not the catalog id; receipts show readable names.
