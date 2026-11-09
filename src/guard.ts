@@ -7,6 +7,7 @@
 // Either way the verdict is an event, and the receipt names the guard that checked it.
 import { config } from "./config.ts";
 import { otari } from "./otari/client.ts";
+import { links } from "./otari/links.ts";
 import { pool } from "./db.ts";
 import { appendEvent } from "./store/events.ts";
 
@@ -171,4 +172,4 @@ export function wrapUntrusted(text: string, source: string, s: Screened | null):
 }
 
 export const blockedReply = (guard: string) =>
-  `I didn't act on that message: the guardrail (${guard}) flagged it as unsafe, for example as an attempt to override my instructions. If that's a mistake, rephrase it or ask my owner to check.`;
+  `I didn't act on that message: the guardrail (${guard}) flagged it as unsafe, for example as an attempt to override my instructions. If that's a mistake, rephrase it or ask my owner to check.${/org guardrail/.test(guard) ? ` An admin can turn the org-wide guardrail off in Otari (${links.guardrails()}); Peeblo still checks text from outside the company without it.` : ""}`;

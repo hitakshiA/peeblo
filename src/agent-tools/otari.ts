@@ -182,7 +182,7 @@ export const otariTools: AgentTool[] = [
   },
   {
     name: "otari_set_guardrail",
-    description: "Turn Otari's org guardrail (Lakera, block mode) on or off. Admins only; a person approves before it changes.",
+    description: "Turn Otari's org-wide guardrail (Lakera, block mode) on or off. When on, it screens every model call in the org, including teammates' own instructions, and it can block ordinary work as a false alarm; Peeblo already screens text from outside the company without it. Say that before turning it on. Admins only; a person approves before it changes.",
     input_schema: object({ enabled: { type: "boolean" }, reason: { type: "string" } }),
     kind: "write",
     authorize: (ctx) => adminOnly(ctx) ?? (guardMode() === "lakera" ? null : `Peeblo's guard setting is "${guardMode()}", not Otari's org guardrail; it is changed by an operator, not here.`),
