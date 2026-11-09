@@ -203,6 +203,8 @@ export const companyMemoryTool: AgentTool = {
     remove: { type: ["array", "null"], maxItems: 20, items: { type: "object", properties: { path: { type: "string" }, why: { type: "string" } }, required: ["path", "why"], additionalProperties: false }, description: "Notes to delete, each with why." },
   }),
   kind: "write",
+  // An empty change never reaches a person's card.
+  authorize: async (_ctx, a) => ((a.notes ?? []).length || (a.remove ?? []).length ? null : "Nothing to propose: add at least one note or one removal, or skip company memory."),
   describe(_ctx, a) {
     const adds = (a.notes ?? []).map((n: any) => `${n.path}: ${n.title}`);
     const dels = (a.remove ?? []).map((r: any) => `remove ${r.path} (${r.why})`);

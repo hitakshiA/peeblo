@@ -13,7 +13,7 @@ import { computerTools } from "../agent-tools/computer.ts";
 import { validate, type Schema } from "../agent-tools/schema.ts";
 import type { AgentTool, ToolContext, ToolResult } from "../agent-tools/types.ts";
 import { config } from "../config.ts";
-import { ALWAYS_REFUSES, catalogFor, classify, executeTool, forgetServer, markUnavailable, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
+import { ALWAYS_REFUSES, catalogFor, classify, executeTool, forgetServer, githubLimit, markUnavailable, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
 import { pool } from "../db.ts";
 import { askApproval, fingerprint } from "../durable/approvals.ts";
 import { argClass, modeRule, NEVER_WITHOUT_ASKING, review, riskOf } from "../reviewer.ts";
@@ -164,7 +164,8 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
     // A scoped GitHub connector names its repos, so the model never guesses an owner.
-    const scoped = tm.config.connector_scopes?.github ?? [];
+    const ownRepos = tm.config.connector_scopes?.github ?? [];
+    const scoped = ownRepos.length ? ownRepos : config.githubRepos;
     const visible = scoped.length ? "" : await githubVisible(cat.tools);
     const repos = scoped.length ? `This teammate's GitHub repos (owner/repo): ${scoped.join(", ")}. Use these names exactly.`
       : visible ? `Repos this GitHub connection can see (owner/repo, most recently updated first): ${visible}. Use these names exactly; never guess an owner.`
@@ -333,6 +334,12 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
       return reply({ text: `That's an internal page (${internal[1]}); open it with its own connector (find_tools), or say which page and who can share it with Peeblo. Web scrapers aren't for internal docs.`, isError: true });
     }
   }
+  const limit = githubLimit(t, args, config.githubRepos);
+  if ("refuse" in limit) {
+    await event({ status: "refused", reason: limit.refuse });
+    return reply({ text: `Not allowed: ${limit.refuse}.`, isError: true });
+  }
+  args = limit.args;
   const scope = outOfScope(t, args, tm.config.connector_scopes);
   if (scope) {
     await event({ status: "refused", reason: scope });

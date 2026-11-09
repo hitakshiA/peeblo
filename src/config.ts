@@ -69,6 +69,9 @@ export const config = {
   memberWrites: (process.env.PEEBLO_MEMBER_WRITES ?? "on").trim() !== "off",
   // The most teammates one person who isn't an admin may have hired and kept (0: no limit).
   memberHires: Number(process.env.PEEBLO_MEMBER_HIRES || 0),
+  // The only GitHub repos (owner/repo, comma-separated) any teammate may touch, whatever the GitHub token can
+  // reach. Empty: no limit beyond each teammate's own repos.
+  githubRepos: (process.env.PEEBLO_GITHUB_REPOS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
 };
 
 for (const name of SECRET_VARS) delete process.env[name];

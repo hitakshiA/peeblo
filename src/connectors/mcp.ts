@@ -179,6 +179,25 @@ export function outOfScope(t: ConnectorTool, args: Record<string, unknown>, scop
   return null;
 }
 
+// The install-wide GitHub limit (PEEBLO_GITHUB_REPOS): a call naming owner/repo must name one of them, a search is
+// narrowed to them (its own repo:, user: and org: qualifiers are replaced), and any other call that could reach
+// another repo is refused. Returns the arguments to run with, or the reason it can't run.
+export function githubLimit(t: ConnectorTool, args: Record<string, unknown>, repos: string[]): { args: Record<string, unknown> } | { refuse: string } {
+  if (t.server !== "github" || !repos.length) return { args };
+  const allowed = repos.map((r) => r.toLowerCase());
+  const list = repos.join(", ");
+  if (typeof args.owner === "string" && typeof args.repo === "string") {
+    return allowed.includes(`${args.owner}/${args.repo}`.toLowerCase()) ? { args } : { refuse: `${args.owner}/${args.repo} isn't one of the repositories Peeblo may use here (${list})` };
+  }
+  if (t.tool === "get_me" || t.tool === "search_users") return { args };
+  if (t.tool.startsWith("search_") && typeof args.query === "string") {
+    const query = `${args.query.replace(/\b(repo|user|org|owner):\S+/gi, " ").replace(/\s+/g, " ").trim()} ${repos.map((r) => `repo:${r}`).join(" ")}`.trim();
+    const { owner: _o, repo: _r, ...rest } = args;
+    return { args: { ...rest, query } };
+  }
+  return { refuse: `${t.tool} can reach repositories beyond the ones Peeblo may use here (${list}); name one of those with owner and repo` };
+}
+
 export function needsApproval(mode: TeammateConfig["mode"], kind: CallKind): boolean {
   if (mode === "yolo") return false;
   if (mode === "ask") return true;

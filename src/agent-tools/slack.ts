@@ -116,6 +116,8 @@ export const slackTools: AgentTool[] = [
       let channel = place.channel, ts = place.thread_ts ?? place.trigger_ts;
       const m = /archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:.*thread_ts=(\d+\.\d+))?/.exec(String(a.link ?? ""));
       if (m) { channel = m[1]; ts = m[4] ?? `${m[2]}.${m[3]}`; }
+      // Someone else's DM (or group DM) with this teammate stays private: only the one you're in.
+      if (channel !== place.channel && /^D/.test(channel)) return { text: "That thread is in a direct message with someone else, which stays private. Ask them to share what matters in this conversation.", isError: true };
       const r: any = await slack(place.app_id, "conversations.replies", { channel, ts, limit: Math.min(Number(a.limit ?? 50), 100) }).catch((e: any) => ({ error: e.message }));
       if (!r.messages) return { text: `Couldn't read that thread (${r.error ?? "no messages"}). It may be in a channel this app isn't in.`, isError: true };
       const { displayName } = await import("../slack/api.ts");
@@ -126,6 +128,58 @@ export const slackTools: AgentTool[] = [
         lines.push(`${who} (${at} UTC): ${String(x.text ?? "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").slice(0, 1500)}`);
       }
       return { text: lines.join("\n\n"), untrusted: `slack:${channel}` } as any;
+    },
+  },
+  {
+    name: "slack_read_channel",
+    description: "Read recent messages in a Slack channel you're a member of (this one by default, or another by name): who said what and when, with each thread's replies when you ask for them. Use it when someone refers to what was said in a channel (\"what did Felix promise in #sales\", \"catch me up on #support\"). Never reads anyone's DMs.",
+    input_schema: object({
+      channel: { type: ["string", "null"], description: "The channel's name (#sales) or id; leave out for the channel this conversation is in." },
+      limit: { type: ["integer", "null"], minimum: 1, maximum: 100, description: "How many recent top-level messages (default 40)." },
+      with_replies: { type: ["boolean", "null"], description: "Also read the replies of threads among them (up to 10 threads)." },
+    }),
+    kind: "read",
+    async run(ctx, a) {
+      const place = await placeOf(ctx);
+      if (!place) return { text: "This conversation isn't in Slack.", isError: true };
+      const want = String(a.channel ?? "").trim().replace(/^#/, "");
+      let channel = place.channel;
+      if (want) {
+        if (/^[CG][A-Z0-9]{6,}$/.test(want)) channel = want;
+        else {
+          let cursor: string | undefined, found: string | null = null;
+          for (let i = 0; i < 10 && !found; i++) {
+            const r: any = await slack(place.app_id, "conversations.list", { types: "public_channel,private_channel", limit: 200, exclude_archived: true, ...(cursor ? { cursor } : {}) }).catch(() => null);
+            found = r?.channels?.find((c: any) => c.name === want.toLowerCase())?.id ?? null;
+            cursor = r?.response_metadata?.next_cursor || undefined;
+            if (!cursor) break;
+          }
+          if (!found) return { text: `There's no channel called #${want} that you can see.`, isError: true };
+          channel = found;
+        }
+      }
+      if (/^D/.test(channel) || (channel === place.channel && /^(im|mpim)$/.test(place.channel_type))) return { text: "That's a direct message, not a channel; read this conversation with slack_read_thread. Other people's DMs stay private.", isError: true };
+      const r: any = await slack(place.app_id, "conversations.history", { channel, limit: Math.min(Number(a.limit ?? 40), 100) }).catch((e: any) => ({ error: e.message }));
+      if (!r.messages) return { text: `Couldn't read <#${channel}> (${r.error ?? "no messages"}). ${/not_in_channel/.test(String(r.error)) ? "You're not a member there; someone can /invite you." : ""}`.trim(), isError: true };
+      const { displayName } = await import("../slack/api.ts");
+      const clean = (s: string) => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+      const line = async (x: any, indent = "") => {
+        const who = (x.user ? await displayName(place.app_id, x.user) : null) ?? x.username ?? x.bot_profile?.name ?? "someone";
+        const at = new Date(Number(x.ts) * 1000).toISOString().slice(0, 16).replace("T", " ");
+        return `${indent}${who} (${at} UTC)${x.reply_count ? ` [${x.reply_count} replies]` : ""}: ${clean(String(x.text ?? "")).slice(0, 1200)}`;
+      };
+      const msgs = (r.messages as any[]).filter((x) => !/^(channel_join|channel_leave|tombstone)$/.test(x.subtype ?? "")).reverse();
+      const lines: string[] = [];
+      let threads = 0;
+      for (const x of msgs) {
+        lines.push(await line(x));
+        if (a.with_replies && x.reply_count && threads < 10) {
+          threads++;
+          const t: any = await slack(place.app_id, "conversations.replies", { channel, ts: x.ts, limit: 30 }).catch(() => null);
+          for (const y of (t?.messages ?? []).slice(1)) lines.push(await line(y, "    ↳ "));
+        }
+      }
+      return { text: lines.join("\n") || "No messages there yet.", untrusted: `slack:${channel}` } as any;
     },
   },
   {

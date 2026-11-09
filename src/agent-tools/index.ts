@@ -27,7 +27,7 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
   // A subagent looks things up but changes nothing, and opens no subagents.
   // The start set is small: how to reply, find more tools, read a skill, recall, plan, hand
   // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) loads with find_tools.
-  const START = new Set(["slack_post", "slack_read_thread", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
+  const START = new Set(["slack_post", "slack_read_thread", "slack_read_channel", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
     "computer_bash", "computer_read", "computer_write", "computer_edit", "understand_file", "check_text",
     // Code execution sits beside the computer, so the model sees both and picks (CODE_EXEC_ROLES: run code where the data is).
     ...(tm.config.tools.includes("code") ? ["run_code"] : []),
