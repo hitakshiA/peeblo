@@ -211,10 +211,19 @@ export function startProxy(): Promise<Server> {
     if (isInference) {
       if (b.modelCalls?.runId !== b.runId) b.modelCalls = { runId: b.runId, n: 0 };
       b.modelCalls.n++;
+      // A tool that runs inside the agent (find_tools) never reaches core: a request that ends on a tool result means
+      // the last turn did something, so it isn't a silent one.
+      if (b.runId && raw) {
+        try {
+          const msgs = (JSON.parse(raw.toString()) as any).messages ?? [];
+          const lastCalls = ([...msgs].reverse().find((m: any) => m.role === "assistant")?.tool_calls ?? []) as any[];
+          if (msgs.at(-1)?.role === "tool" && lastCalls.some((c) => c.function?.name === "find_tools")) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.local", data: {} }).catch(() => {});
+        } catch { /* not JSON */ }
+      }
       // K14: three model turns in a row with nothing visible in between (no tool ran, nothing posted) stop the run.
       const silent = b.runId ? Number((await pool.query(
         `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
-           AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
+           AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'tool.local')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
       const MAX_MODEL_CALLS = b.teammateSlug === "peeblo" ? MAX_MODEL_CALLS_CHAT : MAX_MODEL_CALLS_WORK;
       // The job's spend: 3% of the teammate's monthly budget per run (at least $0.05), the real guard for long work.
       if (b.runCost?.runId !== b.runId) {
