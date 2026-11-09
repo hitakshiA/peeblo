@@ -180,10 +180,11 @@ async function watchFailed(s: Schedule, why: string): Promise<"failed"> {
 
 // Owner notices go to a person as a DM from Peeblo: the schedule's creator, else the teammate's owner. At most one
 // notice of a kind per thing per hour.
-const noticed = new Map<string, number>();
+// The last send is kept in the event log, so a restart doesn't send the same notice again (a reinstall ask waits a day).
 async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; kind?: string; text?: string; key?: string }): Promise<void> {
   const key = `${d.kind}:${d.key ?? d.schedule_id ?? d.teammate_id}`;
-  if ((noticed.get(key) ?? 0) > Date.now() - 3_600_000) return;
+  const hours = d.kind === "reinstall" ? 24 : 1;
+  if ((await pool.query("SELECT 1 FROM events WHERE type = 'notice.sent' AND data->>'key' = $1 AND at > now() - make_interval(hours => $2) LIMIT 1", [key, hours])).rows.length) return;
   const row = d.schedule_id
     ? (await pool.query("SELECT s.created_by, t.owner_person, t.id AS teammate_id FROM schedules s JOIN teammates t ON t.id = s.teammate_id WHERE s.id = $1", [d.schedule_id])).rows[0]
     : (await pool.query("SELECT NULL AS created_by, owner_person, id AS teammate_id FROM teammates WHERE id = $1", [d.teammate_id])).rows[0];
@@ -198,7 +199,7 @@ async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; ki
   const { slack } = await import("./slack/api.ts");
   const dm: any = await slack(app, "conversations.open", { users: who.slack_user }).catch(() => null);
   if (!dm?.channel?.id) return;
-  noticed.set(key, Date.now());
+  await appendEvent({ type: "notice.sent", data: { key, kind: d.kind ?? null, person_id: personId } });
   await slack(app, "chat.postMessage", { channel: dm.channel.id, text: d.text }).catch((e) => console.error("notice:", (e as Error).message));
 }
 
