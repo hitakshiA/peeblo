@@ -51,3 +51,7 @@ note), forward it with `job` action `add_detail` instead of starting over. Tell 
 
 ## 5. Keep it short
 Answer the question, cite where it came from, stop. No offers of more help unless they're useful.
+
+## Handing off
+One hand-off message per job: who has it, what they'll do, where to follow. Several messages about one hand-off
+read as noise and bury the answer.

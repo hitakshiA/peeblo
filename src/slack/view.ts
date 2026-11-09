@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
+  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; runId?: string; sessionId?: string | null; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 // The model sometimes writes Slack's <url|text> links or code ticks around a site name; markdown blocks want neither.
@@ -63,7 +63,7 @@ async function start(runId: string, place: SlackPlace, teammateId: string): Prom
   // A run nobody asked for shows nothing unless it posts.
   const quiet = !place.direct;
   const v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", quiet);
-  views.set(runId, v);
+  views.set(runId, v); v.runId = runId;
   if (!quiet) await enqueue(v, async () => {
     await react(place.app_id, place.channel, place.trigger_ts, "eyes");
     // The session title is what the person asked; a welcome or a schedule has no person's words, so its name.
@@ -99,6 +99,7 @@ async function openStream(v: View): Promise<void> {
       chunks: [{ type: "plan_update", title: "Working on it" }],
     });
     v.streamTs = s.ts; v.startedAt = Date.now();
+    if (v.runId) await appendEvent({ sessionId: v.sessionId ?? null, runId: v.runId, type: "slack.stream", data: { ts: s.ts, channel: v.place.channel } }).catch(() => {});
   } catch {
     v.failedStream = true; // some channels refuse streams; post plain messages instead
   }
@@ -347,6 +348,15 @@ async function approvalResolved(v: View | undefined, e: EventRow): Promise<void>
 // view is rebuilt from the event log (steps, cards and their outcomes, posted text, displays) so the rest of the run
 // keeps redrawing that one message instead of starting a second one.
 const plain = new Set<string>(); // runs checked after a restart that have no inline card to rebuild
+
+// A view made after a restart (or late) takes over the stream the run already opened, so the answer lands in
+// that message and no "Working on it" placeholder is left open beside it.
+async function adoptStream(v: View, runId: string): Promise<void> {
+  const row = (await pool.query("SELECT data->>'ts' AS ts FROM events WHERE run_id = $1 AND type = 'slack.stream' ORDER BY id DESC LIMIT 1", [runId])).rows[0];
+  if (!row?.ts) return;
+  await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: row.ts }).catch(() => null);
+  v.streamTs = row.ts; v.frozen = true; v.failedStream = false;
+}
 async function revive(runId: string, sessionId: string | null): Promise<View | undefined> {
   const cards = (await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'approval.card' AND (data->>'inline')::boolean ORDER BY id", [runId])).rows.map((r) => r.data);
   if (!cards.length) return undefined;
@@ -374,7 +384,7 @@ async function revive(runId: string, sessionId: string | null): Promise<View | u
     else if (e.type === "approval.requested" && cards.some((c) => c.approval_id === d.approval_id)) v.approvals.push({ id: d.approval_id, blocks: await cardBlocks(d.action ?? {}, d.approval_id, v.teammate, askedBy) });
     else if (e.type === "approval.resolved") { const a = v.approvals.find((x) => x.id === d.approval_id); if (a) a.done = await outcomeBlocks(d, runId); }
   }
-  views.set(runId, v);
+  views.set(runId, v); v.runId = runId;
   return v;
 }
 
@@ -397,7 +407,7 @@ export function installSlackView(): void {
       const place = await placeOf(e.session_id);
       const s = place ? await getSession(e.session_id!) : null;
       const tm = s ? await getTeammate(s.teammate_id) : null;
-      if (place) { v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true); views.set(e.run_id, v); }
+      if (place) { v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true); views.set(e.run_id, v); v.runId = e.run_id; v.sessionId = e.session_id; }
     }
     if (!v && (e.type === "run.finished" || e.type === "run.failed")) {
       // Core restarted mid-run: the stream is gone, so the reply and receipt go out as a plain message.
@@ -406,7 +416,8 @@ export function installSlackView(): void {
       const s = await getSession(e.session_id!);
       const tm = await getTeammate(s!.teammate_id);
       v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true);
-      views.set(e.run_id, v);
+      views.set(e.run_id, v); v.runId = e.run_id; v.sessionId = e.session_id;
+      await adoptStream(v, e.run_id);
       v.posted = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [e.run_id])).rows[0].n);
       // The reply it posted is the message's text (never just the status line): the latest public post.
       const last = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' AND coalesce((data->>'private')::boolean, false) = false ORDER BY id DESC LIMIT 1", [e.run_id])).rows[0]?.t;
@@ -420,8 +431,9 @@ export function installSlackView(): void {
         const s = await getSession(e.session_id!);
         const tm = s ? await getTeammate(s.teammate_id) : null;
         v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true);
-        views.set(e.run_id, v);
+        views.set(e.run_id, v); v.runId = e.run_id; v.sessionId = e.session_id;
         plain.delete(e.run_id);
+        await adoptStream(v, e.run_id);
       }
     }
     if (!v) return;

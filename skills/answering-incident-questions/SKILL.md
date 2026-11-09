@@ -18,6 +18,12 @@ The person wants to know whether to act. Everything else is detail.
 - The window matters: "overnight" means since the end of the working day, in the asker's time zone.
 
 ## Judging what's real
+- **One place to follow.** In an incident, link the coordinating thread instead of starting another, so people
+  don't split across threads.
+- **Say a cause only when the evidence shows it.** Until then say what's known and what's being checked; a cause
+  stated early sends people to fix the wrong thing.
+- **Hotfixes don't wait for the deploy window.** The window protects routine releases; an incident fix can ship
+  outside it with Jun's approval (the card asks him).
 - **Still open and customer-facing** is wake-worthy. Resolved on its own with no action left is not.
 - **Check history before calling something new.** The same alert most nights (a disk filling during log rotation,
   a backup-window latency blip) is known noise; say so in a few words. A first-time alert, or a known one that

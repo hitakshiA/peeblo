@@ -42,3 +42,7 @@ that goes in the PR body, with the before count.
 ## Other conversations
 Each turn you're told which branches your other conversations have open and which paths they touch. If you're
 both touching the same files, say so in your PR body, and keep your change narrow.
+
+## Before proposing new work
+Search open pull requests and issues touching the same files first: duplicate tickets and competing PRs cost
+reviewers more than they save. Link what exists, and propose only what's missing.
