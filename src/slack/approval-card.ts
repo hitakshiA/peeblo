@@ -71,6 +71,14 @@ function what(a: any): string | null {
   if (a.risk === "shipping") return "Ships a change";
   const tool = String(a.tool ?? "").replace(/^[a-z]+__/, "");
   const m = /^(save|create|add|update|edit|post|send|write|set|delete|remove|archive|close)_(.+)$/.exec(tool);
+  // "<thing>_write" with a method (GitHub's issue_write {method: "create"}): "Creates 1 issue".
+  const w = /^(.+)_write$/.exec(tool);
+  if (!m && w) {
+    const method = String(a.arguments?.method ?? "").toLowerCase();
+    const noun = w[1].replace(/_/g, " ");
+    const verb = /delete|remove/.test(method) ? "Removes" : /update|edit|close|lock|set/.test(method) ? "Changes" : /create|add/.test(method) ? "Creates" : "Writes";
+    return `${verb} 1 ${noun}`;
+  }
   // No write verb in the name: say what the tool is, never a bare "writes".
   if (!m) {
     if (!tool) return a.risk ? RISK[a.risk] ?? null : null;
