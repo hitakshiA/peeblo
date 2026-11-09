@@ -230,7 +230,7 @@ async function finish(runId: string, v: View, ok: boolean, fallbackText: string 
       const open = [...v.tasks.entries()].map(([id, t]) => ({ type: "task_update", id, title: t.title.slice(0, 120), status: t.status }));
       const finalText = v.text || fallbackText || "";
       const tail = finalText ? [{ type: "markdown_text", text: finalText }] : [];
-      await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, ...(finalText ? { text: finalText.slice(0, 3000) } : {}), chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async (e) => {
+      await slack(v.place.app_id, "chat.stopStream", { channel: v.place.channel, ts: v.streamTs, chunks: [{ type: "plan_update", title: summary.slice(0, 120) }, ...open, ...tail], blocks }).catch(async (e) => {
         // The stream couldn't be closed: the answer goes out as its own message, with its text, never just "Done".
         console.error("slack view: stopStream:", (e as Error).message);
         await post(v, finalText || summary, [...(finalText ? [{ type: "markdown", text: finalText.slice(0, 11_000) }] : []), ...blocks]);

@@ -62,4 +62,5 @@ read as noise and bury the answer.
 - **Send it where the data is.** A number comes from the system that records it (delivery delays from the delivery
   logs in Neon, revenue from Stripe), not from what customers wrote about it; pick the teammate who has that source.
 - **Say where to follow in words they can click:** link the thread. Don't describe places ("in your DM with it").
-
+- **Check a teammate can take the work before handing it over.** A teammate at its budget cap stops on the first
+  step; say so and offer the choice: "Marlow's capped. Want me to raise it, or should I do it?"

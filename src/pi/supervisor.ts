@@ -363,7 +363,8 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     return { text: said || r.text ? r.text : `I had to stop before finishing this one; my work so far is saved. Say "continue" and I'll pick up where I left off.`, stopReason: "stuck" };
   }
   // Peeblo's own refusal (before Otari) carries its sentence; Otari's carries its numbers.
-  if (r.money) return { text: r.money.by === "peeblo" ? `I can't run this: ${r.money.message} An admin can raise the budget, or it resets next month.` : budgetReply(r.money, tm.config.name), stopReason: "budget_blocked" };
+  // Peeblo's own budget stop shows its card (Ask the owner for more); no second message with raw numbers.
+  if (r.money) return { text: r.money.by === "peeblo" ? "" : budgetReply(r.money, tm.config.name), stopReason: "budget_blocked" };
   if (r.stopReason === "error") {
     throw new Error(`model error: ${r.error ?? "unknown"}`);
   }
