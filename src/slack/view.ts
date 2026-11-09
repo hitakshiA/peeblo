@@ -408,6 +408,21 @@ export function installSlackView(): void {
       v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true);
       views.set(e.run_id, v);
       v.posted = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [e.run_id])).rows[0].n);
+      // The reply it posted is the message's text (never just the status line): the latest public post.
+      const last = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' AND coalesce((data->>'private')::boolean, false) = false ORDER BY id DESC LIMIT 1", [e.run_id])).rows[0]?.t;
+      if (last) { v.text = slackLinks(String(last)); v.held = v.text; }
+    }
+    // No view yet when the run posts (a trigger or schedule run whose place was bound after it started, or a run
+    // checked after a restart): make one now, so the post shows when it's made.
+    if (!v && e.type === "slack.post" && !(e.data as any)?.private) {
+      const place = await placeOf(e.session_id);
+      if (place) {
+        const s = await getSession(e.session_id!);
+        const tm = s ? await getTeammate(s.teammate_id) : null;
+        v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true);
+        views.set(e.run_id, v);
+        plain.delete(e.run_id);
+      }
     }
     if (!v) return;
     const d = e.data as any;
