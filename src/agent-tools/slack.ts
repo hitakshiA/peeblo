@@ -65,7 +65,7 @@ export const slackTools: AgentTool[] = [
     kind: "read", // it posts only into the conversation the person started; no approval
     async run(ctx, a) {
       const place = await placeOf(ctx);
-      const text = String(a.text ?? "").slice(0, 12_000);
+      const text = String(a.text ?? "").replace(/&amp;/g, "&").replace(/&lt;(?![@#!])/g, "<").replace(/&gt;/g, ">").slice(0, 12_000);
       if (!text.trim()) return { text: "Nothing to post.", isError: true };
       // Outside Slack (the API, a test) the post is the reply: recorded the same way, so nothing is retried.
       const endTurn = a.more !== true;

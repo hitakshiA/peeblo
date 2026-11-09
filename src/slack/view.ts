@@ -22,7 +22,7 @@ type Approval = { id: string; blocks: any[]; done?: any[] };
 type View = {
   place: SlackPlace; teammate: string; slug: string; streamTs: string | null; startedAt: number; posted: number;
   tasks: Map<string, Task>; byTitle: Map<string, string>; queue: Promise<unknown>; failedStream: boolean;
-  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; runId?: string; sessionId?: string | null; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
+  held?: string; heldTs?: string; heldText?: string; stoppedBy?: string; runId?: string; sessionId?: string | null; ready?: Promise<void>; frozen?: boolean; text: string; approvals: Approval[]; done: string[]; finished?: boolean; displays: any[]; privateOnly?: boolean;
 };
 
 // The model sometimes writes Slack's <url|text> links or code ticks around a site name; markdown blocks want neither.
@@ -392,6 +392,7 @@ export function installSlackView(): void {
   onEvent(async (e) => {
     if (!e.run_id) return;
     let v = views.get(e.run_id);
+    if (v?.ready) await v.ready;
     if (e.type === "run.started") {
       const place = await placeOf(e.session_id);
       if (!place) return;
@@ -417,7 +418,7 @@ export function installSlackView(): void {
       const tm = await getTeammate(s!.teammate_id);
       v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true);
       views.set(e.run_id, v); v.runId = e.run_id; v.sessionId = e.session_id;
-      await adoptStream(v, e.run_id);
+      v.ready = adoptStream(v, e.run_id); await v.ready;
       v.posted = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'slack.post'", [e.run_id])).rows[0].n);
       // The reply it posted is the message's text (never just the status line): the latest public post.
       const last = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' AND coalesce((data->>'private')::boolean, false) = false ORDER BY id DESC LIMIT 1", [e.run_id])).rows[0]?.t;
@@ -433,7 +434,7 @@ export function installSlackView(): void {
         v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true);
         views.set(e.run_id, v); v.runId = e.run_id; v.sessionId = e.session_id;
         plain.delete(e.run_id);
-        await adoptStream(v, e.run_id);
+        v.ready = adoptStream(v, e.run_id); await v.ready;
       }
     }
     if (!v) return;
