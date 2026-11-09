@@ -57,7 +57,8 @@ export async function runChecks(): Promise<Result[]> {
   });
   await check("large computer image", async () => {
     const id = currentBuild("large");
-    if (!id) throw new Error("the large computer image isn't built yet; run: ./peeblo image large");
+    // Optional: only teammates that browse websites use it. Not having it is fine until you hire one.
+    if (!id) return "not built (only for teammates that browse websites; build it with ./peeblo image large when you need one)";
     const d = distroOf("large", id);
     const rt = containerRuntime();
     const note = d === "debian" ? "Debian 13 (built with " + (rt ?? "a container runtime, not found now") + ")"

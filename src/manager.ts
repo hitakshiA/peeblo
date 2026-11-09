@@ -72,8 +72,18 @@ export async function createManagerApp(): Promise<void> {
   await migrate();
   await ensureManager();
   const tm = (await getTeammate(MANAGER))!;
-  const existing = (await pool.query("SELECT app_id FROM slack_apps WHERE teammate_id = $1", [tm.id])).rows[0];
-  if (existing) { console.log(`Peeblo already has a Slack app (${existing.app_id}).`); await pool.end(); return; }
+  const existing = (await pool.query("SELECT app_id, bot_user_id FROM slack_apps WHERE teammate_id = $1", [tm.id])).rows[0];
+  if (existing) {
+    // Run again until it's installed: the install link is printed each time (it's safe to open twice).
+    if (existing.bot_user_id) console.log(`Peeblo's Slack app (${existing.app_id}) is installed.`);
+    else {
+      const { getApp } = await import("./ingress/apps.ts");
+      const { installUrl } = await import("./slack/admin.ts");
+      const app: any = await getApp(existing.app_id);
+      console.log(`Peeblo's Slack app ${existing.app_id} isn't installed yet. Install it (one click):\n${installUrl(existing.app_id, app?.secrets?.client_id ?? app?.client_id)}`);
+    }
+    await pool.end(); return;
+  }
   const { createTeammateApp } = await import("./slack/admin.ts");
   const { facePng } = await import("./slack/idcard.ts");
   const face = { shape: "peeblo", color: "#2E7D5B" };
