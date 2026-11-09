@@ -17,7 +17,7 @@ import { capCheck, noteSpend, type CapRefusal } from "../otari/spend.ts";
 import { teammateAt } from "../store/teammates.ts";
 
 export type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
-export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; modelCalls?: { runId: string | null; n: number }; runCost?: { runId: string | null; usd: number; cap: number; warned?: boolean }; finalStatus?: { runId: string | null; calls: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
+export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; finalStatus?: { runId: string | null; calls: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
 const tokens = new Map<string, Binding>();
 
 export function issueToken(b: Omit<Binding, "runId" | "endUser" | "turn" | "personId">): string {
@@ -34,22 +34,12 @@ export function allowFinalStatus(token: string, runId: string): void {
   const b = tokens.get(token);
   if (b) b.finalStatus = { runId, calls: 0 };
 }
-// How much room a job has left (for the heads-up in tool results).
-export function jobRoom(b: Binding): { calls: number; usd: number } {
-  const maxCalls = b.teammateSlug === "peeblo" ? MAX_MODEL_CALLS_CHAT : MAX_MODEL_CALLS_WORK;
-  const used = b.modelCalls?.runId === b.runId ? b.modelCalls.n : 0;
-  const cost = b.runCost?.runId === b.runId ? b.runCost : null;
-  return { calls: maxCalls - used, usd: cost ? cost.cap - cost.usd : Infinity };
-}
 export function revokeToken(token: string): void {
   tokens.delete(token);
 }
 export const proxyBaseUrl = () => `http://127.0.0.1:${config.proxyPort}/api/v1`;
 export const toolsBaseUrl = () => `http://127.0.0.1:${config.proxyPort}/peeblo`;
 
-// Model calls per run: Peeblo's chat stays short; a teammate working a job (a repo, 40 test runs) needs room, and its
-// monthly spend cap is the real limit.
-const MAX_MODEL_CALLS_CHAT = 30, MAX_MODEL_CALLS_WORK = 150;
 const INFERENCE = new Set(["/chat/completions", "/messages", "/responses"]);
 const DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection"]);
 const RETRYABLE_CODES = new Set(["invalid_model", "pricing_required", "provider_not_configured", "provider_unavailable", "provider_credential_rejected"]);
@@ -220,10 +210,8 @@ export function startProxy(): Promise<Server> {
 
     // After the guardrail refused this turn's input, Pi's retries would only be refused again (and spend guard
     // checks): answer them here with Otari's own refusal.
-    // Loop limits (K14): a stuck run gets no more model calls, and a run has at most MAX_MODEL_CALLS.
+    // Loop rail (K14): a stuck run gets no more model calls.
     if (isInference) {
-      if (b.modelCalls?.runId !== b.runId) b.modelCalls = { runId: b.runId, n: 0 };
-      b.modelCalls.n++;
       // A tool that runs inside the agent (find_tools) never reaches core: a request that ends on a tool result means
       // the last turn did something, so it isn't a silent one.
       if (b.runId && raw) {
@@ -237,16 +225,11 @@ export function startProxy(): Promise<Server> {
       const silent = b.runId ? Number((await pool.query(
         `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
            AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'tool.local')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
-      const MAX_MODEL_CALLS = b.teammateSlug === "peeblo" ? MAX_MODEL_CALLS_CHAT : MAX_MODEL_CALLS_WORK;
-      // The job's spend: 3% of the teammate's monthly budget per run (at least $0.05), the real guard for long work.
-      if (b.runCost?.runId !== b.runId) {
-        const tm = await teammateAt(b.teammateId, b.teammateVersion);
-        b.runCost = { runId: b.runId, usd: 0, cap: Math.max(0.05, Number(tm?.config.budget.monthly_usd ?? 5) * 0.03) };
-      }
+      // No count or per-job spend limit: a job runs on its budget. Only a stuck run (the same call over and over, or
+      // turns with nothing to show) is stopped.
       const finalTurn = b.finalStatus?.runId === b.runId && b.finalStatus.calls < 3;
       if (finalTurn) b.finalStatus!.calls++;
-      const why = finalTurn ? null : b.stuck?.runId === b.runId ? b.stuck.reason : b.modelCalls.n > MAX_MODEL_CALLS ? `more than ${MAX_MODEL_CALLS} model calls`
-        : b.runCost.usd >= b.runCost.cap ? `this job's spend reached $${b.runCost.cap.toFixed(2)}` : silent >= 3 ? "3 turns in a row with no visible output" : null;
+      const why = finalTurn ? null : b.stuck?.runId === b.runId ? b.stuck.reason : silent >= 3 ? "3 turns in a row with no visible output" : null;
       if (why) {
         if (b.stuck?.runId !== b.runId) { b.stuck = { runId: b.runId, reason: why }; await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: why } }).catch(() => {}); }
         return void res.writeHead(429, { "content-type": "application/json", "otari-error-code": "loop_limit", "peeblo-refused": "loop_limit" }).end(JSON.stringify({ detail: `Peeblo stopped this run: ${why}.`, code: "loop_limit" }));
@@ -354,7 +337,6 @@ export function startProxy(): Promise<Server> {
       await record(b, path, a, usage, { firstChunkMs, peebloFallback: Boolean((a as any).peebloFallback) });
       if (usage?.cost_usd !== undefined) {
         noteSpend(b.teammateId, b.endUser, Number(usage.cost_usd) || 0);
-        if (b.runCost?.runId === b.runId) b.runCost.usd += Number(usage.cost_usd) || 0;
       }
     }
   });

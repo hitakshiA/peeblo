@@ -8,7 +8,6 @@ import { readFileSync } from "node:fs";
 // checked, writes one at a time per session and approved by a person when the tool or the mode says so,
 // untrusted results labelled with their source and screened, and a tool.call event.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { jobRoom } from "./relay.ts";
 import { peebloTools } from "../agent-tools/index.ts";
 import { computerTools } from "../agent-tools/computer.ts";
 import { validate, type Schema } from "../agent-tools/schema.ts";
@@ -103,11 +102,6 @@ const LOOP_STOP = 6;
 const identical = new Map<string, number>();
 // A repeat of a read in the same run gets the earlier result back without calling the service again.
 const readCache = new Map<string, string>();
-// At most this many tool calls in one turn; after that only slack_post runs.
-// Peeblo's chat turns stay short; a teammate working a job on its computer gets room for real work (its spend cap
-// is the real limit). Both get a heads-up when 3 calls are left.
-const TURN_CALLS_CHAT = 20, TURN_CALLS_WORK = 80; // chat: room for a second route when a source refuses
-const turnCalls = new Map<string, number>();
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
 
@@ -212,20 +206,6 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: b.stuck.reason } });
     return json(res, 200, { text: `Stopped: this exact ${name} call has been made ${repeats} times in this run. Tell the person what you were trying and what kept happening.`, isError: true });
   }
-  const turnKey = `${b.runId}:${b.turn}`;
-  const TURN_CALLS = tm.slug === "peeblo" ? TURN_CALLS_CHAT : TURN_CALLS_WORK;
-  const used = (turnCalls.get(turnKey) ?? 0) + 1;
-  turnCalls.set(turnKey, used);
-  if (used > TURN_CALLS && name !== "slack_post") {
-    await event({ status: "refused", reason: "turn call limit" });
-    return json(res, 200, { text: `That is ${TURN_CALLS} tool calls this turn. Stop looking things up: post what you have with slack_post, and say what you couldn't check.`, isError: true });
-  }
-  // A heads-up near the limit, so the agent answers with what it has instead of being cut off.
-  const left = TURN_CALLS - used;
-  const room = jobRoom(b);
-  const limitNote = (left === 3 || room.calls === 10 || (room.usd !== Infinity && room.usd > 0 && room.usd < 0.2 * (b.runCost?.cap ?? 1) && !b.runCost?.warned)) && name !== "slack_post"
-    ? `\n[peeblo: this job is near its limit. Finish the step you're on, then post where you are: what's done, what still fails and why, what's next.]` : "";
-  if (limitNote && b.runCost) b.runCost.warned = true;
   // The final status turn after a stop: only the status post.
   if (b.finalStatus?.runId === b.runId && name !== "slack_post") return json(res, 200, { text: "This job has stopped. Post your status with slack_post now; nothing else.", isError: true });
   const cached = repeats >= 2 ? readCache.get(repeatKey) : undefined;
@@ -234,7 +214,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     return json(res, 200, { text: `[peeblo: you made this exact call earlier in this job; here is the same result again.]\n${cached}` });
   }
   const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}${repeats === 3 ? "rd" : "th"} identical ${name} call in this run; the result will not change.]` : "";
-  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note + limitNote, isError: Boolean(r.isError), ...(r.endTurn && !r.isError ? { terminate: true } : {}) });
+  const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError), ...(r.endTurn && !r.isError ? { terminate: true } : {}) });
 
   // Untrusted results are labelled with their source and screened; a flag is appended as a warning.
   const finish = async (r: ToolResult, source: string | null, extra: Record<string, unknown>) => {
