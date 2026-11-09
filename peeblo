@@ -27,7 +27,7 @@ ensure_env() {
   fi
   return 0
 }
-load_env() { set -a; . ./.env; set +a; PROJECT="${PEEBLO_PROJECT:-peeblo}"; }
+load_env() { set -a; . ./.env; set +a; PROJECT="${PEEBLO_PROJECT:-peeblo}"; [ -e /dev/kvm ] && export KVM_GID="$(stat -c %g /dev/kvm 2>/dev/null || echo 994)"; return 0; }
 compose() { docker compose -p "$PROJECT" -f compose.yaml "$@"; }
 mac_compose() { docker compose -p "$PROJECT" -f compose.yaml -f compose.mac.yaml "$@"; }
 native_env() { export DATABASE_URL="postgres://peeblo:${POSTGRES_PASSWORD}@127.0.0.1:${PEEBLO_DB_PORT:-55432}/peeblo" PEEBLO_DATA_DIR="${PEEBLO_DATA_DIR:-$PWD/local/data}"; }
@@ -58,7 +58,13 @@ case "${1:-up}" in
         echo "peeblo: core running (pid $(cat "$RUN/core.pid")); logs in $RUN/core.log"
       fi
     else
-      compose --profile linux up -d --build --wait
+      command -v docker >/dev/null && docker compose version >/dev/null 2>&1 || { echo "peeblo: Docker with Compose v2 is required"; exit 1; }
+      [ -e /dev/kvm ] || { echo "peeblo: /dev/kvm is missing; teammate computers need KVM (a bare-metal server, or a VM with nested virtualization)"; exit 1; }
+      [ -f "$PEEBLO_SLACK_CONFIG_FILE" ] || { echo "peeblo: PEEBLO_SLACK_CONFIG_FILE ($PEEBLO_SLACK_CONFIG_FILE) doesn't exist (docs/SETUP.md, step 3)"; exit 1; }
+      compose --profile linux build peeblo
+      # The small computer image, built once into the data volume.
+      compose --profile linux run --rm --no-deps --entrypoint sh peeblo -c 'ls /data/images/small-*/*/manifest.json' >/dev/null 2>&1 || compose --profile linux run --rm peeblo image small
+      compose --profile linux up -d --wait
     fi
     echo "peeblo: up. Run ./peeblo check to verify the setup." ;;
   down)

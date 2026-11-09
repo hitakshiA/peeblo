@@ -26,9 +26,16 @@ services:
       DATABASE_URL: postgres://peeblo:${POSTGRES_PASSWORD}@db:5432/peeblo
       PEEBLO_API_HOST: 0.0.0.0
       PEEBLO_INGRESS_HOST: 0.0.0.0
-    # Teammate computers are Gondolin micro-VMs and need KVM.
+      # Inside the container the ports are fixed; .env's ports choose the host side below.
+      PEEBLO_API_PORT: "7340"
+      PEEBLO_INGRESS_PORT: "8787"
+      PEEBLO_SLACK_CONFIG_FILE: /run/peeblo/slack-config.json
+    # Teammate computers are Gondolin micro-VMs and need KVM (./peeblo sets KVM_GID to /dev/kvm's group).
     devices:
       - /dev/kvm:/dev/kvm
+    group_add:
+      - "${KVM_GID:-994}"
+    stop_grace_period: 30s
     # The core API stays on loopback; the ingress is what a reverse proxy or tunnel points at.
     ports:
       - "127.0.0.1:${PEEBLO_API_PORT:-7340}:7340"
@@ -38,6 +45,8 @@ services:
         condition: service_healthy
     volumes:
       - data:/data
+      # The Slack app configuration token file from .env, read once and then kept sealed in the database.
+      - ${PEEBLO_SLACK_CONFIG_FILE:?set PEEBLO_SLACK_CONFIG_FILE in .env}:/run/peeblo/slack-config.json:ro
     read_only: true
     tmpfs:
       - /tmp
