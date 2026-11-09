@@ -13,8 +13,8 @@ RUN pnpm build
 
 FROM base
 # QEMU and e2fsprogs run the teammate micro-VMs (Gondolin) and build their image; git keeps company and teammate
-# memory; unzip and curl fetch the computer image's vendored tools and answer the health check.
-RUN apt-get update && apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-arm e2fsprogs ca-certificates git unzip curl \
+# memory; cpio and lz4 pack the image's initramfs; unzip and curl fetch the computer image's vendored tools and answer the health check.
+RUN apt-get update && apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-arm e2fsprogs cpio lz4 ca-certificates git unzip curl \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
