@@ -49,7 +49,8 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
     display_information: { name: cut(c.name, 35), description: shortCut(c.role, 130), long_description: cut(long, 4000), background_color: color },
     features: {
       app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
-      bot_user: { display_name: cut(tm.slug, 80), always_online: true },
+      // The name people see, never the internal slug (a reused name gets a suffix like "ledger-59o" in the slug only).
+      bot_user: { display_name: cut(c.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), 80), always_online: true },
       // The agent description replaces Slack's generic assistant text, so it is the agent's own bio.
       agent_view: { agent_description: cut(c.profile?.agent_description?.trim() || bio, 300), suggested_prompts: (c.profile?.starter_prompts ?? []).slice(0, 4) },
       shortcuts: [
