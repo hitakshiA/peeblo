@@ -36,7 +36,9 @@ export function revokeToken(token: string): void {
 export const proxyBaseUrl = () => `http://127.0.0.1:${config.proxyPort}/api/v1`;
 export const toolsBaseUrl = () => `http://127.0.0.1:${config.proxyPort}/peeblo`;
 
-const MAX_MODEL_CALLS = 60;
+// Model calls per run: Peeblo's chat stays short; a teammate working a job (a repo, 40 test runs) needs room, and its
+// monthly spend cap is the real limit.
+const MAX_MODEL_CALLS_CHAT = 30, MAX_MODEL_CALLS_WORK = 150;
 const INFERENCE = new Set(["/chat/completions", "/messages", "/responses"]);
 const DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection"]);
 const RETRYABLE_CODES = new Set(["invalid_model", "pricing_required", "provider_not_configured", "provider_unavailable", "provider_credential_rejected"]);
@@ -201,6 +203,7 @@ export function startProxy(): Promise<Server> {
       const silent = b.runId ? Number((await pool.query(
         `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
            AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
+      const MAX_MODEL_CALLS = b.teammateSlug === "peeblo" ? MAX_MODEL_CALLS_CHAT : MAX_MODEL_CALLS_WORK;
       const why = b.stuck?.runId === b.runId ? b.stuck.reason : b.modelCalls.n > MAX_MODEL_CALLS ? `more than ${MAX_MODEL_CALLS} model calls` : silent >= 3 ? "3 turns in a row with no visible output" : null;
       if (why) {
         if (b.stuck?.runId !== b.runId) { b.stuck = { runId: b.runId, reason: why }; await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: why } }).catch(() => {}); }
