@@ -52,6 +52,8 @@ function chart(a: any): any[] | string {
     return { name, data: cats.map((c, i) => ({ label: c, value: num(s.values[i]) })) };
   });
   if (out.some((s) => s.data.some((d) => !Number.isFinite(d.value)))) return "Every chart value must be a number.";
+  // An axis title is words ("Amount (USD)"); a bare number there (an angle, a guess) is dropped.
+  for (const k of ["x_label", "y_label"]) if (a[k] !== undefined && a[k] !== null && !/[a-z]/i.test(String(a[k]))) a[k] = null;
   return [{ type: "data_visualization", title: cut(a.title, 50), chart: { type, series: out, axis_config: { categories: cats, ...(a.x_label ? { x_label: cut(a.x_label, 50) } : {}), ...(a.y_label ? { y_label: cut(a.y_label, 50) } : {}) } } }];
 }
 

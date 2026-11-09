@@ -56,7 +56,7 @@ const hireSpec = {
   profile: { type: ["object", "null"], description: "Its Slack profile, in your words: bio (2-4 sentences: what it does, for whom, how it works), agent_description (one function-first line, under 300 characters, e.g. 'Reconciles Stripe charges against Xero and flags mismatches for Priya'), starter_prompts (4 short things a person might ask it, each {title, message}).", properties: { bio: { type: "string" }, agent_description: { type: "string" }, starter_prompts: { type: "array", maxItems: 4, items: { type: "object", properties: { title: { type: "string" }, message: { type: "string" } }, required: ["title", "message"], additionalProperties: false } } }, required: ["bio", "agent_description", "starter_prompts"], additionalProperties: false },
 };
 // A hire pins a model only when a person named it; otherwise it runs on the worker role policy, which carries the
-// fallback and the step-down to a cheaper model near its budget.
+// fallback (and, for the heavy role, the step-down to a cheaper model as its budget runs down).
 async function keepModelIfNamed(runId: string | null, a: any): Promise<void> {
   if (!a.model || !runId) return;
   const { personWords } = await import("../approvers.ts");

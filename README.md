@@ -21,7 +21,7 @@ It signs every reply with what it cost.
 
 Every model call, tool, connector, budget and guardrail goes through [Otari](https://otari.ai).
 Each teammate gets its own Otari key with a spending ceiling, and each person their own budget on it.
-When a teammate nears its budget, it moves to a cheaper model; when it's out, the owner gets a button.
+Heavy work moves to a cheaper model as its budget runs down; when a teammate is out, the owner gets a Raise button, and the job runs again.
 Read-only means Otari refuses the write, not just Peeblo.
 The models are open-weight. How it all fits: [docs/OTARI.md](docs/OTARI.md).
 

@@ -10,7 +10,7 @@ import { onEvent } from "../store/events.ts";
 import { personForSlack } from "../store/people.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 import { slack } from "./api.ts";
-import { askedLabel } from "../asked.ts";
+import { askedLabel, cutWords } from "../asked.ts";
 
 const viewers = new Map<string, { appId: string; teammateId: string; user: string; at: number; last: number; timer?: NodeJS.Timeout }>();
 
@@ -28,7 +28,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   const manager = mayManageTeammate(tm, viewer);
   const paused = Boolean((await pool.query("SELECT paused_at FROM teammates WHERE id = $1", [tm.id])).rows[0]?.paused_at);
   const running = (await pool.query(
-    `SELECT r.id, r.status, s.place, left(sub.text, 90) AS asked, sub.source FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
+    `SELECT r.id, r.status, s.place, left(sub.text, 600) AS asked, sub.source FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
       WHERE s.teammate_id = $1 AND r.status IN ('queued', 'running', 'waiting') ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
   // Peeblo's owner is whoever runs it (the first admin), never "none yet".
   const owner = tm.owner_person ? (await pool.query("SELECT slack_user, display_name FROM people WHERE id = $1", [tm.owner_person])).rows[0]
@@ -46,7 +46,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
     const link = await permalink(appId, r.place?.slack);
     // What a person asked, in their words; runs no person started are named for what they are.
     const label = r.source === "welcome" ? "Saying hello to someone new" : r.source === "schedule" || r.source === "webhook" ? "A scheduled job" : r.source === "teammate" ? `A job from another teammate: ${String(r.asked).split("\n").find((l: string) => l.startsWith("Objective:"))?.slice(11) ?? ""}` : askedLabel(r.asked).replace(/<[^>]+>/g, "").replace(/\n/g, " ");
-    blocks.push({ type: "section", text: { type: "mrkdwn", text: `${r.status === "waiting" ? "⏸️ waiting for approval" : "⏳"} ${label.slice(0, 200)}${step ? `\n_${step}_` : ""}` } });
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: `${r.status === "waiting" ? "⏸️ waiting for approval" : "⏳"} ${cutWords(label, 160)}${step ? `\n_${step}_` : ""}` } });
     blocks.push({ type: "actions", elements: [
       ...(link ? [{ type: "button", text: { type: "plain_text", text: "Open thread" }, url: link, action_id: `open_thread:${r.id}` }] : []),
       { type: "button", style: "danger", text: { type: "plain_text", text: "Stop" }, action_id: "stop_run", value: r.id },
@@ -69,7 +69,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   }
   // Recent: the last 5 finished jobs, with cost and receipt link.
   const recent = (await pool.query(
-    `SELECT r.id, r.status, left(sub.text, 80) AS asked, (SELECT coalesce(sum((e.data->>'cost_usd')::numeric), 0) FROM events e WHERE e.run_id = r.id AND e.type = 'model.call') AS cost
+    `SELECT r.id, r.status, left(sub.text, 600) AS asked, (SELECT coalesce(sum((e.data->>'cost_usd')::numeric), 0) FROM events e WHERE e.run_id = r.id AND e.type = 'model.call') AS cost
        FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id
       WHERE s.teammate_id = $1 AND r.status IN ('done', 'failed') AND sub.source <> 'welcome'
         AND r.created_at > coalesce((SELECT max(at) FROM audit WHERE action = 'peeblo.clean_start'), 'epoch') ORDER BY r.created_at DESC LIMIT 5`, [tm.id])).rows;
@@ -78,7 +78,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   for (const r of recent) {
     const { buildReceipt } = await import("../receipts.ts");
     const link = await buildReceipt(r.id).then((x) => x.links?.session ?? null).catch(() => null);
-    lines.push(`${r.status === "done" ? "✅" : "⚠️"} ${askedLabel(r.asked).replace(/\n/g, " ").replace(/<[^>]+>/g, "").trim() || "(a job)"} · ${usd(Number(r.cost))}${link ? ` · <${link}|receipt>` : ""}`);
+    lines.push(`${r.status === "done" ? "✅" : "⚠️"} ${cutWords(askedLabel(r.asked).replace(/<[^>]+>/g, ""), 110) || "(a job)"} · ${usd(Number(r.cost))}${link ? ` · <${link}|receipt>` : ""}`);
   }
   blocks.push({ type: "section", text: { type: "mrkdwn", text: lines.join("\n") || "No jobs yet." } });
   // Budget meter: the teammate's month, and the viewer's share of it.

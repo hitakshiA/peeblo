@@ -107,22 +107,14 @@
       "fallback": [
         "minimax/minimax-m3.1-flash"
       ],
-      "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap)",
-      "step_down": {
-        "at_budget_pct": 80,
-        "model": "openai/gpt-oss-120b"
-      }
+      "purpose": "Peeblo itself: desk and channel sessions (frequent and mostly quiet, so cheap). No step-down: with cached prompts this is already the cheapest capable model per call"
     },
     "peeblo-worker": {
       "default": "deepseek/deepseek-v4.1-flash-1017",
       "fallback": [
         "minimax/minimax-m3.1-flash"
       ],
-      "purpose": "teammates' everyday work",
-      "step_down": {
-        "at_budget_pct": 80,
-        "model": "openai/gpt-oss-120b"
-      }
+      "purpose": "teammates' everyday work. No step-down: with cached prompts this is already the cheapest capable model per call (gpt-oss-120b has no cache price, so it cost about 5x more per agent call and dropped tools)"
     },
     "peeblo-reviewer": {
       "default": "minimax/minimax-m3.1-flash",

@@ -43,7 +43,7 @@ export const sourceText = (u: string): string => {
 
 // The agent session's status (Slack's agent model): processing while it works (with the native Stop), active after.
 async function sessionStatus(v: View, status: "processing" | "active" | "suspended", title?: string): Promise<void> {
-  await slack(v.place.app_id, "agents.sessions.setStatus", { channel_id: v.place.channel, thread_ts: v.place.thread_ts, status, ...(title ? { title: title.slice(0, 200) } : {}) }).catch(() => null);
+  await slack(v.place.app_id, "agents.sessions.setStatus", { channel_id: v.place.channel, thread_ts: v.place.thread_ts, status, ...(title ? { title: title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").slice(0, 200) } : {}) }).catch(() => null);
 }
 const views = new Map<string, View>();
 const HANDOVER_MS = 9 * 60_000;

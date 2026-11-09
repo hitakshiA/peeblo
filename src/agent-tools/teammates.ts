@@ -17,7 +17,16 @@ export const askTeammateTool: AgentTool = {
     announce: { type: "string", description: "The one line you post in this thread so people see you asked, in your words, e.g. 'Asked Warden to check the numbers with a second model.'" },
   }),
   kind: "local",
-  async authorize(_ctx, a) { return (await findTeammate(a.teammate)) ? null : `There's no teammate called ${a.teammate}.`; },
+  async authorize(ctx, a) {
+    if (!(await findTeammate(a.teammate))) return `There's no teammate called ${a.teammate}.`;
+    // Approval only exists on a card. A handoff that claims one without an approved card in this job goes back.
+    if (/\b(approved|approves|signed off|gave the ok|said yes)\b/i.test(String(a.question ?? ""))) {
+      const { pool } = await import("../db.ts");
+      const ok = ctx.runId ? (await pool.query("SELECT 1 FROM approvals WHERE run_id = $1 AND status = 'approved' LIMIT 1", [ctx.runId])).rowCount : 0;
+      if (!ok) return "Nobody approved anything on a card in this job, so don't say they did. Ask again with what the person said in their own words; if it needs approval, the card will ask them.";
+    }
+    return null;
+  },
   async run(ctx, a) {
     const callee = (await findTeammate(a.teammate))!;
     const text = [`${ctx.teammate.config.name} asks (for ${ctx.person?.display_name ?? "the person in this thread"}):`, a.question, a.answer_shape ? `Answer as: ${a.answer_shape}` : "", "Reply with slack_post in this thread."].filter(Boolean).join("\n");

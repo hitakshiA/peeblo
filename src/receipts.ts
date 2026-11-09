@@ -45,7 +45,8 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
   return {
     run_id: runId,
     calls: ok.length,
-    cost_usd: Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0)) * 1e6) / 1e6,
+    // Model calls, calls a crash cut off, and tools Otari bills on their own (code execution, the file reader).
+    cost_usd: Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0) + toolCosts(events)) * 1e6) / 1e6,
     prompt_tokens: sum("prompt_tokens"),
     cached_tokens: sum("cached_tokens"),
     completion_tokens: sum("completion_tokens"),
@@ -74,3 +75,15 @@ export function receiptLine(r: Receipt): string {
 
 // Small runs cost fractions of a cent; show enough digits that a real cost never reads as $0.
 const money = (usd: number) => (usd === 0 ? "$0" : usd < 0.01 ? `$${usd.toFixed(6)}` : `$${usd.toFixed(4)}`);
+
+// What Otari billed outside the run's model calls: settled code-execution requests (tool.cost) and the file
+// reader's own model call (its cost comes back on the tool's result).
+function toolCosts(events: { type: string; data: unknown }[]): number {
+  let n = 0;
+  for (const e of events) {
+    const d = e.data as any;
+    if (e.type === "tool.cost") n += Number(d?.cost_usd) || 0;
+    else if (e.type === "tool.call" && d?.tool === "understand_file" && d?.status === "completed") n += Number(d?.result?.cost_usd) || 0;
+  }
+  return n;
+}

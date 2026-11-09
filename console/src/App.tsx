@@ -259,7 +259,7 @@ function Otari() {
       <div className="card row" style={{ marginBottom: 16 }}><span className="pill ok">connected</span><span>as <b>{data.session.signed_in_as}</b> until {when(data.session.expires_at)}</span><button className="ghost" onClick={signOut}>Disconnect</button></div>}
     <div className="grid">
       <div className="card stack"><h3>Routing</h3><div>{data.session ? (missing.length ? <span className="pill bad">{missing.length} missing</span> : <span className="pill ok">in sync</span>) : <span className="pill">not connected</span>}</div>
-        <div className="muted">One policy per role ({data.roles.join(", ")}), kept in sync by Peeblo from config/model-tiers.json: the model, Otari's fallback, and a cheaper model when a teammate's budget is mostly used. Edit the file and restart to change them.</div>
+        <div className="muted">One policy per role ({data.roles.join(", ")}), kept in sync by Peeblo from config/model-tiers.json: the model, Otari's fallback, and for heavy work a cheaper model once half its budget is used. Edit the file and restart to change them.</div>
         <a href={data.links.routing} target="_blank" rel="noreferrer">See them in Otari</a></div>
       <div className="card stack"><h3>Guardrail</h3><div>{pill(data.guardrail.enabled, "org-wide", "outside text only")} <span className="muted">{data.guardrail.profile}</span></div>
         <div className="muted">Peeblo checks text from outside the company (tickets, chats, web pages, files) with your Lakera guardrail in Otari. To screen every call instead, turn on the org guardrail in Otari → Guardrails.</div>

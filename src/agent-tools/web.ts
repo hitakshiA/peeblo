@@ -103,6 +103,8 @@ export const runCodeTool: AgentTool = {
       }
       const r = await otari<any>("POST", "/code/execute", { code: String(a.code).slice(0, 20_000), container: held ?? "auto", timeout_seconds: 30, ...(fileIds.length ? { file_ids: fileIds } : {}), ...(ctx.endUser ? { user: ctx.endUser } : {}) }, auth ? { auth, timeoutMs: 90_000 } : { timeoutMs: 90_000 });
       const id = r.headers.get("otari-container-id"); if (id) sandboxes.set(ctx.sessionId, id);
+      // Its price isn't on the reply: Otari settles it a moment later, and the receipt adds it (tool.cost).
+      if (r.requestId) void settleToolCost(ctx, "run_code", r.requestId, auth);
       const out = [String(r.data?.stdout ?? "").trim(), r.data?.stderr ? `stderr: ${String(r.data.stderr).trim()}` : ""].filter(Boolean).join("\n") || "(no output)";
       // Files the code wrote come back to the session folder, so a chart or a cleaned CSV can be shared.
       const saved: string[] = [];
@@ -144,3 +146,13 @@ async function saveReturned(ctx: ToolContext, fileId: string, name: string, auth
 }
 const sandboxes = new Map<string, string>(); // session → Otari container id
 
+// A tool call Otari bills outside a model call (code execution): its settled cost goes on the run's receipt.
+async function settleToolCost(ctx: { sessionId: string; runId: string | null }, tool: string, requestId: string, auth?: Record<string, string>): Promise<void> {
+  const { requestUsage } = await import("../otari/client.ts");
+  const { appendEvent } = await import("../store/events.ts");
+  for (const wait of [2000, 5000, 15000]) {
+    await new Promise((s) => setTimeout(s, wait));
+    const u = await requestUsage(requestId, auth).catch(() => null);
+    if (u) { await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "tool.cost", data: { tool, request_id: requestId, cost_usd: Number(u.cost_usd) } }).catch(() => {}); return; }
+  }
+}

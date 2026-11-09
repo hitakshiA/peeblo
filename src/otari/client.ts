@@ -70,8 +70,8 @@ export async function keyBudget(): Promise<{ budgets_enforced: boolean; remainin
 }
 
 // The settled cost and tokens of one request (404 until Otari has settled it).
-export async function requestUsage(requestId: string): Promise<{ cost_usd: string; prompt_tokens: number; completion_tokens: number; row_count: number } | null> {
-  try { return (await otari("GET", `/usage/requests/${encodeURIComponent(requestId)}`)).data; } catch (e) { if ((e as OtariError).status === 404) return null; throw e; }
+export async function requestUsage(requestId: string, auth?: Record<string, string>): Promise<{ cost_usd: string; prompt_tokens: number; completion_tokens: number; row_count: number } | null> {
+  try { return (await otari("GET", `/usage/requests/${encodeURIComponent(requestId)}`, undefined, auth ? { auth } : {})).data; } catch (e) { if ((e as OtariError).status === 404) return null; throw e; }
 }
 
 // Spend over a period, optionally for one tag (teammate=scout) or broken down by a tag key.
