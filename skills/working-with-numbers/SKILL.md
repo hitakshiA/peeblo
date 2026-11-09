@@ -11,12 +11,12 @@ A number people act on has to be right, defined, and comparable. How it looks co
 - **Compute with code** on your computer or with the source's own query (SQL, HogQL), never in your head.
 - **Say the definition** in a few words: "completed signups per person, Nov 2–8 UTC, test rows excluded".
 - **People, not events**, unless events are the question. Events double-fire (PostHog fires `signup_completed`
-  twice on iOS), bots inflate starts (`HeadlessChrome`), internal test rows (`test+…`, `@acme.example`) pollute.
+  twice on some browsers), bots inflate starts (`HeadlessChrome`), internal test rows (`test+…` addresses, your own domain) pollute.
 - **Time windows are traps**: "last week" is the last full week; time zones move late-Sunday rows across the
   boundary; test-clock charges can be dated in the future. Name the window you used.
 - **Currencies don't add**: EUR and USD separately, or convert with a stated rate.
 - **A customer's money is in their billing currency**, from Stripe: their price, their invoices, their credits
-  (Northwind is billed in EUR). Quoting them in another currency invites a dispute; convert only to compare, and say so.
+  (a customer billed in EUR gets EUR). Quoting them in another currency invites a dispute; convert only to compare, and say so.
 - **"Draft a quote" means a quote in Stripe** when Stripe can make one: a draft quote object the customer can
   accept, not only text in Slack. It's a money write, so it goes to its approver.
 - **Sources disagree for reasons**: HubSpot ARR is contract value, Stripe MRR is after discounts and refunds, a

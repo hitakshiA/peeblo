@@ -23,7 +23,7 @@ The person wants to know whether to act. Everything else is detail.
 - **Say a cause only when the evidence shows it.** Until then say what's known and what's being checked; a cause
   stated early sends people to fix the wrong thing.
 - **Hotfixes don't wait for the deploy window.** The window protects routine releases; an incident fix can ship
-  outside it with Jun's approval (the card asks him).
+  outside it with the approval of whoever approves deploys (the approvals note says who; the card asks them).
 - **Still open and customer-facing** is wake-worthy. Resolved on its own with no action left is not.
 - **Check history before calling something new.** The same alert most nights (a disk filling during log rotation,
   a backup-window latency blip) is known noise; say so in a few words. A first-time alert, or a known one that
@@ -31,7 +31,7 @@ The person wants to know whether to act. Everything else is detail.
 - Counts aren't severity. Ten auto-resolved pages are quieter than one open checkout error spike.
 
 ## How to answer
-- **Verdict first**: "Nothing worth waking you." / "Yes: checkout 500s since 02:10, still open, Jun has it."
+- **Verdict first**: "Nothing worth waking you." / "Yes: checkout 500s since 02:10, still open, the on-call has it."
 - Then at most two short lines: what fixed itself, what's noise, what's open and who owns it. Link the incident.
 - Leave out what you checked and how. Don't list every alert unless asked.
 
