@@ -10,8 +10,24 @@ import { otari, OtariError } from "./client.ts";
 const pinned = new Map<string, string>();
 
 // "deepseek/deepseek-v4.1-flash-1017" → "deepinfra:deepseek-ai/DeepSeek-V4.1-Flash-1017"
+// A role model is pinned to a provider for its policy. When the workspace requires zero data retention (an admin
+// setting in Otari), only a provider the catalog marks zero-retention is used, or the policy can't be made.
+export async function zdrRequired(): Promise<boolean> {
+  const { admin, session } = await import("./admin.ts");
+  if (!(await session())) return false;
+  return Boolean((await admin<{ require_zero_data_retention?: boolean }>("GET", "/workspaces/{workspace}/provider-policy", undefined, "reading the provider policy", "").catch(() => null))?.require_zero_data_retention);
+}
+export async function zdrOffering(catalogId: string): Promise<string | null> {
+  const r = await otari<any>("GET", `/catalog/models/${catalogId}`).catch(() => null);
+  return (r?.data?.offerings ?? []).find((o: any) => o.zero_data_retention)?.selector ?? null;
+}
 export async function pinnedName(catalogId: string): Promise<string> {
   if (catalogId.includes(":")) return catalogId;
+  if (await zdrRequired()) {
+    const zdr = await zdrOffering(catalogId);
+    if (!zdr) throw new Error(`${catalogId} has no zero-data-retention provider in Otari, which this workspace requires; pick another model in config/model-tiers.json`);
+    return zdr;
+  }
   const hit = pinned.get(catalogId);
   if (hit) return hit;
   const r = await otari("POST", "/chat/completions", { model: catalogId, max_tokens: 1, messages: [{ role: "user", content: "hi" }] });
@@ -116,8 +132,9 @@ export async function syncRolePolicies(): Promise<boolean> {
     let pushed: Record<string, string> = {};
     try { pushed = JSON.parse(readFileSync(file, "utf8")); } catch { /* first run */ }
     const have = new Set(await rolePoliciesInOtari());
+    const zdr = await zdrRequired();   // turning zero data retention on or off re-pins every role
     for (const [name, r] of Object.entries(ROLES)) {
-      const hash = createHash("sha256").update(JSON.stringify(r)).digest("hex").slice(0, 16);
+      const hash = createHash("sha256").update(JSON.stringify(r) + (zdr ? ":zdr" : "")).digest("hex").slice(0, 16);
       if (have.has(name) && pushed[name] === hash) continue;
       if (have.has(name) && !pushed[name]) { pushed[name] = hash; continue; } // made earlier (or by hand): adopt it
       await upsertRoutingPolicy(name, await policySpec(r));

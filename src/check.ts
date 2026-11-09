@@ -166,6 +166,19 @@ export async function runChecks(): Promise<Result[]> {
     if (bad.length) throw new Error(`unhealthy: ${bad.map((s) => `${s.name} (${s.health?.status})`).join(", ")}`);
     return `${all.length} servers, all healthy`;
   });
+  await check("Otari zero data retention", async () => {
+    // A workspace setting in Otari (Settings → Providers → require zero data retention). Peeblo then pins every role
+    // to a provider the catalog marks zero-retention.
+    const { session } = await import("./otari/admin.ts");
+    if (!(await session())) return "not checked without a dashboard session";
+    const { ROLES, zdrOffering, zdrRequired } = await import("./otari/routing.ts");
+    const on = await zdrRequired();
+    const models = [...new Set(Object.values(ROLES).flatMap((r) => [r.default, ...r.fallback, ...(r.step_down ? [r.step_down.model] : [])]))];
+    const without: string[] = [];
+    for (const m of models) if (!(await zdrOffering(m))) without.push(m);
+    if (on && without.length) throw new Error(`required in Otari, but ${without.join(", ")} has no zero-retention provider; change those roles in config/model-tiers.json`);
+    return on ? "required in Otari; every role runs on a zero-retention provider" : `not required (an option in Otari's workspace settings)${without.length ? `; turning it on needs other models for ${without.join(", ")}` : "; every role model has a zero-retention provider, so it can be turned on"}`;
+  });
   await check("Otari connector access per teammate", async () => {
     const { session } = await import("./otari/admin.ts");
     if (!(await session())) return "not checked without a dashboard session (teammates' connector calls use Peeblo's key until then)";
