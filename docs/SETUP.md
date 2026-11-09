@@ -4,9 +4,9 @@ From a fresh machine to a teammate answering in Slack, in about half an hour.
 
 ## What you need
 
-- **A Mac with Apple silicon.** Each awake teammate computer uses about 250 MB (small) or 1.5 GB (large, with a browser).
-  Linux support (a server with `/dev/kvm`) is not ready in this release.
-- **Docker** (Compose v2), plus:
+- **A Mac with Apple silicon, or a Linux server with `/dev/kvm`** ([On a Linux server](#on-a-linux-server)). Each awake
+  teammate computer uses about 250 MB (small) or 1.5 GB (large, with a browser).
+- **Docker** (Compose v2), plus on a Mac:
   ```bash
   brew install node@24 pnpm qemu e2fsprogs
   brew link --overwrite --force node@24      # node@24 isn't put on your PATH otherwise; `node -v` should say v24
@@ -102,6 +102,27 @@ teammate can do (tools, budget, approval mode) asks its owner or an admin first.
 
 Teammates that browse websites need the large computer image, built once: `./peeblo image large` (about 4.4 GB
 with Docker running).
+
+## On a Linux server
+
+Everything runs in Docker Compose. The server needs `/dev/kvm` (bare metal, or a VM with nested virtualization)
+for teammate computers.
+
+```bash
+sudo apt install docker.io docker-compose-v2 git      # or Docker's own packages
+sudo usermod -aG docker $USER                          # then log in again
+git clone <this repo> peeblo && cd peeblo
+./peeblo up                                            # writes .env, then stops: fill in the five settings
+./peeblo up                                            # builds the image and the small computer image, starts
+./peeblo check
+./peeblo slack-app
+./peeblo image large                                   # only for teammates that browse (it lends Docker for this command)
+```
+
+- `PEEBLO_SLACK_CONFIG_FILE` is a path on the server; Peeblo reads it once and keeps the token sealed.
+- Put a reverse proxy with TLS (Caddy, nginx) in front of the ingress port (`8787`) for `PEEBLO_PUBLIC_URL`. Keep
+  `7340` (the console and API) private: open it with `ssh -L 7340:127.0.0.1:7340 <server>`.
+- `./peeblo logs`, `./peeblo backup`, `./peeblo upgrade` work the same as on a Mac.
 
 ## Connectors
 
