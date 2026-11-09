@@ -332,7 +332,8 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     return reply({ text: `Not allowed: ${scope}. Ask the teammate's owner to add it.`, isError: true });
   }
   // Read-only connectors (config.read_only, set at hire or by talking): no writes there, whoever asks.
-  if (kind !== "read" && ((tm.config as any).read_only ?? []).includes(t.server)) {
+  const readOnly: string[] = kind === "read" ? [] : (((await (await import("../store/teammates.ts")).getTeammate(tm.id))?.config as any)?.read_only ?? (tm.config as any).read_only ?? []);
+  if (kind !== "read" && readOnly.includes(t.server)) {
     await event({ status: "refused", reason: `${t.server} is read-only for this teammate` });
     return reply({ text: `Not allowed: ${t.server} is read-only for ${tm.config.name}. Don't try another way; write up what should change for a person (or a teammate with write access) to do.`, isError: true });
   }

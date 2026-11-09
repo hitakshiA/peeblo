@@ -50,10 +50,11 @@ export async function withApprovers(runId: string, action: Record<string, any>):
   return { ...action, approvers: approvers.length ? approvers : await adminIds() };
 }
 
-export async function approverNames(ids: string[]): Promise<string> {
+// plain: names only (for plain_text fields, where a <@mention> shows as raw text).
+export async function approverNames(ids: string[], plain = false): Promise<string> {
   if (!ids.length) return "an admin";
   const { rows } = await pool.query("SELECT id, display_name, slack_user FROM people WHERE id = ANY($1)", [ids]);
-  const names = ids.map((id) => rows.find((r) => r.id === id)).filter(Boolean).map((r) => (r.slack_user ? `<@${r.slack_user}>` : r.display_name ?? "a person"));
+  const names = ids.map((id) => rows.find((r) => r.id === id)).filter(Boolean).map((r) => (r.slack_user && !plain ? `<@${r.slack_user}>` : String(r.display_name ?? "a person").split(" ")[0]));
   return names.length <= 2 ? names.join(" or ") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
 }
 

@@ -88,7 +88,7 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
   const domain = a.server ? DOMAINS[a.server] ?? `${a.server}.com` : null;
   const approvers: string[] = a.approvers ?? [];
   // "Only Priya can answer" only when the person asking isn't the one who decides.
-  const onlyOthers = approvers.length && (!askedBy || !approvers.includes(askedBy)) ? `only ${await approverNames(approvers)} can answer` : null;
+  const onlyOthers = approvers.length && (!askedBy || !approvers.includes(askedBy)) ? `only ${await approverNames(approvers, true)} can answer` : null;
   const line = [what(a), target(a), a.price_usd ? `≈ ${money(Number(a.price_usd))}` : null, onlyOthers].filter(Boolean).join(" · ");
   return [
     ...(a.id_card_url ? [{ type: "image", image_url: a.id_card_url, alt_text: `${String(a.summary ?? "teammate").replace(/^Hire /, "").split(":")[0]}'s ID card`.slice(0, 2000) }] : []),
