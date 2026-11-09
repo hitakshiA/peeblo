@@ -134,6 +134,20 @@ export async function screen(content: string, endUser: string | null): Promise<S
     const g = await openGuard(text, endUser);
     return { checked_by: config.guardModel, flagged: !g.safe, score: null, categories: g.categories, requestId: g.requestId };
   }
+  if (mode === "lakera" && lakeraState() !== true) {
+    // The org-wide mandate is off (it would screen every model call): the same Lakera guardrail in Otari checks
+    // just this outside text, through its definition's test route.
+    try {
+      const m = await lakeraMandate();
+      if (m?.definitionId) {
+        const { admin } = await import("./otari/admin.ts");
+        const r = await admin<{ valid: boolean; score: number | null }>("POST", `/organizations/me/guardrail-definitions/${m.definitionId}/test`, { text }, "screening outside text", "");
+        return { checked_by: "lakera (Otari guardrail)", flagged: r.valid === false, score: typeof r.score === "number" ? r.score : null, categories: r.valid === false ? ["prompt_injection"] : [], requestId: null };
+      }
+    } catch { /* fall through to the open guard */ }
+    const g = await openGuard(text, endUser);
+    return { checked_by: config.guardModel, flagged: !g.safe, score: null, categories: g.categories, requestId: g.requestId };
+  }
   if (mode === "lakera" && lakeraState() === true) {
     // The org guardrail screens every model call's input, so a one-token call with the content is its verdict.
     try {
