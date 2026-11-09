@@ -44,7 +44,7 @@ case "${1:-up}" in
       ls "$PEEBLO_DATA_DIR/images/small-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64)"/*/manifest.json >/dev/null 2>&1 || node src/bin.ts image small
       # After an update, a running core is restarted so it runs the new code.
       if pid=$(core_pid) && [ -n "$(find src config skills db -newer "$RUN/core.pid" -type f 2>/dev/null | head -1)" ]; then
-        echo "peeblo: code changed since core started; restarting it"; kill "$pid"; pkill -TERM -P "$pid" 2>/dev/null; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"
+        echo "peeblo: code changed since core started; restarting it"; pkill -TERM -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"
       fi
       if pid=$(core_pid); then echo "peeblo: core already running (pid $pid)"; else
         # A small loop restarts core when the console's setup asks it to (exit 75), e.g. after the Otari key is saved.
@@ -65,7 +65,7 @@ case "${1:-up}" in
     [ "$(uname)" = Darwin ] || echo "        (on a server: ssh -L ${PEEBLO_API_PORT:-7340}:127.0.0.1:${PEEBLO_API_PORT:-7340} <server>, then open that address)" ;;
   down)
     load_env
-    if pid=$(core_pid); then kill "$pid"; pkill -TERM -P "$pid" 2>/dev/null; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || pgrep -P "$pid" >/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
+    if pid=$(core_pid); then pkill -TERM -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null; for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || pgrep -P "$pid" >/dev/null || break; sleep 0.5; done; rm -f "$RUN/core.pid"; echo "peeblo: core stopped"; fi
     if [ "$(uname)" = Darwin ]; then mac_compose stop db; else compose --profile linux stop; fi ;;
   backup)
     # The database and the data that can't be rebuilt (memory, settings, workspaces); computer images are rebuilt.
