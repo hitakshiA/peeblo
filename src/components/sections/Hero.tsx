@@ -27,9 +27,11 @@ export function Hero() {
             Hire a crew of AI employees for any task, right in Slack. Self-hosted on your servers, so your data, keys and AI budget stay under your control.
           </p>
           <div className={s.actions}>
-            <span className={`${s.btn} ${s.soon}`} aria-disabled="true">
-              Demo video <small>· soon</small>
-            </span>
+            <a className={`${s.btn} ${s.secondary}`} href={site.slackUrl} target="_blank" rel="noreferrer" data-magnetic>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logos/slack.svg" alt="" width={17} height={17} />
+              Try it in Slack
+            </a>
             <a className={`${s.btn} ${s.primary}`} href={site.repoUrl} target="_blank" rel="noreferrer" data-magnetic>
               <GitHubMark size={17} />
               Get it on GitHub
