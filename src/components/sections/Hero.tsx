@@ -30,7 +30,7 @@ export function Hero() {
             <a className={`${s.btn} ${s.secondary}`} href={site.slackUrl} target="_blank" rel="noreferrer" data-magnetic>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/logos/slack.svg" alt="" width={17} height={17} />
-              Try it in Slack
+              Try Demo
             </a>
             <a className={`${s.btn} ${s.primary}`} href={site.repoUrl} target="_blank" rel="noreferrer" data-magnetic>
               <GitHubMark size={17} />

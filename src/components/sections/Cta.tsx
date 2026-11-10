@@ -79,13 +79,9 @@ export function Cta() {
                 </svg>
                 GitHub
               </a>
-              {site.demoUrl ? (
-                <a className={c.link} href={site.demoUrl}>
-                  Watch the demo
-                </a>
-              ) : (
-                <span className={`${c.link} ${c.soon}`}>Demo video · soon</span>
-              )}
+              <a className={c.link} href={site.slackUrl} target="_blank" rel="noreferrer">
+                Try Demo
+              </a>
             </div>
           </div>
           <ul className={c.points} role="list">

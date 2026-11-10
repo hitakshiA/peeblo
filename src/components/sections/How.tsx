@@ -39,7 +39,7 @@ const later = ["microsoft-teams", "discord", "google-chat", "mattermost", "lark"
 // Beat 1: what starts on your server. Polar positions around the stage centre (640px stage).
 type Chip = { text: string; icon?: string; dot?: string; mono?: boolean; r: number; a: number; ph: number };
 const chips: Chip[] = [
-  { icon: logo("docker"), text: "docker compose up -d", mono: true, r: 262, a: -55, ph: 0 },
+  { icon: logo("docker"), text: "./peeblo up", mono: true, r: 262, a: -55, ph: 0 },
   { icon: logo("postgresql"), text: "Postgres · ready", r: 292, a: 17, ph: 2.2 },
   { dot: "var(--moss)", text: "Peeblo daemon · running", r: 196, a: 89, ph: 4.1 },
   { dot: "var(--ember)", text: "Keys stay on your box", r: 270, a: 161, ph: 1.1 },

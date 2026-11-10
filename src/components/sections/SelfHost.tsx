@@ -11,9 +11,10 @@ import s from "./SelfHost.module.css";
 
 // Until the repo is public, site.repoUrl is just github.com, so the clone line shows a placeholder.
 const repo = /github\.com\/[^/]+\/[^/]+/.test(site.repoUrl) ? site.repoUrl : "<repo-url>";
-const commands = [`git clone ${repo} && cd peeblo`, "cp .env.example .env", "docker compose up -d"];
+const commands = [`git clone ${repo} peeblo && cd peeblo`, "./peeblo up"];
 
-// The terminal plays a real start-up: each command typed out, then what docker compose prints.
+// The terminal plays a real start-up: each command typed out, then what ./peeblo up prints. Then the console
+// it points to rises over the terminal and ticks through the setup steps (the same ones the real console shows).
 // Everything is a function of one clock (ms since the card came into view), so it renders the same
 // way every time and reduced motion just shows the end.
 type Line = { cmd?: string; text?: string; done?: string; at: number; doneAt?: number; tone?: "dim" | "head" };
@@ -37,16 +38,18 @@ cmd(commands[0]);
 out("Cloning into 'peeblo'...", 520, "dim");
 out("Receiving objects: 100% (1,284/1,284), done.", 420, "dim");
 cmd(commands[1]);
-cmd(commands[2]);
-out("[+] Pulling 2/2", 100, "head");
-job("db      Pulling", "db      Pulled   3.1s", 900);
-job("daemon  Pulling", "daemon  Pulled   4.4s", 1100, 1300);
-out("[+] Running 4/4", 100, "head");
-job("Network peeblo_default   Creating", "Network peeblo_default   Created   0.1s", 200);
-job('Volume "peeblo_pgdata"   Creating', 'Volume "peeblo_pgdata"   Created   0.0s', 200);
-job("Container peeblo-db      Starting", "Container peeblo-db      Healthy   5.8s", 1500);
-job("Container peeblo-daemon  Starting", "Container peeblo-daemon  Started   6.1s", 1900, 2100);
-const END = clockAt;
+out("[+] Building 2/2", 100, "head");
+job("peeblo            Building", "peeblo            Built    38.2s", 1300);
+job("computer image    Building", "computer image    Ready    41.0s", 1500, 1700);
+out("[+] Running 2/2", 100, "head");
+job("Container peeblo-db-1      Starting", "Container peeblo-db-1      Healthy   5.8s", 1200);
+job("Container peeblo-peeblo-1  Starting", "Container peeblo-peeblo-1  Healthy   9.4s", 1700, 1900);
+out("peeblo: up. Open the console to set up or look around: http://127.0.0.1:7340/console/", 700);
+const TERM_END = clockAt;
+// The console's setup, one step after another; the last line is the hand-off to Slack.
+const STEP_MS = 650;
+const steps = ["Console password", "Your Otari key", "Otari dashboard", "A public address", "Add Peeblo to Slack"].map((label, i) => ({ label, doneAt: TERM_END + 500 + (i + 1) * STEP_MS }));
+const END = steps[steps.length - 1].doneAt + 700;
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
@@ -113,8 +116,8 @@ export function SelfHost() {
       </div>
       <div className={s.card}>
         <div className={s.copy}>
-          <h3>Prefer the terminal? Start it with Docker.</h3>
-          <p>Clone the repo, add your Otari key, and start Postgres and the Peeblo daemon. Your teammates never see the key.</p>
+          <h3>One command. The rest happens in your browser.</h3>
+          <p>Clone the repo and run <code>./peeblo up</code>. A console on your machine walks you through your Otari key, Slack and a public address. Your teammates never see the key.</p>
         </div>
         <div className={s.term} ref={term}>
           <span className={`${s.foreman} ${done ? s.foremanDone : ""}`} aria-hidden="true">
@@ -150,6 +153,27 @@ export function SelfHost() {
                 </div>
               </code>
             </pre>
+            <div className={`${s.console} ${t >= TERM_END ? s.consoleOn : ""}`} aria-label="Setup in the console">
+              <div className={s.consoleBar} aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <span>127.0.0.1:7340/console</span>
+              </div>
+              <ol>
+                {steps.map((st, i) => {
+                  const ok = t >= st.doneAt;
+                  const now = !ok && (i === 0 ? t >= TERM_END : t >= steps[i - 1].doneAt);
+                  return (
+                    <li key={st.label} className={ok ? s.stepOk : now ? s.stepNow : undefined}>
+                      <b aria-hidden="true">{ok ? "✓" : now ? SPIN[Math.floor(t / 80) % SPIN.length] : "○"}</b>
+                      {st.label}
+                    </li>
+                  );
+                })}
+              </ol>
+              <p className={done ? s.helloOn : undefined}>Say hello to Peeblo in Slack</p>
+            </div>
             <p className={`${s.board} ${done ? s.boardOn : ""}`} aria-live="polite">
               {done && (
                 <>

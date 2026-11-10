@@ -22,7 +22,7 @@ const faqs: Faq[] = [
     q: "What do I need to run Peeblo?",
     a: (
       <>
-        A server on your premises (or any box you own) with Docker, a Slack workspace and an Otari key. <code>docker compose up</code> starts Postgres and the Peeblo daemon.
+        A server on your premises (or any box you own) with Docker, a Slack workspace and an Otari key. <code>./peeblo up</code> starts it, and a console in your browser walks you through the rest.
       </>
     ),
     who: "patch",
