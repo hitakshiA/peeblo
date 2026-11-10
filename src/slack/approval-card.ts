@@ -121,6 +121,15 @@ const VERB: Record<string, string> = {
 const RISK: Record<string, string> = { money: "moves money", destructive: "removes something", shipping: "ships a change", outside_thread: "posts outside this thread", write: "writes" };
 
 const cutWord = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).replace(/\s+\S*$/, "")}…`);
+// Whole lines that fit in n characters, then how many more there are (a card body can't scroll).
+const fitLines = (s: string, n: number) => {
+  const lines = s.split("\n").map((l) => l.replace(/\.md:/, ":")).filter(Boolean);
+  const out: string[] = [];
+  for (const l of lines) { if ([...out, l].join("\n").length > n - 16) break; out.push(l); }
+  const more = lines.length - out.length;
+  if (!out.length) return cutWord(lines[0] ?? "", n);
+  return more ? `${out.join("\n")}\n…and ${more} more` : out.join("\n");
+};
 
 export async function cardBlocks(a: any, id: string, teammate: string, askedBy?: string | null): Promise<any[]> {
   const domain = a.server ? DOMAINS[a.server] ?? `${a.server}.com` : null;
@@ -137,7 +146,7 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
       ...(a.kind === "hire" && a.hire ? { subtitle: { type: "plain_text", text: cutWord(String(a.hire.role), 150) }, body: { type: "mrkdwn", text: cutWord(`Can use ${a.hire.uses} · ${a.hire.budget} · ${a.hire.asks}`, 200) } }
         : line ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } } : {}),
       ...(a.kind === "plan" ? { body: { type: "mrkdwn", text: String(a.summary ?? "").slice(0, 600) } }
-        : a.kind === "company_memory" ? { body: { type: "mrkdwn", text: preview(a).slice(0, 200) } }
+        : a.kind === "company_memory" ? { body: { type: "mrkdwn", text: fitLines(preview(a), 200) } }
         : a.kind !== "hire" && typeof a.rule === "string" && a.rule ? { body: { type: "mrkdwn", text: cutWord(a.rule.replace(/^The reviewer wants a person to decide: /, "Why I'm asking: "), 200) } } : {}),
       // A card takes only buttons (an overflow menu is refused), so Edit is a plain third button.
       actions: [

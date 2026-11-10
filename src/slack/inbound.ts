@@ -14,6 +14,10 @@ export type SlackPlace = { app_id: string; team: string; channel: string; channe
 // Quick follow-ups from the same person are batched; short, so a single message isn't kept waiting.
 const BATCH_MS = Number(process.env.PEEBLO_SLACK_BATCH_MS ?? 500);
 const pending = new Map<string, { timer: NodeJS.Timeout; parts: { text: string; ts: string }[]; ctx: any }>();
+// Slack splits a message over 4,000 characters into several, a few milliseconds apart. In a DM each would start its
+// own conversation, so a new message from the same person within this window joins the one before it.
+const SPLIT_MS = 3000;
+const recentTop = new Map<string, { ts: string; at: number }>();
 
 // Mentions of the app's own bot user are stripped; other mentions stay (as <@U…>, which the model can read).
 const clean = (text: string, botUser: string | null) => (botUser ? text.replaceAll(`<@${botUser}>`, "") : text).trim();
@@ -69,7 +73,15 @@ export function installSlackInbound(): void {
     }
     let text = clean(String(ev.text ?? ""), app?.bot_user_id ?? null);
     if (!text && !ev.files?.length) return;
-    const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadTs, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned || inThread) }; // a reply in its own thread is addressed to it
+    let threadNow = threadTs;
+    if (dm && !ev.thread_ts) {
+      const k = `${appId}:${ev.channel}:${ev.user}`;
+      const prev = recentTop.get(k);
+      if (prev && Date.now() - prev.at < SPLIT_MS) { threadNow = prev.ts; keyNow = `${ev.channel}:${prev.ts}`; prev.at = Date.now(); }
+      else recentTop.set(k, { ts: ev.ts, at: Date.now() });
+      if (recentTop.size > 5000) recentTop.clear();
+    }
+    const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadNow, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned || inThread) }; // a reply in its own thread is addressed to it
     const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
     // Start the teammate's Pi now, in parallel with the batching wait below.
     void import("../pi/supervisor.ts").then((m) => m.prewarm(session.id, teammateId)).catch(() => null);
