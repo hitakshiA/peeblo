@@ -15,6 +15,17 @@ other. Plain git works for everything local. Two tools exist where Peeblo has to
   it. Pass a short `slug` (`fix-login-redirect`) so people can read the branch name. Reopening returns the same
   checkout, restored if your computer was reset.
 - `repo_publish(repo, pr?)` pushes your branch to GitHub and, with `pr: {title, body}`, opens a draft PR.
+- `repo_check(repo)` runs the repo's own guardrails on your branch, the same check `repo_publish` runs first.
+
+## The repo's own guardrails
+A repo can keep rules in `.otari/guardrails.yml` and `.otari/guardrails/*.yml` (read from the base, not your
+branch). Read them right after `repo_open`; they say what every change needs:
+- paths you may never touch or add, and commands you may never run (refused as you go);
+- commands that must have run in this conversation after a matching change (a type check, the tests);
+- verifier scripts under `.otari/verifiers/` that must pass on your branch (exit 0), e.g. a changelog line;
+- review rubrics a judge reads against your diff (advisory: they're reported, they don't block).
+Run `repo_check` before publishing and fix what fails. A required rule that fails stops the push; the refusal names
+each rule and what it saw. Never edit a repo's guardrails to get past them: they're read from the base anyway.
 
 ## Flaky tests
 A flaky test is a timing or ordering bug until proven otherwise. Reproduce it first: run it many times (40 is a
@@ -29,7 +40,8 @@ that goes in the PR body, with the before count.
    your computer). Call `repo_open` again to refresh `origin/<base>`, then `git rebase origin/<base>`.
 4. Resolve conflicts yourself: read both sides, keep what the base changed plus what you changed, run the tests,
    then `git rebase --continue`. Explain what you chose in the PR body.
-5. `repo_publish` with a PR title that says what changed and a body that says why and how you checked it.
+5. `repo_check`, fix what it names, then `repo_publish` with a PR title that says what changed and a body that says
+   why and how you checked it.
 
 ## Rules the harness enforces (don't fight them)
 - You publish only your own branch. Pushing to main or the base, force pushes and tags are refused.

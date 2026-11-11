@@ -28,6 +28,17 @@ What changed for people running Peeblo. Newest first. `./peeblo upgrade` pulls t
 - If Otari's rule check can't be reached, the same policy is applied locally.
 - The GitHub token and webhook secrets are removed from the environment at start, like the other secrets.
 
+### Otari
+- Each teammate's Otari key only reaches open-weight models (and, without the web tool, no search or fetch tools), enforced by Otari. Pausing a teammate switches its key off; `./peeblo rotate-key <teammate>` replaces its secret.
+- A cap on the whole crew: money and AI calls a month (`otari_set_crew_cap`). Per-person tiers also cap calls a day (`PEEBLO_PERSON_DAILY_REQUESTS`).
+- The org's prepaid balance shows in `budget_status` and `./peeblo check`; when it runs out, people get a plain answer.
+- Routing changes are checked with Otari's explain before the card; `otari_read_setting` shows each role's plan and the automatic fallbacks.
+- Pictures from a description (`make_image`, FLUX.1 schnell) and many prompts at once as one batch (`batch_run`, `batch_results`).
+- A repo's own guardrails (`.otari/guardrails.yml`, `.otari/guardrails/`) apply in its checkout, and their required gates must pass before a push; `repo_check` runs them on demand.
+- Conversations can be shared with the admins, or opened under Otari's break-glass, and stored content deleted (with `PEEBLO_TRACE_CONTENT=keep`).
+- The console's Otari page adds a search provider's key for direct web search results.
+- "stop" sent as a new message in a DM stops the jobs running there, a stopped job ends as stopped (not an error), and cards it was waiting on are withdrawn.
+
 ### Smaller changes
 - Polling (a status checked again after a pause) is not treated as a loop, and gets a fresh result.
 - The stuck check counts only real answers, not failed attempts or retries.
@@ -42,3 +53,4 @@ What changed for people running Peeblo. Newest first. `./peeblo upgrade` pulls t
 ### For contributors
 - Unit tests (`pnpm test`), Biome lint for core and console, knip for unused code, and a security workflow (gitleaks, osv-scanner).
 - Every setting is read in `src/config.ts` and listed in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+- `yaml` is now a direct dependency (it already shipped with DBOS and Pi) for reading repo guardrail files.
