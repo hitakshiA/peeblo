@@ -10,7 +10,18 @@ export const readSkillTool: AgentTool = {
   input_schema: object({ skill: { type: "string" }, file: { type: ["string", "null"] } }),
   kind: "read",
   async run(ctx, a) {
-    try { return { text: readSkill(ctx.teammate, a.skill, a.file) }; }
+    try {
+      const text = readSkill(ctx.teammate, a.skill, a.file);
+      // Its scripts and templates go to the computer, where they can run.
+      let where: string | null = null;
+      if (!a.file && ctx.teammate.config.tools.includes("computer")) {
+        const { workspaceOf } = await import("../environment/controller.ts");
+        const { copySkillTo } = await import("../skills.ts");
+        const { join } = await import("node:path");
+        where = (() => { try { return copySkillTo(ctx.teammate, a.skill, join(workspaceOf(ctx.teammate.slug), "sessions", ctx.sessionId, "skills"), `/workspace/sessions/${ctx.sessionId}/skills`); } catch { return null; } })();
+      }
+      return { text: where ? `${text}\n\n[peeblo: this skill's files are on your computer at ${where}; run its scripts from there.]` : text };
+    }
     catch (e) { return { text: (e as Error).message, isError: true }; }
   },
 };

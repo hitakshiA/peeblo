@@ -31,6 +31,7 @@ export const config = {
   vmArch: (process.env.PEEBLO_VM_ARCH?.trim() || (process.arch === "arm64" ? "aarch64" : "x86_64")) as "aarch64" | "x86_64",
   vmImage: process.env.PEEBLO_VM_IMAGE?.trim() || "",
   vmIdleMs: Number(process.env.PEEBLO_VM_IDLE_MS ?? 5 * 60_000),
+  backgroundMaxMs: Number(process.env.PEEBLO_BACKGROUND_MAX_MS ?? 2 * 3_600_000),     // how long a background command keeps its computer awake
   // Hosted Otari. Peeblo uses an org service key (it can name end users); a plain key also works without per-person billing.
   otariBaseUrl: (process.env.OTARI_BASE_URL?.trim() || (process.env.OTARI_REGION === "eu" ? "https://eu.api.otari.ai/api/v1" : "https://api.otari.ai/api/v1")).replace(/\/+$/, ""),
   // Empty until it's given (in the console's setup, or .env): core then runs only the console, in setup mode.

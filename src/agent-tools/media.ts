@@ -101,10 +101,11 @@ export const understandFileTool: AgentTool = {
     for (const model of await modelsFor(kind, ctx.teammate.config.model.default).catch(() => [ctx.teammate.config.model.default])) {
       tried.push(model);
       try {
-        const r = await otari<any>("POST", "/chat/completions", { model, max_tokens: 1500, temperature: 0, ...(ctx.endUser ? { user: ctx.endUser } : {}), messages: [{ role: "user", content: [{ type: "text", text: ask }, part] }] }, { ...auth, timeoutMs: 90_000, retries: 0 });
+        const r = await otari<any>("POST", "/chat/completions", { model, max_tokens: 16_000, temperature: 0, ...(ctx.endUser ? { user: ctx.endUser } : {}), messages: [{ role: "user", content: [{ type: "text", text: ask }, part] }] }, { ...auth, timeoutMs: 90_000, retries: 0 });
         const text = String(r.data?.choices?.[0]?.message?.content ?? "").trim();
         if (!text) continue;   // an empty answer is a failure: try the next model
-        return { text: `${kind === "audio" ? "Transcript" : "From the file"} (read by ${model} through Otari):\n${text.slice(0, 8000)}`, untrusted: `file:${kind}`, data: { model, request_id: r.requestId, cost_usd: r.data?.usage?.cost_usd ?? null, tried } };
+        const { keepWhole } = await import("./computer.ts");
+        return { text: `${kind === "audio" ? "Transcript" : "From the file"} (read by ${model} through Otari):\n${await keepWhole(ctx, `${String(a.path).split("/").pop()}.txt`, text, 12_000)}`, untrusted: `file:${kind}`, data: { model, request_id: r.requestId, cost_usd: r.data?.usage?.cost_usd ?? null, tried } };
       } catch (e) { if ((e as OtariError).status === 403) return { text: `Otari refused: ${(e as Error).message.slice(0, 200)}`, isError: true }; }
     }
     return { text: `No model could read it (tried ${tried.join(", ")}). Say so plainly${kind === "audio" ? " and ask them to type the gist" : ""}.`, isError: true, data: { tried } };

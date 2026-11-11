@@ -28,7 +28,7 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
   // The start set is small: how to reply, find more tools, read a skill, recall, plan, hand
   // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) is found with find_tools and called with use_tool.
   const START = new Set(["slack_post", "share_file", "slack_read_thread", "slack_read_channel", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
-    "computer_bash", "computer_read", "computer_write", "computer_edit", "understand_file", "check_text",
+    "computer_bash", "computer_job", "computer_read", "computer_write", "computer_edit", "understand_file", "check_text",
     // Code execution sits beside the computer, so the model sees both and picks (CODE_EXEC_ROLES: run code where the data is).
     ...(tm.config.tools.includes("code") ? ["run_code"] : []),
     // A teammate with repos opens and publishes them with its own tools, never with git on the computer.

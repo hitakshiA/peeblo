@@ -8,7 +8,9 @@
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, join, normalize, sep } from "node:path";
-import { exec as vmExec, workspaceOf } from "../environment/controller.ts";
+import { exec as vmExec, holdAwake, releaseAwake, workspaceOf } from "../environment/controller.ts";
+import { config } from "../config.ts";
+import { newId } from "../ids.ts";
 import { checkAction, ruleMessage } from "../otari/rules.ts";
 import { CACHE_ENV, worktreesOf } from "../environment/repos.ts";
 import { object } from "./schema.ts";
@@ -90,32 +92,128 @@ async function rules(action: Parameters<typeof checkAction>[0]): Promise<{ deny?
   return null;
 }
 
-const tail = (s: string) => (s.length > MAX_OUT ? `[first ${s.length - MAX_OUT} characters cut]\n${s.slice(-MAX_OUT)}` : s);
+// Every command runs as a job: its output goes to files in the VM (/work/<session>/.jobs/<id>), so a command that
+// outlives its timeout keeps running with nothing lost, and long output keeps both its start (the first error) and
+// its end. The model sees the head and tail; the full output stays in the files.
+const jobDir = (ctx: ToolContext, id: string) => `/work/${ctx.sessionId}/.jobs/${id}`;
+const RUN = 'J="$1"; mkdir -p "$J"; cd "$2" || { echo "no such folder: $2" >"$J/err"; echo 1 >"$J/exit"; exit 1; }; (sh -c "$3") >"$J/out" 2>"$J/err" </dev/null & p=$!; echo $p >"$J/pid"; wait $p; c=$?; echo $c >"$J/exit"; exit $c';
+// head + tail of a file, the cut marked; then a record separator; stderr the same; then the exit code or "running".
+const SHOW = `J="$1"; H="$2"; show() { s=$(wc -c <"$1" 2>/dev/null || echo 0); if [ "$s" -le $((H*2)) ]; then cat "$1" 2>/dev/null; else head -c "$H" "$1"; printf '\n[… %s characters cut; the whole output is in %s …]\n' $((s-H*2)) "$1"; tail -c "$H" "$1"; fi; }; show "$J/out"; printf '\\036'; show "$J/err"; printf '\\036'; cat "$J/exit" 2>/dev/null || echo running`;
+
+async function showJob(ctx: ToolContext, id: string, half = MAX_OUT / 2): Promise<{ out: string; err: string; exit: number | null }> {
+  const r = await vmExec(ctx.teammate.id, ["sh", "-c", SHOW, "sh", jobDir(ctx, id), String(half)], { sessionId: ctx.sessionId, timeoutMs: 60_000 });
+  const [out = "", err = "", ex = "running"] = r.stdout.split("\u001e");
+  const code = ex.trim() === "running" ? null : Number(ex.trim());
+  return { out, err, exit: Number.isFinite(code) ? code : null };
+}
+
+// Background jobs: the computer stays awake while one runs (up to PEEBLO_BACKGROUND_MAX_MS); when it ends, a job
+// still in the conversation hears about it between tool calls.
+const watching = new Map<string, { ctx: ToolContext; command: string; started: number }>();
+function watchJob(ctx: ToolContext, id: string, command: string): void {
+  holdAwake(ctx.teammate.id, id, config.backgroundMaxMs);
+  watching.set(id, { ctx, command, started: Date.now() });
+  const tick = setInterval(async () => {
+    const w = watching.get(id);
+    if (!w) return clearInterval(tick);
+    const done = await vmExec(ctx.teammate.id, ["sh", "-c", 'cat "$1/exit" 2>/dev/null', "sh", jobDir(ctx, id)], { sessionId: ctx.sessionId, timeoutMs: 30_000 }).catch(() => null);
+    const exit = done && done.exitCode === 0 && done.stdout.trim() !== "" ? Number(done.stdout.trim()) : null;
+    if (exit === null && Date.now() - w.started < config.backgroundMaxMs) return;
+    clearInterval(tick);
+    watching.delete(id);
+    releaseAwake(ctx.teammate.id, id);
+    const { appendEvent } = await import("../store/events.ts");
+    await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "computer.job.finished", data: { id, exit, command: command.slice(0, 300) } }).catch(() => {});
+    const { notifySession } = await import("../pi/supervisor.ts");
+    await notifySession(ctx.sessionId, `<peeblo_event kind="job_finished">Your background command ${id} (${command.replace(/\s+/g, " ").slice(0, 120)}) ${exit === null ? "ran out of time and may have been stopped" : `finished with exit ${exit}`}. computer_job shows its output.</peeblo_event>`).catch(() => {});
+  }, 15_000);
+}
+
+// Long text a tool produced (a transcript, a page, a program's output) goes whole to a file on the computer; the
+// model gets the start and the path, and reads the rest there when it needs it.
+export async function keepWhole(ctx: ToolContext, name: string, text: string, show: number): Promise<string> {
+  if (text.length <= show) return text;
+  const path = `/work/${ctx.sessionId}/out/${name.replace(/[^\w.-]+/g, "-").slice(0, 80)}`;
+  try {
+    await vmWrite(ctx, path, text);
+    return `${text.slice(0, show)}\n[… ${(text.length - show).toLocaleString("en-US")} more characters; the whole text is on your computer at ${path}]`;
+  } catch {
+    return `${text.slice(0, show)}\n[… ${(text.length - show).toLocaleString("en-US")} more characters cut]`;
+  }
+}
+
+const fmt = (j: { out: string; err: string }) => `${j.out}${j.err ? `\n[stderr]\n${j.err}` : ""}`;
 
 export const computerTools: AgentTool[] = [
   {
     name: "computer_bash",
-    description: "Run a shell command on your own Linux computer (python3, duckdb, sqlite, jq, ripgrep, git, pdftotext, ffmpeg, imagemagick, node). Free, but it can take a few seconds to wake. The working directory is your open repo checkout (see repo_open), else your session's folder. Use it where your files are: repos, git, builds and tests; files people shared and long tool results Peeblo saved here; joining data from several sources; work with many steps or longer than 30 seconds; installs; anything you or a person will need later. For a quick exact calculation on numbers already in the conversation, run_code is faster. Commands stop after the timeout.",
+    description: "Run a shell command on your own Linux computer (python3, duckdb, sqlite, jq, ripgrep, git, pdftotext, ffmpeg, imagemagick, node). The working directory is your open repo checkout (see repo_open), else your session's folder. Use it where your files are: repos, git, builds and tests; files people shared and long tool results Peeblo saved here; joining data from several sources; installs; anything you or a person will need later. For a quick exact calculation on numbers already in the conversation, run_code is faster. A command still running at its timeout keeps going in the background, and so does one you start with run_in_background (a dev server, a long build, a test suite): you get a job id, and computer_job shows its output, waits for it or stops it. Long output shows its start and end; the whole of it stays in a file.",
     input_schema: object({
       command: { type: "string" },
-      timeout_seconds: { type: ["integer", "null"], minimum: 1, maximum: 600, description: "Default 120." },
+      timeout_seconds: { type: ["integer", "null"], minimum: 1, maximum: 600, description: "How long to wait for it (default 120). It keeps running after that." },
+      run_in_background: { type: ["boolean", "null"], description: "Start it and return at once with a job id." },
     }),
     describe(ctx, a) { return { summary: `Run on ${ctx.teammate.config.name}'s computer: ${String(a.command ?? "").replace(/\s+/g, " ").slice(0, 140)}` }; },
     kind: "local",
     async gate(_ctx, a) { return rules({ commands: [a.command] }); },
     async run(ctx, a) {
       await sessionFolder(ctx);
-      const cwd = (await checkout(ctx)) ?? `${GUEST}/${sessionDir(ctx)}`;
-      const r = await vmExec(ctx.teammate.id, ["sh", "-c", a.command], { cwd, timeoutMs: (a.timeout_seconds ?? 120) * 1000, sessionId: ctx.sessionId, env: CACHE_ENV });
+      const co = await checkout(ctx);
+      const cwd = co ?? `${GUEST}/${sessionDir(ctx)}`;
+      const id = newId("job");
+      const J = jobDir(ctx, id);
+      // Untrusted only when it came from outside: the network or files people shared (screened by the guard), or
+      // other people's code in a repo checkout (labelled, not screened: a test log is the agent's own work).
+      const outside = NETWORK.test(a.command) || SHARED_FILES.test(a.command) ? "computer:network" : co ? "computer:repo" : null;
+      if (a.run_in_background) {
+        const r = await vmExec(ctx.teammate.id, ["sh", "-c", `(setsid sh -c "$0" "$@" || sh -c "$0" "$@") >/dev/null 2>&1 </dev/null &`, RUN, "sh", J, cwd, a.command], { cwd, sessionId: ctx.sessionId, env: CACHE_ENV, timeoutMs: 30_000 });
+        if (r.exitCode !== 0) return { text: `Couldn't start it: ${r.stderr.slice(-500)}`, isError: true };
+        watchJob(ctx, id, a.command);
+        return { text: `Started in the background as job ${id}. Use computer_job to see its output, wait for it, or stop it.`, data: { job: id } };
+      }
+      const r = await vmExec(ctx.teammate.id, ["sh", "-c", RUN, "sh", J, cwd, a.command], { cwd, timeoutMs: (a.timeout_seconds ?? 120) * 1000, sessionId: ctx.sessionId, env: CACHE_ENV });
+      const j = await showJob(ctx, id);
+      if (r.timedOut) {
+        watchJob(ctx, id, a.command);
+        return { text: `Still running after ${a.timeout_seconds ?? 120} s, so it carries on in the background as job ${id} (computer_job waits for it or stops it). Output so far:\n${fmt(j)}`, ...(outside ? { untrusted: outside } : {}), data: { job: id, ms: r.ms } };
+      }
       // A fact: ad-hoc installs land on the working disk, which a reset throws away.
       const install = /\b(apk add|npm (i|install)\b.*(-g|--global)|pip3? install|uv pip install|uv tool install|apt(-get)? install)\b/.test(a.command);
       const note = install && r.exitCode === 0 ? "\n[peeblo: this install is lost at the next computer reset unless it's in your recipe.]" : "";
-      const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${tail(r.stdout)}${r.stderr ? `\n[stderr]\n${tail(r.stderr)}` : ""}${note}`;
-      // Untrusted only when it really came from outside: a repo checkout (other people's code) or the
-      // network. The teammate's own files and commands in its workspace are its own work.
-      // Files people shared (sessions/<id>/files) are outside text too, read any way.
-      const outside = Boolean(await checkout(ctx)) || NETWORK.test(a.command) || SHARED_FILES.test(a.command);
-      return { text, isError: r.exitCode !== 0, ...(outside ? { untrusted: "computer:bash" } : {}), data: { exit_code: r.exitCode, ms: r.ms } };
+      const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${fmt(j)}${note}`;
+      return { text, isError: r.exitCode !== 0, ...(outside ? { untrusted: outside } : {}), data: { exit_code: r.exitCode, ms: r.ms } };
+    },
+  },
+  {
+    name: "computer_job",
+    description: "A command running in the background on your computer (a job id from computer_bash): see its output so far, wait for it to finish (up to 10 minutes per call), or stop it.",
+    input_schema: object({
+      id: { type: "string", description: "The job id, e.g. job_ab12cd." },
+      action: { type: "string", enum: ["status", "wait", "stop"] },
+      seconds: { type: ["integer", "null"], minimum: 1, maximum: 600, description: "For wait: the most to wait (default 300)." },
+    }),
+    kind: "local",
+    async run(ctx, a) {
+      const id = String(a.id ?? "");
+      if (!/^job_[a-z0-9]+$/i.test(id)) return { text: `${id} isn't a job id.`, isError: true };
+      const J = jobDir(ctx, id);
+      if (a.action === "stop") {
+        await vmExec(ctx.teammate.id, ["sh", "-c", 'k() { for c in $(pgrep -P "$1" 2>/dev/null); do k "$c"; done; kill -TERM "$1" 2>/dev/null; }; p=$(cat "$0/pid" 2>/dev/null) && k "$p"; sleep 1; [ -f "$0/exit" ] || echo 143 >"$0/exit"', J], { sessionId: ctx.sessionId, timeoutMs: 30_000 });
+        releaseAwake(ctx.teammate.id, id);
+        watching.delete(id);
+      } else if (a.action === "wait") {
+        const secs = a.seconds ?? 300;
+        // The wait runs inside the VM with its own limit, so nothing is left looping there.
+        await vmExec(ctx.teammate.id, ["sh", "-c", 'timeout "$1" sh -c \'while [ ! -f "$0/exit" ]; do sleep 1; done\' "$0"', J, String(secs)], { sessionId: ctx.sessionId, timeoutMs: (secs + 15) * 1000 });
+      }
+      const j = await showJob(ctx, id);
+      if (!j.out && !j.err && j.exit === null && a.action !== "stop") {
+        const exists = await vmExec(ctx.teammate.id, ["sh", "-c", 'test -d "$1"', "sh", J], { sessionId: ctx.sessionId, timeoutMs: 30_000 });
+        if (exists.exitCode !== 0) return { text: `There's no job ${id} in this conversation (or its computer was reset).`, isError: true };
+      }
+      if (j.exit !== null) releaseAwake(ctx.teammate.id, id);
+      const state = a.action === "stop" ? "Stopped." : j.exit === null ? "Still running." : `Finished with exit ${j.exit}.`;
+      return { text: `${state}\n${fmt(j)}`, untrusted: "computer:job" };
     },
   },
   {

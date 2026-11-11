@@ -31,6 +31,12 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
     // A posted reply or a hand-off ends the turn: Pi stops after this batch instead of asking the model again.
     return { content: [{ type: "text" as const, text: out.text }], details: {}, isError: Boolean(out.isError), ...(out.terminate ? { terminate: true } : {}) };
   };
+  // When Pi compacts a long conversation, its summary is kept in the teammate's work memory too, so a later
+  // conversation can recall what this one worked out (Claude Code flushes memory before compacting the same way).
+  pi.on("session_compact", async (event: any) => {
+    const summary = event?.compactionEntry?.summary;
+    if (typeof summary === "string" && summary.trim()) await fetch(`${base}/compacted`, { method: "POST", headers, body: JSON.stringify({ summary }) }).catch(() => {});
+  });
   for (const t of listed) {
     if (!t.direct) continue;
     pi.registerTool({

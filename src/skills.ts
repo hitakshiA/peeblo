@@ -3,7 +3,7 @@
 // Pi lists skills only when a tool named read or bash exists, and Peeblo's teammates have neither (their files are
 // in a VM; the manager has no computer). So Peeblo writes the same <available_skills> list into the system prompt,
 // and read_skill opens a skill's files, never anything outside skills/.
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { config } from "./config.ts";
 import { join, normalize, sep } from "node:path";
 import type { Teammate } from "./store/teammates.ts";
@@ -78,7 +78,7 @@ export function skillsPrompt(tm: Teammate): string {
   return [
     "The following skills provide specialized instructions for specific tasks.",
     "When a task matches a skill's description, call read_skill with its name before you start, and follow it.",
-    "read_skill is the only way to open a skill: skills aren't files you can reach from code execution or a computer.",
+    "read_skill is the only way to open a skill; when a skill has scripts or templates, read_skill also puts them on your computer.",
     "",
     "<available_skills>",
     ...list.flatMap((s) => ["  <skill>", `    <name>${esc(s.name)}</name>`, `    <description>${esc(s.description)}</description>`, "  </skill>"]),
@@ -94,4 +94,14 @@ export function readSkill(tm: Teammate, name: string, file?: string | null): str
   if (!target.startsWith(base + sep) || !existsSync(target)) throw new Error(`${file} isn't a file of the ${name} skill.`);
   if (!realpathSync(target).startsWith(base + sep)) throw new Error(`${file} isn't a file of the ${name} skill.`);
   return readFileSync(target, "utf8").slice(0, 40_000);
+}
+
+// A skill with more than its SKILL.md (scripts, templates): a copy of its folder for the teammate's computer, so it
+// can run them. Returns the folder's path inside the computer, or null when the skill is a single file.
+export function copySkillTo(tm: Teammate, name: string, destHost: string, destGuest: string): string | null {
+  if (!skillsFor(tm).includes(name)) return null;
+  const base = realpathSync(dirOf(tm, name));
+  if (readdirSync(base).every((f) => f === "SKILL.md")) return null;
+  cpSync(base, join(destHost, name), { recursive: true, dereference: false, filter: (src) => { try { return realpathSync(src).startsWith(base); } catch { return false; } } });
+  return `${destGuest}/${name}`;
 }

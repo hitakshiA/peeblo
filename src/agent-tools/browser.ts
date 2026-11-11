@@ -163,8 +163,9 @@ async function perform(ctx: ToolContext, op: string, a: Record<string, any>, wri
   } else if (op === "open") {
     const snap = await run(ctx, ["snapshot", "-i"]);
     // A page with few interactive elements (an article, a plain-text page) also comes back with its text.
-    const body = snap.text.length < 400 ? (await run(ctx, ["get", "text", "body"])).text.slice(0, 6000) : "";
-    text = `Opened: ${r.title ?? ""} ${r.url ?? ""}\n${snap.text.slice(0, MAX_OUTPUT)}${body ? `\nPage text:\n${body}` : ""}`;
+    const body = snap.text.length < 400 ? (await run(ctx, ["get", "text", "body"])).text : "";
+    const { keepWhole } = await import("./computer.ts");
+    text = `Opened: ${r.title ?? ""} ${r.url ?? ""}\n${snap.text.slice(0, MAX_OUTPUT)}${body ? `\nPage text:\n${await keepWhole(ctx, `page-${hostOf(r.url)}.txt`, body, 12_000)}` : ""}`;
   }
   if (BLOCKED.test(`${title ?? ""}\n${text.slice(0, 3000)}`)) {
     return { text: `blocked_by_site: ${hostOf(url)} is blocking automated browsing (CAPTCHA or bot check). Don't retry; tell the person, or use the site's API or a connector instead.`, isError: true, data: { blocked_by_site: hostOf(url), url } };

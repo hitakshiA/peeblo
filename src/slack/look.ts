@@ -33,6 +33,7 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
   };
   if (tool in own) return own[tool];
   // Code work reads like the landing page, never the command itself.
+  if (tool === "computer_job") return "Checked a background job";
   if (tool === "computer_bash") return /\b(pytest|npm test|jest|vitest|go test|cargo test)\b/.test(String(d.command ?? "")) ? "Ran the tests" : "Worked it out on its computer";
   const [server, action = ""] = tool.split("__");
   if (!action) return cap(tool.replace(/_/g, " "));

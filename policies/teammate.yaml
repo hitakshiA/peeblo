@@ -42,8 +42,9 @@ gates:
     runs: [pre_tool_use.command]
     enforcement: advisory
     # The computer's GitHub token is added on the way out, so writes through gh or GitHub's API (a merge, a comment,
-    # closing an issue) would skip the connector's cards. They ask a person, like a push.
-    forbidden: ["gh pr merge", "gh pr close", "gh pr comment", "gh pr review", "gh pr edit", "gh issue", "gh api", "gh repo", "gh workflow", "gh secret", "api.github.com"]
+    # closing an issue) would skip the connector's cards. They ask a person, like a push. Reads (gh pr view, gh issue
+    # list, gh run watch) don't. gh api and direct API calls can't be told apart from here, so they ask.
+    forbidden: ["gh pr merge", "gh pr close", "gh pr comment", "gh pr review", "gh pr edit", "gh pr create", "gh pr ready", "gh pr reopen", "gh issue create", "gh issue close", "gh issue comment", "gh issue edit", "gh issue delete", "gh issue reopen", "gh issue transfer", "gh issue lock", "gh issue pin", "gh issue develop", "gh repo create", "gh repo delete", "gh repo edit", "gh repo rename", "gh repo archive", "gh repo fork", "gh repo sync", "gh workflow run", "gh workflow enable", "gh workflow disable", "gh run rerun", "gh run cancel", "gh label", "gh secret", "gh variable", "gh api", "api.github.com"]
     message: Changing things on GitHub (merges, comments, issues, settings) is visible outside the computer, so a person approves it first.
   - id: no-secret-files
     type: path

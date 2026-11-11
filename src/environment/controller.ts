@@ -11,7 +11,8 @@
 // - L3, /workspace: a host folder, the only layer that is never rebuilt.
 //
 // The VM holds no secrets (placeholders only) and gets a bare environment. Network leaves only to allowed hosts
-// (large teammates: any public host; internal ranges stay blocked), and git push is refused at egress. Awake
+// (large teammates: any public host for reading, writes only to allowed hosts; internal ranges stay blocked), and
+// git push is refused at egress. Awake
 // computers are capped per tier and checked against free host memory; the longest-idle one is put to sleep to
 // make room. A VM that dies becomes "asleep"; the next command boots a new one.
 import { execFileSync } from "node:child_process";
@@ -27,7 +28,8 @@ import { secretsForVm } from "../store/secrets.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { buildPath, currentBuild, type Tier } from "./image.ts";
 
-type Live = { vm: VM; idle?: NodeJS.Timeout; booted: number; lastUsed: number; inflight: number; disk: string; size: Tier };
+// leases: background jobs keeping the computer awake (job id → when the lease ends).
+type Live = { vm: VM; idle?: NodeJS.Timeout; booted: number; lastUsed: number; inflight: number; disk: string; size: Tier; leases: Map<string, number> };
 const live = new Map<string, Live>();
 const booting = new Map<string, Promise<Live>>();
 
@@ -37,12 +39,24 @@ export const PERSIST_HOME = "umount /root 2>/dev/null; umount /var/cache 2>/dev/
 export const BARE_ENV = { PATH: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/root", LANG: "C.UTF-8", TERM: "dumb" };
 // memory is a ceiling (QEMU allocates guest RAM lazily); footprint is what an awake one costs the host.
 export const TIERS = {
-  small: { memory: "1G", cpus: 2, disk: "4G", footprintMb: 250 },
+  small: { memory: process.env.PEEBLO_SMALL_MEMORY ?? "2G", cpus: 2, disk: "4G", footprintMb: 300 },
   large: { memory: "4G", cpus: 4, disk: "8G", footprintMb: 1500 },
 } as const;
 export const awakeCap = (size: Tier) => Number(process.env[`PEEBLO_AWAKE_CAP_${size.toUpperCase()}`] ?? (size === "small" ? 8 : 2));
 const RESERVE_MB = Number(process.env.PEEBLO_HOST_RESERVE_MB ?? 1024);
-export const DEFAULT_HOSTS = ["dl-cdn.alpinelinux.org", "deb.debian.org", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org"];
+// Package registries and code hosts every build needs: Codex's "Common dependencies" preset
+// (learn.chatgpt.com/docs/cloud/internet-access), each domain with its subdomains.
+const COMMON_DEPENDENCIES = ["alpinelinux.org", "anaconda.com", "apache.org", "apt.llvm.org", "archlinux.org", "azure.com", "bitbucket.org", "bower.io", "centos.org", "cocoapods.org", "continuum.io", "cpan.org", "crates.io", "debian.org", "docker.com", "docker.io", "dot.net", "dotnet.microsoft.com", "eclipse.org", "fedoraproject.org", "gcr.io", "ghcr.io", "github.com", "githubusercontent.com", "gitlab.com", "golang.org", "google.com", "goproxy.io", "gradle.org", "hashicorp.com", "haskell.org", "hex.pm", "java.com", "java.net", "jcenter.bintray.com", "json-schema.org", "json.schemastore.org", "k8s.io", "launchpad.net", "maven.org", "mcr.microsoft.com", "metacpan.org", "microsoft.com", "nodejs.org", "npmjs.com", "npmjs.org", "nuget.org", "oracle.com", "packagecloud.io", "packages.microsoft.com", "packagist.org", "pkg.go.dev", "ppa.launchpad.net", "pub.dev", "pypa.io", "pypi.org", "pypi.python.org", "pythonhosted.org", "quay.io", "ruby-lang.org", "rubyforge.org", "rubygems.org", "rubyonrails.org", "rustup.rs", "rvm.io", "sourceforge.net", "spring.io", "swift.org", "ubuntu.com", "visualstudio.com", "yarnpkg.com"];
+export const DEFAULT_HOSTS = [...COMMON_DEPENDENCIES, ...COMMON_DEPENDENCIES.map((d) => `*.${d}`)];
+// Methods that only read. A large computer may read any public site, but sends data (POST, PUT, …) only to its
+// allowed hosts: untrusted pages, company files and a way out never meet without a person (Meta's Rule of Two).
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+export function egressRefusal(size: Tier, method: string, host: string, allowed: string[]): string | null {
+  if (size !== "large" || READ_METHODS.has(method.toUpperCase())) return null;
+  const h = host.toLowerCase().replace(/:\d+$/, "");
+  const ok = allowed.some((p) => p === h || (p.startsWith("*.") && (h.endsWith(p.slice(1)) || h === p.slice(2))));
+  return ok ? null : `peeblo: this computer may read any site but sends data (${method.toUpperCase()}) only to its allowed hosts; ${h} isn't one. The teammate's owner can add it.`;
+}
 
 export function workspaceOf(slug: string): string {
   return join(config.dataDir, "teammates", slug, "workspace");
@@ -82,7 +96,7 @@ async function setState(teammateId: string, state: "asleep" | "booting" | "awake
 
 // Makes room before a wake: the tier's awake cap, then free host memory. Only idle computers are put to sleep.
 async function makeRoom(size: Tier): Promise<void> {
-  const idle = (pred: (l: Live) => boolean) => [...live.entries()].filter(([, l]) => l.inflight === 0 && pred(l)).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+  const idle = (pred: (l: Live) => boolean) => [...live.entries()].filter(([, l]) => l.inflight === 0 && !leased(l) && pred(l)).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
   // Every computer of this size is busy: wait up to 3 minutes for one to go idle, then give up.
   const until = Date.now() + 180_000;
   while ([...live.values()].filter((l) => l.size === size).length >= awakeCap(size)) {
@@ -135,12 +149,17 @@ async function boot(teammateId: string, sessionId: string | null): Promise<Live>
   // Secrets: the VM sees placeholders; the real value goes out only on requests to the secret's hosts.
   const secrets = await secretsForVm(tm.id);
   const extra = ((tm.config as any).computer?.allowed_hosts as string[]) ?? [];
-  const allowed = size === "large" ? ["*"] : [...new Set([...DEFAULT_HOSTS, ...extra, ...Object.values(secrets).flatMap((x) => x.hosts)])];
+  const writable = [...new Set([...DEFAULT_HOSTS, ...extra, ...Object.values(secrets).flatMap((x) => x.hosts)])];
   const { httpHooks, env } = createHttpHooks({
-    allowedHosts: allowed,
+    allowedHosts: size === "large" ? ["*"] : writable,
     secrets,
     onRequest: async (req) => {
       const u = new URL(req.url);
+      const refused = egressRefusal(size, req.method, u.host, writable);
+      if (refused) {
+        await appendEvent({ type: "env.blocked", data: { teammate_id: tm.id, reason: "write to a host outside the allowlist", method: req.method, host: u.host } });
+        return new Response(`${refused}\n`, { status: 403 });
+      }
       if (u.pathname.endsWith("/git-receive-pack") || u.searchParams.get("service") === "git-receive-pack") {
         await appendEvent({ type: "env.blocked", data: { teammate_id: tm.id, reason: "git push needs approval", host: u.host, path: u.pathname } });
         return new Response("peeblo: git push needs a person's approval\n", { status: 403 });
@@ -175,7 +194,7 @@ async function boot(teammateId: string, sessionId: string | null): Promise<Live>
   await vm.exec(["/bin/sh", "-c", `${PERSIST_HOME} git config --global --add safe.directory '*' 2>/dev/null; git config --global gc.auto 0; true`]);
   // Chromium trusts only its NSS store, so the large tier adds Gondolin's egress CA there (TLS stays checked).
   if (size === "large") await vm.exec(["/bin/sh", "-c", "d=sql:/root/.pki/nssdb; mkdir -p /root/.pki/nssdb; [ -f /root/.pki/nssdb/cert9.db ] || certutil -d $d -N --empty-password; certutil -d $d -A -t C,, -n gondolin-egress -i /etc/gondolin/mitm/ca.crt"]);
-  const l: Live = { vm, booted: Date.now(), lastUsed: Date.now(), inflight: 0, disk, size };
+  const l: Live = { vm, booted: Date.now(), lastUsed: Date.now(), inflight: 0, disk, size, leases: new Map() };
   live.set(tm.id, l);
   await setState(tm.id, "awake", vm.id, workspace);
   await pool.query(
@@ -202,14 +221,28 @@ async function ensure(teammateId: string, sessionId: string | null): Promise<Liv
   return p;
 }
 
-// The idle timer restarts after every command and never sleeps a computer with a command running or one that
-// was replaced (a reboot after a crash makes a new Live).
+// A background job keeps its computer awake (no idle sleep, no eviction) until it ends or its lease runs out.
+function leased(l: Live): boolean {
+  const now = Date.now();
+  for (const [id, until] of l.leases) if (until <= now) l.leases.delete(id);
+  return l.leases.size > 0;
+}
+export function holdAwake(teammateId: string, jobId: string, ms: number): void {
+  const l = live.get(teammateId);
+  if (l) l.leases.set(jobId, Date.now() + ms);
+}
+export function releaseAwake(teammateId: string, jobId: string): void {
+  live.get(teammateId)?.leases.delete(jobId);
+}
+
+// The idle timer restarts after every command and never sleeps a computer with a command running, a background
+// job, or one that was replaced (a reboot after a crash makes a new Live).
 function touch(teammateId: string, l: Live): void {
   l.lastUsed = Date.now();
   if (l.idle) clearTimeout(l.idle);
   l.idle = setTimeout(() => {
     if (live.get(teammateId) !== l) return;
-    if (l.inflight > 0) return touch(teammateId, l);
+    if (l.inflight > 0 || leased(l)) return touch(teammateId, l);
     sleep(teammateId, "idle").catch((e) => console.error(`peeblo: idle sleep failed for ${teammateId}: ${(e as Error).message}`));
   }, config.vmIdleMs);
 }
@@ -234,7 +267,7 @@ export async function sleep(teammateId: string, reason: string): Promise<void> {
 const beforeSleep: ((teammateId: string, vm: VM) => Promise<void>)[] = [];
 export const onBeforeSleep = (h: (teammateId: string, vm: VM) => Promise<void>) => void beforeSleep.push(h);
 
-export type ExecResult = { exitCode: number; stdout: string; stderr: string; ms: number };
+export type ExecResult = { exitCode: number; stdout: string; stderr: string; ms: number; timedOut?: boolean };
 
 // Runs one command in the teammate's VM. A dead VM is reported as an error and forgotten, so the
 // caller sees a failed command (not a hung one) and the next command boots a fresh VM.
@@ -250,7 +283,8 @@ export async function exec(teammateId: string, argv: string[], opts: { cwd?: str
     const r = await l.vm.exec(argv, { cwd: opts.cwd ?? "/workspace", env: { ...BARE_ENV, ...(opts.env ?? {}) }, signal: ctl.signal });
     return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr, ms: Date.now() - t0 };
   } catch (error) {
-    if (ctl.signal.aborted) return { exitCode: 124, stdout: "", stderr: "timed out", ms: Date.now() - t0 };
+    // Aborting only stops the wait here: the command goes on running inside the VM.
+    if (ctl.signal.aborted) return { exitCode: 124, stdout: "", stderr: "timed out", ms: Date.now() - t0, timedOut: true };
     live.delete(teammateId);
     await setState(teammateId, "asleep", null, workspaceOf((await getTeammate(teammateId))?.slug ?? teammateId)).catch(() => {});
     await appendEvent({ type: "env.crashed", data: { teammate_id: teammateId, error: (error as Error).message } });

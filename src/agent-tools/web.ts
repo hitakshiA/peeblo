@@ -19,17 +19,17 @@ function siteRefusal(ctx: ToolContext, url: string): string | null {
 
 export const webFetch: AgentTool = {
   name: "web_fetch",
-  description: "Read one public web page's text through Otari (screened for injected instructions; a paid call). Use it for the one or two pages that answer the question, after web_search found them; prefer it to a scraper connector (Apify) for a single page. Never for internal docs (use their connectors), never to browse.",
-  input_schema: object({ url: { type: "string", description: "The full https:// address." } }),
+  description: "Read one public web page's text through Otari (screened for injected instructions). Use it for the pages that answer the question, after web_search found them; prefer it to a scraper connector (Apify) for a single page. Never for internal docs (use their connectors), never to browse.",
+  input_schema: object({ url: { type: "string", description: "The full https:// address." }, max_characters: { type: ["integer", "null"], minimum: 1000, maximum: 100_000, description: "How much of the page to read (default 20,000; up to 100,000 for long docs)." } }),
   kind: "read",
   authorize: (ctx, a) => siteRefusal(ctx, a.url),
   async run(ctx, a) {
     try {
-      const r = await otari<any>("POST", "/fetch", { url: a.url, max_chars: 20_000, ...(ctx.endUser ? { user: ctx.endUser } : {}) });
+      const r = await otari<any>("POST", "/fetch", { url: a.url, max_chars: a.max_characters ?? 20_000, ...(ctx.endUser ? { user: ctx.endUser } : {}) });
       const final = r.data.final_url ?? a.url;
       const after = siteRefusal(ctx, final);
       if (after) return { text: `The page redirected to ${final}. ${after}`, isError: true };
-      const text = `${r.data.title ? `# ${r.data.title}\n` : ""}${r.data.text ?? ""}${r.data.truncated ? "\n[truncated at 20,000 characters]" : ""}`;
+      const text = `${r.data.title ? `# ${r.data.title}\n` : ""}${r.data.text ?? ""}${r.data.truncated ? `\n[truncated at ${(a.max_characters ?? 20_000).toLocaleString("en-US")} characters; ask for more with max_characters]` : ""}`;
       return { text, untrusted: `web:${final}`, data: { request_id: r.requestId, final_url: final, chars: text.length } };
     } catch (e) {
       const o = e as OtariError;
@@ -44,7 +44,7 @@ export const webFetch: AgentTool = {
 let noSearchToolUntil = 0;
 export const webSearchTool: AgentTool = {
   name: "web_search",
-  description: "Search the public web through Otari (screened; a paid call). Use it when the answer lives outside the company and no connector has it: a competitor, a vendor's docs or pricing, news, a public fact. Prefer it to a scraper connector (Apify, Exa) for a plain search. Never for company data, and skip it when you already know the answer. Returns up to 5 results (title, link, one line); cite what you use.",
+  description: "Search the public web through Otari (screened). Use it when the answer lives outside the company and no connector has it: a competitor, a vendor's docs or pricing, news, a public fact. Prefer it to a scraper connector (Apify, Exa) for a plain search. Never for company data, and skip it when you already know the answer. Returns up to 10 results (title, link, a short extract); cite what you use.",
   input_schema: object({ query: { type: "string" } }),
   kind: "read",
   async run(ctx, a) {
@@ -53,9 +53,9 @@ export const webSearchTool: AgentTool = {
     // hits); otherwise its built-in web search inside one small model call, which needs no setup.
     if (Date.now() > noSearchToolUntil) {
       try {
-        const r = await otari<any>("POST", "/search", { query: a.query, max_results: 5, ...(allow.length || block.length ? { search_domain_filter: [...allow, ...block.map((d: string) => `-${d}`)] } : {}), ...(ctx.endUser ? { user: ctx.endUser } : {}) });
+        const r = await otari<any>("POST", "/search", { query: a.query, max_results: 10, ...(allow.length || block.length ? { search_domain_filter: [...allow, ...block.map((d: string) => `-${d}`)] } : {}), ...(ctx.endUser ? { user: ctx.endUser } : {}) });
         const hits: any[] = r.data?.results ?? r.data?.data ?? [];
-        const text = hits.slice(0, 5).map((h) => `${h.title ?? h.url} — ${h.url ?? h.link} — ${String(h.snippet ?? h.content ?? h.description ?? "").replace(/\s+/g, " ").slice(0, 160)}`).join("\n") || "No results.";
+        const text = hits.slice(0, 10).map((h) => `${h.title ?? h.url} — ${h.url ?? h.link} — ${String(h.snippet ?? h.content ?? h.description ?? "").replace(/\s+/g, " ").slice(0, 500)}`).join("\n") || "No results.";
         return { text, untrusted: "web:search", data: { request_id: r.requestId, via: "otari /search" } };
       } catch (e) {
         if (!/No search tools are configured/i.test((e as Error).message)) return { text: `Web search failed: ${(e as Error).message.slice(0, 200)}`, isError: true, data: { request_id: (e as OtariError).requestId } };
@@ -83,7 +83,7 @@ export const webSearchTool: AgentTool = {
 // model call: one small call with Otari's code tool, and its output comes back as the result.
 export const runCodeTool: AgentTool = {
   name: "run_code",
-  description: "Run Python in Otari's sandbox and get what it prints. It starts at once (no computer to wake) and costs about a cent a run; variables stay for this conversation while you keep using it. Python 3 with pandas, numpy, matplotlib and openpyxl. Use it for exact work on data already in the conversation: money, credits, refunds, percentages, dates and totals with more than one step, a table someone pasted, a small result a tool just gave you, or checking a formula. Put the numbers in the code and print the answer with its parts. It can take up to 5 small files from your computer (a shared CSV or spreadsheet, a saved result) by path, and files it writes come back to your session folder. Your repos and connectors aren't in it, and each run stops after 30 seconds: use your computer for those. Skip code for a figure a source already gives you or a one-step sum.",
+  description: "Run Python in Otari's sandbox and get what it prints. It starts at once (no computer to wake); variables stay for this conversation while you keep using it. Python 3 with pandas, numpy, matplotlib and openpyxl. Use it for exact work on data already in the conversation: money, credits, refunds, percentages, dates and totals with more than one step, a table someone pasted, a small result a tool just gave you, or checking a formula. Put the numbers in the code and print the answer with its parts. It can take up to 5 small files from your computer (a shared CSV or spreadsheet, a saved result) by path, and files it writes come back to your session folder. Your repos and connectors aren't in it, and each run stops after 30 seconds: use your computer for those. Skip code for a figure a source already gives you or a one-step sum.",
   input_schema: object({
     code: { type: "string", description: "Python 3 that prints its answer and the parts it added up." },
     files: { type: ["array", "null"], items: { type: "string" }, maxItems: 5, description: "Paths on your computer to copy into the sandbox first; they appear under their own names." },
@@ -112,7 +112,7 @@ export const runCodeTool: AgentTool = {
         const where = await saveReturned(ctx, f.file_id, String(f.filename ?? f.file_id), auth).catch(() => null);
         if (where) saved.push(where);
       }
-      return { text: `Ran in Otari's sandbox (exit ${r.data?.return_code ?? "?"}):\n${out.slice(0, 4000)}${saved.length ? `\nFiles it wrote, now on your computer: ${saved.join(", ")}` : ""}`, isError: r.data?.return_code ? r.data.return_code !== 0 : false, data: { request_id: r.requestId, container: id, files: saved } };
+      return { text: `Ran in Otari's sandbox (exit ${r.data?.return_code ?? "?"}):\n${ctx.teammate.config.tools.includes("computer") ? await (await import("./computer.ts")).keepWhole(ctx, "run_code-output.txt", out, 12_000) : out.slice(0, 12_000)}${saved.length ? `\nFiles it wrote, now on your computer: ${saved.join(", ")}` : ""}`, isError: r.data?.return_code ? r.data.return_code !== 0 : false, data: { request_id: r.requestId, container: id, files: saved } };
     } catch (e) {
       if (held) sandboxes.delete(ctx.sessionId);
       return { text: `The sandbox didn't run it: ${(e as Error).message.slice(0, 300)}`, isError: true };

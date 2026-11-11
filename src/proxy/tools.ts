@@ -178,6 +178,18 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const subagent = Boolean(((await getSession(b.sessionId))?.place as { subagent_of?: string } | undefined)?.subagent_of);
   const own = peebloTools(tm, { subagent });
 
+  if (req.method === "POST" && path === "/compacted") {
+    const { summary } = JSON.parse(body?.toString("utf8") || "{}");
+    const s = await getSession(b.sessionId);
+    if (s && typeof summary === "string") {
+      const { placeOfSession, writeNote } = await import("../memory/store.ts");
+      const day = new Date().toISOString().slice(0, 10);
+      await writeNote(tm.slug, placeOfSession(s), { path: `jobs/${day}-${(b.runId ?? b.sessionId).replace(/^[a-z]+_/, "")}-notes`, title: `${day} · notes from a long job`, body: summary.slice(0, 7_500), source: "compaction summary", runId: b.runId, tainted: false }).catch(() => {});
+      await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "pi.compacted", data: { chars: summary.length } }).catch(() => {});
+    }
+    return json(res, 200, { ok: true });
+  }
+
   if (req.method === "GET" && path === "/tools") {
     const cat = await catalogFor(tm.config);
     const direct = await mostUsed(tm.id, cat.tools.map((t) => t.name));
@@ -588,4 +600,4 @@ function firewallHint(t: { server: string; tool: string }): string {
 // Sources whose text comes from outside the company, so a guard model checks it for injected instructions.
 // GitHub issues and comments, Jira service-desk tickets and Sentry error payloads are written by people outside the
 // team too, so they count as outside text.
-const OUTSIDE = /^(web:|file:|computer:bash|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot|github|atlassian|sentry)\.)/;
+const OUTSIDE = /^(web:|file:|computer:network|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot|github|atlassian|sentry)\.)/;
