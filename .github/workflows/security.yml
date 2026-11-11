@@ -29,9 +29,11 @@ jobs:
 
   # Known vulnerabilities in the locked dependencies (core, console and the landing page).
   dependencies:
+    # What the reusable workflow declares; it uploads nothing here (upload-sarif is off).
     permissions:
       contents: read
       actions: read
+      security-events: write
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
       # Code scanning isn't available on this repository; the job fails on a finding instead.
