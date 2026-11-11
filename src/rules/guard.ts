@@ -54,6 +54,27 @@ export function verdict(text: string): { safe: boolean; categories: string[] } {
   };
 }
 
+// The open guard model's second opinion on text Lakera already flagged. A short attack buried in a long result (one
+// email among many, in JSON and HTML) reads as safe when judged whole, so the text is judged in overlapping pieces, at
+// once. With Lakera's flag already standing, any piece the model doesn't rate plainly safe (unsafe, or
+// "controversial" in any category) confirms it.
+const PIECE = 3000;
+const OVERLAP = 300;
+export function guardPieces(text: string): string[] {
+  const pieces: string[] = [];
+  for (let i = 0; i < Math.min(text.length, 8 * (PIECE - OVERLAP)); i += PIECE - OVERLAP) pieces.push(text.slice(i, i + PIECE));
+  return pieces.length ? pieces : [text];
+}
+async function confirmFlag(text: string, endUser: string | null): Promise<Screen> {
+  const pieces = guardPieces(text);
+  const verdicts = await Promise.all(pieces.map((p) => openGuard(p, endUser).catch(() => null)));
+  const worst = verdicts.find((v) => v && (!v.safe || v.categories.includes("controversial")));
+  if (worst) return { safe: false, categories: worst.categories.filter((c) => c !== "controversial"), requestId: worst.requestId };
+  const any = verdicts.find(Boolean);
+  if (!any) throw new Error("the open guard model didn't answer");
+  return { safe: true, categories: [], requestId: any.requestId };
+}
+
 // One check by the open guard model, through Otari chat.
 export async function openGuard(text: string, endUser: string | null): Promise<Screen & { data: any; ms: number }> {
   const t0 = Date.now();
@@ -358,7 +379,7 @@ async function screenPart(text: string, endUser: string | null): Promise<Screene
       if (refusal) {
         // Lakera flags some ordinary pages (marketing copy full of imperatives). An open-weight guard model through
         // Otari confirms: only text both flag is held back; the rest goes on, labelled.
-        const second = await openGuard(text, endUser).catch(() => null);
+        const second = await confirmFlag(text, endUser).catch(() => null);
         const requestId = r.headers.get("otari-request-id");
         if (second?.safe)
           return {
