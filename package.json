@@ -10,7 +10,8 @@
   },
   "packageManager": "pnpm@12.15.0",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import ./test/setup.ts \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "5.4.0",
