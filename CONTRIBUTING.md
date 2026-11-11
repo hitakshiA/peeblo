@@ -47,6 +47,7 @@ everything. [docs/SETUP.md](docs/SETUP.md) covers the rest, including a Linux se
 | `skills/` | How teammates do recurring kinds of work, in plain words |
 | `config/` | Model roles (`model-tiers.json`) and notes about each connector |
 | `console/` | The browser console (React) |
+| `site/` | The landing page at peeblo.xyz (Next.js, its own `npm` install) |
 | `db/` | SQL migrations, applied in order at start |
 | `test/` | Unit tests (`node:test`), one file per area |
 | `docs/` | Setup, architecture, Otari, configuration |

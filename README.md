@@ -52,6 +52,7 @@ The full guide, with the server's network (ports, HTTPS, DNS, the SSH tunnel to 
 - [CONTRIBUTING.md](CONTRIBUTING.md): set up a dev copy, where things live, and what a good pull request has.
 - [SECURITY.md](SECURITY.md): report a vulnerability privately.
 - [CHANGELOG.md](CHANGELOG.md): what changed.
+- [site/](site/): the landing page at [peeblo.xyz](https://peeblo.xyz).
 
 ## License
 
