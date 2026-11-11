@@ -100,9 +100,27 @@ async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T>
 
 const LOOP_NUDGE = 3;
 const LOOP_STOP = 6;
-const identical = new Map<string, number>();
-// A repeat of a read in the same run gets the earlier result back without calling the service again.
-const readCache = new Map<string, string>();
+// Waiting on something (CI, a deploy, a job's log) is the same call made again after a pause. Calls this far apart
+// are polling, not a loop: they get a fresh result and count only toward a much higher limit.
+const POLL_GAP_MS = 30_000;
+const POLL_STOP = 120;
+type Repeat = { rapid: number; total: number; at: number };
+const identical = new Map<string, Repeat>();
+// A quick repeat of a read in the same run gets the earlier result back without calling the service again.
+const readCache = new Map<string, { text: string; at: number }>();
+
+// How a repeat of the same call counts: rapid repeats are a loop, spaced ones are polling.
+export function countRepeat(prev: Repeat | undefined, now: number): Repeat {
+  if (!prev) return { rapid: 1, total: 1, at: now };
+  return { rapid: now - prev.at < POLL_GAP_MS ? prev.rapid + 1 : 1, total: prev.total + 1, at: now };
+}
+export const isLoop = (r: Repeat) => r.rapid >= LOOP_STOP || r.total >= POLL_STOP;
+// Finished runs leave nothing behind.
+function forgetOld(now: number): void {
+  if (identical.size < 2000) return;
+  for (const [k, v] of identical) if (now - v.at > 3_600_000) identical.delete(k);
+  for (const [k, v] of readCache) if (now - v.at > 3_600_000) readCache.delete(k);
+}
 // A connector result longer than this is saved on the agent's computer; the model gets the start, a count and the path.
 const RESULT_CAP = 16_000;
 // The most of one connector result Peeblo keeps (about 1 MB); Otari sends results whole.
@@ -139,7 +157,7 @@ type Listed = { name: string; description: string; input_schema: unknown; asks: 
 
 // a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
-// Connector tools all start deferred (the small start set); find_tools loads what a job needs.
+// Connector tools all start deferred (the small start set); find_tools finds what a job needs, use_tool calls it.
 const DIRECT_CONNECTOR_TOOLS = 0;
 export async function mostUsed(teammateId: string, names: string[]): Promise<Set<string>> {
   const { rows } = await pool.query(
@@ -202,20 +220,24 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const NOTE_KEYS = new Set(["context", "conversation_id", "llm_model", "reason_for_call", "intent_note"]);
   const loopArgs = Object.fromEntries(Object.entries((args ?? {}) as Record<string, unknown>).filter(([k]) => !NOTE_KEYS.has(k)));
   const repeatKey = `${b.runId}:${name}:${fingerprint(loopArgs)}`;
-  const repeats = (identical.get(repeatKey) ?? 0) + 1;
-  identical.set(repeatKey, repeats);
-  if (repeats >= LOOP_STOP) {
-    b.stuck = { runId: b.runId, reason: `the same ${name} call ${repeats} times` };
+  const now = Date.now();
+  forgetOld(now);
+  const rep = countRepeat(identical.get(repeatKey), now);
+  identical.set(repeatKey, rep);
+  const repeats = rep.rapid;
+  if (isLoop(rep)) {
+    b.stuck = { runId: b.runId, reason: `the same ${name} call ${rep.total >= POLL_STOP ? rep.total : repeats} times` };
     await event({ status: "refused", reason: "loop limit" });
     await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: b.stuck.reason } });
     return json(res, 200, { text: `Stopped: this exact ${name} call has been made ${repeats} times in this run. Tell the person what you were trying and what kept happening.`, isError: true });
   }
   // The final status turn after a stop: only the status post.
   if (b.finalStatus?.runId === b.runId && name !== "slack_post") return json(res, 200, { text: "This job has stopped. Post your status with slack_post now; nothing else.", isError: true });
-  const cached = repeats >= 2 ? readCache.get(repeatKey) : undefined;
+  const hit = repeats >= 2 ? readCache.get(repeatKey) : undefined;
+  const cached = hit && now - hit.at < POLL_GAP_MS ? hit.text : undefined;
   if (cached !== undefined) {
     await event({ status: "completed", reused: true });
-    return json(res, 200, { text: `[peeblo: you made this exact call earlier in this job; here is the same result again.]\n${cached}` });
+    return json(res, 200, { text: `[peeblo: you made this exact call seconds ago in this job; here is the same result again.]\n${cached}` });
   }
   const note = repeats >= LOOP_NUDGE ? `\n[peeblo: this is the ${repeats}${repeats === 3 ? "rd" : "th"} identical ${name} call in this run; the result will not change.]` : "";
   const reply = (r: ToolResult) => json(res, 200, { text: r.text + note, isError: Boolean(r.isError), ...(r.endTurn && !r.isError ? { terminate: true } : {}) });
@@ -234,7 +256,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     }
     if (!r.isError && (extra.kind ?? base.kind) === "read") {
       if (readCache.size > 2000) readCache.clear();
-      readCache.set(repeatKey, text);
+      readCache.set(repeatKey, { text, at: Date.now() });
     } else if (!r.isError && name !== "slack_post") {
       // Anything that changed something makes this job's earlier reads stale: the next read asks again.
       for (const k of readCache.keys()) if (k.startsWith(`${b.runId}:`)) readCache.delete(k);

@@ -19,7 +19,7 @@ import { getPerson } from "../store/people.ts";
 import { getSession } from "../store/sessions.ts";
 import { secretNames } from "../store/secrets.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
-import { PiRpc } from "./rpc.ts";
+import { PiRpc, TurnTimeout } from "./rpc.ts";
 import { blockedReply, freshLakeraState, guardMode, screenOpen } from "../guard.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -28,7 +28,7 @@ const PI_CLI = join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", 
 const PI_OTARI = join(ROOT, "node_modules", "@mozilla-ai", "pi-otari", "index.ts");
 const PEEBLO_TOOLS = join(import.meta.dirname, "peeblo-tools.ts");
 
-type Live = { child: ChildProcess; rpc: PiRpc; token: string; teammateVersion: number; queue: Promise<unknown>; idle?: NodeJS.Timeout; busy?: number };
+type Live = { child: ChildProcess; rpc: PiRpc; token: string; teammateVersion: number; queue: Promise<unknown>; idle?: NodeJS.Timeout; busy?: number; runId?: string; personName?: string };
 const live = new Map<string, Live>();
 
 // The system prompt is short and the same on every turn of a session (a stable prefix for Otari's prompt cache).
@@ -46,9 +46,9 @@ function systemPrompt(tm: Teammate, secretList: { name: string; hosts: string[] 
     tm.slug === "peeblo" ? "" : "If a request is outside your role, say so in one line and tell them Peeblo can route it.",
     // Open models: the careful-work rules.
     "Working carefully: do counts, totals and arithmetic with code, never in your head. Copy ids, names, numbers and links exactly as tools return them. After creating or changing something outside Slack, read it back before saying it's done. For anything that changes (statuses, prices, today's date), use a tool. If something fails, try another way before reporting it; never fill a gap with something that only looks right.",
-    "You have your own Linux computer (computer_* tools) for code, data, files and charts. More tools load with find_tools when a job needs them.",
+    "You have your own Linux computer (computer_* tools) for code, data, files and charts. More tools: find_tools finds them, use_tool calls one.",
     // Connector tools all start unloaded, so the agent is told which services it has (reads and writes), never to guess.
-    connected.length ? `Your connected services (read and write; load their tools with find_tools): ${connected.join(", ")}. ${c.mode === "ask" ? "Every write asks a person first." : c.mode === "yolo" ? "Writes run at once." : "Writes are checked first, and some ask a person."}` : "",
+    connected.length ? `Your connected services (read and write; find their tools with find_tools, call them with use_tool): ${connected.join(", ")}. ${c.mode === "ask" ? "Every write asks a person first." : c.mode === "yolo" ? "Writes run at once." : "Writes are checked first, and some ask a person."}` : "",
     c.connector_scopes?.github?.length ? `Your GitHub repos (owner/repo): ${c.connector_scopes.github.join(", ")}.` : "",
     secretList.length ? `On your computer these variables hold credentials (placeholders that work only for their hosts): ${secretList.map((x) => `$${x.name} (${x.hosts.join(", ")})`).join("; ")}. Keep them out of anything you write or post.` : "",
     c.instructions ? `\nStanding instructions from your owner:\n${c.instructions}` : "",
@@ -108,10 +108,21 @@ async function dropRefusedTurn(l: Live, sessionId: string, runId: string): Promi
 }
 
 
+// Reasoning effort per role: chat-speed for Peeblo's own desk work, medium for everyday work, high for the hard part.
+export function piSettings(): Record<string, unknown> {
+  return {
+    defaultThinkingLevel: config.thinkingLevel,
+    modelThinkingLevels: { "otari/peeblo-manager": "low", "otari/peeblo-worker": config.thinkingLevel, "otari/peeblo-heavy": "high" },
+    retry: { enabled: true, maxRetries: 3 },
+  };
+}
+
 async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const dir = join(config.dataDir, "teammates", tm.slug);
   await mkdir(join(dir, "sessions"), { recursive: true });
   await mkdir(join(dir, "pi-agent"), { recursive: true });
+  // Pi's own settings: how hard each role thinks (Otari passes the level to the model as reasoning effort).
+  await writeFile(join(dir, "pi-agent", "settings.json"), JSON.stringify(piSettings(), null, 2));
   // The memory index (≤200 lines of what this conversation's place may read) is taken once per session, so
   // each session has its own prompt file; the prefix still stays stable for the session's cache.
   const sess = await getSession(sessionId);
@@ -264,6 +275,11 @@ async function rosterNote(place: { app_id: string; channel: string }): Promise<s
   return text;
 }
 
+// A Pi message's text, whether its content is a string or a list of parts.
+function userText(m: { content?: unknown }): string {
+  return typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((p: any) => (typeof p?.text === "string" ? p.text : "")).join("") : "";
+}
+
 async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise<{ text: string; stopReason: string | null }> {
   const current = await getTeammate(ctx.session.teammate_id);
   if (!current) throw new Error("teammate is gone");
@@ -287,6 +303,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   // A turn run again after a restart: a write that was waiting for a person is named, so the agent calls it again
   // (the call joins the same card; nothing runs twice).
   let resumeNote = "";
+  let resuming = false;
   if (attempts > 0) {
     const waiting = (await pool.query(`SELECT a.action, a.status FROM approvals a WHERE a.run_id = $1 AND a.status IN ('pending', 'approved')
       AND NOT EXISTS (SELECT 1 FROM events e WHERE e.run_id = $1 AND e.type = 'tool.call' AND e.data->>'approval_id' = a.id)`, [ctx.run.id])).rows;
@@ -312,14 +329,42 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   const tPi = Date.now();
   const l = await piFor(ctx.session.id, tm);
   if (Date.now() - tPi > 1000) console.error(`slow: pi start ${Date.now() - tPi} ms`);
+  const from = person ? `${person.display_name ?? person.slack_user} (${person.slack_user})` : "api";
+  const wrapped = `<message from="${from.replace(/"/g, "'")}">${ctx.text}</message>`;
+  // A message in this conversation while another job is mid-turn goes into that job (Pi's steer: after its current
+  // tool calls, before its next model call), the way a person speaks up while a colleague works. Queued behind the
+  // job instead, it would wait until the job ends.
+  if (turnNo === 1 && !internal && l.busy && l.runId && l.runId !== ctx.run.id) {
+    const into = l.runId;
+    const ok = await l.rpc.send("steer", { message: `<peeblo_event kind="mid_job">This message arrived while you were working on the job above. If it's a question, answer it in a line with slack_post (more: true); if it changes the ask, change course; then carry on.</peeblo_event>\n${wrapped}` }).then(() => true, () => false);
+    if (ok) {
+      await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "run.merged", data: { into, steered: true } });
+      return { text: "", stopReason: "merged" };
+    }
+  }
+  // A turn run again after a restart whose message Pi already has: the work above it is real, so the agent is told to
+  // carry on, not handed the same request a second time.
+  if (attempts > 0 && !internal) {
+    const msgs = await l.rpc.send<{ messages?: any[] }>("get_messages").catch(() => ({ messages: [] as any[] }));
+    const has = (msgs.messages ?? []).some((m) => m.role === "user" && userText(m).includes(ctx.text.slice(0, 400)));
+    if (has) resumeNote ||= `<peeblo_event kind="resumed">Peeblo restarted while you were working on the message above. Everything you did before is real and still stands; don't redo it. Check where you were (your plan, your files, what you posted) and carry on.</peeblo_event>\n`;
+    if (has) resuming = true;
+  }
   const job = l.queue.then(async () => {
     bindRun(l.token, ctx.run.id, person?.end_user_id ?? null, turnNo, person?.id ?? null);
     touch(ctx.session.id, l);
     l.busy = (l.busy ?? 0) + 1;
-    const from = person ? `${person.display_name ?? person.slack_user} (${person.slack_user})` : "api";
-    // Time waiting on a person's answer (an open approval card for this run) doesn't count toward the turn timeout.
+    l.runId = ctx.run.id;
+    // No wall clock on real work, only a hard limit (hours) for a job that never ends. Time waiting on a person's
+    // answer (an open approval card for this run) doesn't count toward it.
     const settled = l.rpc.settled(config.turnTimeoutMs, async () => Boolean((await pool.query(
       "SELECT 1 FROM approvals WHERE run_id = $1 AND status = 'pending' AND expires_at > now() - interval '1 minute' LIMIT 1", [ctx.run.id])).rowCount));
+    // A long job gets a checkpoint now and then: a note steered in between tool calls (nothing is interrupted), so the
+    // person hears where things stand.
+    const t0 = Date.now();
+    const progress = setInterval(() => {
+      void l.rpc.send("steer", { message: `<peeblo_event kind="checkpoint">You have been working on this for about ${Math.round((Date.now() - t0) / 60_000)} minutes. If the person would want to know where things stand, post one short progress line with slack_post (more: true). Then carry on.</peeblo_event>` }).catch(() => {});
+    }, config.progressEveryMs);
     let snapshotAfter: (() => Promise<number>) | null = null;
     const { repoFacts, snapshotWip } = await import("../environment/repos.ts");
     const repoNote = tm.config.tools.includes("computer") ? await repoFacts(tm, ctx.session.id).catch(() => "") : "";
@@ -332,8 +377,19 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     if (Date.now() - tNote > 1000) console.error(`slow: turn notes ${Date.now() - tNote} ms`);
     snapshotAfter = () => snapshotWip(tm.id, ctx.session.id).catch(() => 0);
     // A continuation from the Stop check is Peeblo's own note, not a person's message.
-    await l.rpc.send("prompt", { message: internal ?? `${resumeNote}${changeNote}${note}<message from="${from.replace(/"/g, "'")}">${ctx.text}</message>` });
-    await settled;
+    let timedOut = false;
+    try {
+      await l.rpc.send("prompt", { message: internal ?? (resuming ? `${resumeNote}${changeNote}${note}` : `${resumeNote}${changeNote}${note}${wrapped}`) });
+      await settled;
+    } catch (e) {
+      if (!(e instanceof TurnTimeout)) throw e;
+      // The hard limit: stop Pi (it would go on working and spending), then the run ends with a status turn.
+      timedOut = true;
+      await l.rpc.send("abort").catch(() => null);
+      await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "run.time_limit", data: { minutes: Math.round(config.turnTimeoutMs / 60_000) } }).catch(() => {});
+    } finally {
+      clearInterval(progress);
+    }
     // Uncommitted work in the session's checkouts is saved after every turn (refs/peeblo/wip/<session>).
     await snapshotAfter?.();
     const text = (await l.rpc.send<{ text?: string }>("get_last_assistant_text"))?.text ?? "";
@@ -349,9 +405,9 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
       stuck = rows.find((r) => r.type === "run.stuck")?.data ?? null;
       if (blocked) await dropRefusedTurn(l, ctx.session.id, ctx.run.id);
     }
-    return { text, stopReason: lastAssistant?.stopReason ?? null, error: lastAssistant?.errorMessage ?? null, blocked, money, stuck };
+    return { text, stopReason: timedOut ? "time_limit" : (lastAssistant?.stopReason ?? null), error: lastAssistant?.errorMessage ?? null, blocked, money, stuck };
   });
-  void job.finally(() => { l.busy = Math.max(0, (l.busy ?? 1) - 1); touch(ctx.session.id, l); }).catch(() => {});
+  void job.finally(() => { l.busy = Math.max(0, (l.busy ?? 1) - 1); if (l.runId === ctx.run.id) l.runId = undefined; touch(ctx.session.id, l); }).catch(() => {});
   l.queue = job.catch(() => {});
   const r = await job;
   if (r.blocked) return { text: blockedReply("Lakera, Otari's org guardrail"), stopReason: "guard_blocked" };
@@ -378,7 +434,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
 
 // "was the request answered?" is a Stop check in a fresh context (a typed judge from another model family
 // than the worker), and a job with a spec (a delegated objective) gets an outcome grader against that spec. Either
-// may send the teammate back once, with the reason; never more than one continuation.
+// may send the teammate back with the reason, up to PEEBLO_MAX_CONTINUATIONS times.
 async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string | null }): Promise<{ again: string | null }> {
   // "toolUse": the turn ended on a tool that ends it (a posted answer, a hand-off).
   if (r.stopReason !== "stop" && r.stopReason !== "toolUse") return { again: null };
@@ -423,7 +479,7 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
   if (src === "teammate") {
     const g = await decide(state, { meets: { type: "noul", instructions: "Does the posted result meet the spec: the Objective is done and what it says to hand back is there, in that shape? A clear, honest explanation of why it can't be done also counts as meeting it." } }, { safeDefault: { meets: true } });
     await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "outcome.graded", data: { meets: g.answers.meets.value, reason: g.answers.meets.reason, via: g.via, model: g.model, request_ids: g.requestIds } });
-    return { again: g.answers.meets.value === false ? `<peeblo_event kind="outcome_grader">A grader checked your result against the job's spec and found it short: ${g.answers.meets.reason ?? "it doesn't meet the spec"}. Fix that once and post the result with slack_post; if it can't be done, say exactly what's missing.</peeblo_event>` : null };
+    return { again: g.answers.meets.value === false ? `<peeblo_event kind="outcome_grader">A grader checked your result against the job's spec and found it short: ${g.answers.meets.reason ?? "it doesn't meet the spec"}. Fix that and post the result with slack_post; if it can't be done, say exactly what's missing.</peeblo_event>` : null };
   }
   const d = await decide(state, { verdict: { type: "choice", instructions: "Did the teammate finish what the person asked?", criteria: {
     done: "it answered or did what was asked, or clearly explained why it can't",
@@ -431,35 +487,45 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
     waiting: "it is rightly waiting on the person (it asked them a question, or needs an approval)",
   } } }, { safeDefault: { verdict: "done" } });
   await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "stop_check.decided", data: { verdict: d.answers.verdict.value, reason: d.answers.verdict.reason, via: d.via, model: d.model, request_ids: d.requestIds } });
-  return { again: d.answers.verdict.value === "continue" ? `<peeblo_event kind="stop_check">A check found the request isn't finished yet: ${d.answers.verdict.reason ?? "the answer is incomplete"}. Continue once and finish it, posting the result with slack_post. If you can't, say exactly what's missing.</peeblo_event>` : null };
+  return { again: d.answers.verdict.value === "continue" ? `<peeblo_event kind="stop_check">A check found the request isn't finished yet: ${d.answers.verdict.reason ?? "the answer is incomplete"}. Continue and finish it, posting the result with slack_post. If you can't, say exactly what's missing.</peeblo_event>` : null };
 }
 
 export function installPiExecutor(): void {
   setRunExecutor(async (ctx) => {
-    await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 1 } }), { name: "turn-start" });
+    // Step names stay as they were for turns 1 and 2, so runs in flight across an upgrade replay cleanly.
+    const start = (n: number, data: Record<string, unknown>) => DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: n, ...data } }), { name: n === 1 ? "turn-start" : `turn-start-${n}` });
+    const finish = (n: number, r: { text: string; stopReason: string | null }) => DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: n, text: r.text, stop_reason: r.stopReason } }), { name: n === 1 ? "turn-finish" : `turn-finish-${n}` });
+    await start(1, {});
     // A turn is one step: if core dies mid-turn, the step runs again on the same Pi session after restart.
     let r = await DBOS.runStep(() => turn(ctx, 1), { name: "turn" });
-    await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 1, text: r.text, stop_reason: r.stopReason } }), { name: "turn-finish" });
-    // A job stopped on a limit gets one short turn to say where it is, in its own words.
-    if (r.stopReason === "stuck") {
-      const l = live.get(ctx.session.id);
-      if (l) {
-        const { allowFinalStatus } = await import("../proxy/relay.ts");
-        allowFinalStatus(l.token, ctx.run.id);
-        const asker = ctx.run.submission_id ? (await pool.query("SELECT p.display_name FROM submissions s LEFT JOIN people p ON p.id = s.person_id WHERE s.id = $1", [ctx.run.submission_id])).rows[0]?.display_name : null;
-        const note = `<peeblo_event kind="stopped">This job has stopped here. Post your status for ${String(asker ?? "them").split(" ")[0]} with slack_post, in two or three short lines: what's done, what still fails and why, and what you'd do next. Plain words: never mention keys, scopes or permissions. Your work is saved; say they can tell you to continue. No other tools.</peeblo_event>`;
-        await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 2, final_status: true } }), { name: "turn-start-status" });
-        const s2 = await DBOS.runStep(() => turn(ctx, 2, note), { name: "turn-status" });
-        await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 2, text: s2.text, stop_reason: s2.stopReason } }), { name: "turn-finish-status" });
+    await finish(1, r);
+    let n = 1;
+    let checks = 0;
+    for (;;) {
+      // A job stopped on a limit (stuck, or the hard time limit) gets one short turn to say where it is, in its own words.
+      if (r.stopReason === "stuck" || r.stopReason === "time_limit") {
+        const l = live.get(ctx.session.id);
+        if (l) {
+          const { allowFinalStatus } = await import("../proxy/relay.ts");
+          allowFinalStatus(l.token, ctx.run.id);
+          const asker = ctx.run.submission_id ? (await pool.query("SELECT p.display_name FROM submissions s LEFT JOIN people p ON p.id = s.person_id WHERE s.id = $1", [ctx.run.submission_id])).rows[0]?.display_name : null;
+          const why = r.stopReason === "time_limit" ? `This job has run for ${Math.round(config.turnTimeoutMs / 3_600_000)} hours, the most one job may run, and has stopped here.` : "This job has stopped here.";
+          const note = `<peeblo_event kind="stopped">${why} Post your status for ${String(asker ?? "them").split(" ")[0]} with slack_post, in two or three short lines: what's done, what still fails and why, and what you'd do next. Plain words: never mention keys, scopes or permissions. Your work is saved; say they can tell you to continue. No other tools.</peeblo_event>`;
+          await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: n + 1, final_status: true } }), { name: n === 1 ? "turn-start-status" : `turn-start-status-${n + 1}` });
+          const s2 = await DBOS.runStep(() => turn(ctx, n + 1, note), { name: n === 1 ? "turn-status" : `turn-status-${n + 1}` });
+          await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: n + 1, text: s2.text, stop_reason: s2.stopReason } }), { name: n === 1 ? "turn-finish-status" : `turn-finish-status-${n + 1}` });
+        }
+        return { summary: r.text.slice(0, 500) };
       }
-      return { summary: r.text.slice(0, 500) };
-    }
-    // At most one continuation, if the Stop check or the outcome grader says the job isn't done.
-    const check = await DBOS.runStep(() => stopCheck(ctx, r).catch(() => ({ again: null })), { name: "stop-check" });
-    if (check.again) {
-      await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.started", data: { turn: 2, continuation: true } }), { name: "turn-start-2" });
-      r = await DBOS.runStep(() => turn(ctx, 2, check.again!), { name: "turn-2" });
-      await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "turn.finished", data: { turn: 2, text: r.text, stop_reason: r.stopReason } }), { name: "turn-finish-2" });
+      // The Stop check or the outcome grader may send the job back when it isn't done, a few times at most.
+      if (checks >= config.maxContinuations) break;
+      const check = await DBOS.runStep(() => stopCheck(ctx, r).catch(() => ({ again: null })), { name: n === 1 ? "stop-check" : `stop-check-${n}` });
+      if (!check.again) break;
+      checks++;
+      n++;
+      await start(n, { continuation: true });
+      r = await DBOS.runStep(() => turn(ctx, n, check.again!), { name: `turn-${n}` });
+      await finish(n, r);
     }
     return { summary: r.text.slice(0, 500) };
   });

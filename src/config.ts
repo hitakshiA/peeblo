@@ -60,7 +60,12 @@ export const config = {
   priceCardUsd: Number(process.env.PEEBLO_PRICE_CARD_USD ?? 0.5),                           // above this a run needs a price card
   teammateSpend: process.env.PEEBLO_TEAMMATE_SPEND ?? "auto",       // auto | key | tag (see src/otari/spend.ts)
   approvalTtlSeconds: Number(process.env.PEEBLO_APPROVAL_TTL_S ?? 1800),
-  turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 60 * 60_000),          // one turn of real work (the strongest model takes ~35 min on a hard task); loops are caught by the stuck check
+  turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 6 * 3_600_000),         // the hard limit for one job's turn (no wall clock on real work; loops are caught by the stuck check)
+  maxOutputTokens: Number(process.env.PEEBLO_MAX_OUTPUT_TOKENS ?? 32_768),            // the most one model call may write
+  contextTokens: Number(process.env.PEEBLO_CONTEXT_TOKENS ?? 262_144),                // the context window Pi works in (compacts before it); models offer up to 1M
+  thinkingLevel: (process.env.PEEBLO_THINKING_LEVEL ?? "medium").trim(),               // teammates' reasoning effort (off, low, medium, high, xhigh)
+  progressEveryMs: Number(process.env.PEEBLO_PROGRESS_EVERY_MS ?? 20 * 60_000),       // a long job is nudged to post a progress line this often (steered in, nothing interrupted)
+  maxContinuations: Number(process.env.PEEBLO_MAX_CONTINUATIONS ?? 2),                // how many times the Stop check or grader may send a job back
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
   // The most jobs working at once on this machine; the rest wait in line, in order. A job waiting on a person's card
   // doesn't count. Default: one per GB of memory above 2 GB, at least 2.

@@ -36,6 +36,6 @@ export type AgentTool = {
   // or null when this call doesn't (a list, a pause). The gate then treats it like a connector write: the mode
   // rule, the reviewer in Auto, a card (src/proxy/tools.ts).
   outward?: (ctx: ToolContext, args: any) => Promise<"write" | "shipping" | "outside_thread" | null> | "write" | "shipping" | "outside_thread" | null;
-  // Loaded on demand with find_tools instead of at session start (fewer than 20 tools up front).
+  // Found with find_tools and called through use_tool, instead of declared at session start (fewer than 20 up front).
   deferred?: boolean;
 };

@@ -29,7 +29,7 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
     company_memory_propose: "Proposed a company note", models_list: "Looked up models", price_estimate: "Estimated a price",
     canvas_write: "Wrote a canvas", show_data: "Drew it up", skill_save: "Saved a skill", channel_watch: "Changed what it watches",
     // Not steps: the reply itself, the plan, reading a skill, and a hand-off (its own line says who has it).
-    slack_post: null, slack_react: null, plan: null, read_skill: null, find_tools: null, delegate: null,
+    slack_post: null, slack_react: null, plan: null, read_skill: null, find_tools: null, use_tool: null, delegate: null,
   };
   if (tool in own) return own[tool];
   // Code work reads like the landing page, never the command itself.

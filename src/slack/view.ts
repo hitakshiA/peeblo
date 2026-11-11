@@ -539,7 +539,7 @@ export function installSlackView(): void {
       const st = (await pool.query(`SELECT p.display_name FROM events x JOIN runs r ON r.id = $1 LEFT JOIN people p ON p.slack_user = x.data->>'user'
         WHERE x.session_id = r.session_id AND x.type = 'slack.stop' AND (x.data->>'stopped')::boolean AND x.at >= r.created_at ORDER BY x.id DESC LIMIT 1`, [e.run_id]).catch(() => ({ rows: [] as any[] }))).rows[0];
       if (st) v.stoppedBy = String(st.display_name ?? "someone").split(" ")[0];
-      await finish(e.run_id, v, e.type === "run.finished" && !["budget_blocked", "stuck", "guard_unavailable", "error"].includes(stop ?? "") && !st, st ? null : fallback);
+      await finish(e.run_id, v, e.type === "run.finished" && !["budget_blocked", "stuck", "time_limit", "guard_unavailable", "error"].includes(stop ?? "") && !st, st ? null : fallback);
     }
   });
 }

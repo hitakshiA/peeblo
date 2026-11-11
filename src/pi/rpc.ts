@@ -4,6 +4,11 @@
 import type { Readable, Writable } from "node:stream";
 
 export type PiEvent = { type: string; [k: string]: any };
+
+// The turn timer fired. Pi is still working: the caller decides whether to abort it.
+export class TurnTimeout extends Error {
+  constructor() { super("turn timed out"); }
+}
 export type DialogRequest = { id: string; method: "select" | "confirm" | "input" | "editor"; title: string; options?: string[]; timeout?: number };
 
 export class PiRpc {
@@ -82,7 +87,7 @@ export class PiRpc {
       let t: ReturnType<typeof setTimeout>;
       const arm = () => { t = setTimeout(async () => {
         if (waiting && await waiting().catch(() => false)) return arm();
-        off(); reject(new Error("turn timed out"));
+        off(); reject(new TurnTimeout());
       }, timeoutMs); };
       arm();
       const off = this.on((e) => {

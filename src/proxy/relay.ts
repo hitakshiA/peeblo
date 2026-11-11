@@ -50,7 +50,9 @@ async function body(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-const MAX_OUT = 16_384;
+// The most one model call may write (Claude Code's default is 32k). Otari reserves budget for all of it, so it can't
+// be the model's own limit (384k on some): a teammate near its budget would be refused a one-line answer.
+const MAX_OUT = config.maxOutputTokens;
 
 function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string, label?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
@@ -63,14 +65,32 @@ function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?
     j.metadata = { ...(j.metadata ?? {}) };
     if (b.endUser && config.otariKeyKind === "service") j.metadata.user_id = b.endUser; else delete j.metadata.user_id;
   } else if (b.endUser && config.otariKeyKind === "service") j.user = b.endUser; else delete j.user;
-  // Agents ask for the model's whole output limit (384k tokens on some), and Otari reserves budget for all of it,
-  // so a teammate near its budget would be refused a one-line answer. One turn never writes that much.
   for (const k of ["max_tokens", "max_completion_tokens", "max_output_tokens"]) if (typeof j[k] === "number" && j[k] > MAX_OUT) j[k] = MAX_OUT;
   if (Array.isArray(j.tools)) j.tools = gatewayTools(j.tools, b.web);
   // Code runs in Otari's sandbox, inside the model call. One sandbox per session, held between calls.
   if (path === "/chat/completions" && b.code && sandbox) j.tools = [...(j.tools ?? []), { type: "otari_code_execution", container: sandbox }];
   if (path === "/chat/completions" && j.stream) j.stream_options = { ...(j.stream_options ?? {}), include_usage: true };
   return { buf: Buffer.from(JSON.stringify(j)), model: typeof j.model === "string" ? j.model : null, stream: Boolean(j.stream), tools: Array.isArray(j.tools) ? j.tools.length : 0 };
+}
+
+// What Pi learns about each model from /models (pi-otari reads it at start). Otari's catalog puts input types under
+// `architecture` and says "reasoning" only in `supported_parameters`, and a role policy may list no limits at all, so
+// pi-otari would assume a 128k window and no reasoning. Pi gets each model's real facts (a role's are its default
+// model's), with the window capped (Pi compacts before it) and the output capped like every call.
+export function modelsForPi(list: any[], roles: Record<string, { default: string }>, caps: { context: number; output: number }): any[] {
+  const byId = new Map(list.map((m) => [m.id, m]));
+  return list.map((m) => {
+    const src = m.context_window || !roles[m.id] ? m : (byId.get(roles[m.id].default) ?? m);
+    const params: string[] = src.supported_parameters ?? [];
+    const cw = Number(src.context_window) || 0, out = Number(src.max_output_tokens) || 0;
+    return {
+      ...m,
+      reasoning: params.includes("reasoning"),
+      input_modalities: src.architecture?.input_modalities ?? m.input_modalities,
+      ...(cw ? { context_window: Math.min(cw, caps.context) } : {}),
+      ...(out ? { max_output_tokens: Math.min(out, caps.output) } : {}),
+    };
+  });
 }
 
 // The session's Otari sandbox: reuse it while Otari still holds it (its idle timer restarts on each use),
@@ -207,6 +227,16 @@ export function startProxy(): Promise<Server> {
 
     const headers: Record<string, string> = { authorization: `Bearer ${b.otariKey ?? config.otariKey}`, "user-agent": "peeblo/0.1 (pi)" };
     for (const h of ["content-type", "accept"]) if (typeof req.headers[h] === "string") headers[h] = req.headers[h] as string;
+    if (req.method === "GET" && path === "/models") {
+      try {
+        const up = await fetch(config.otariBaseUrl + url.slice("/api/v1".length), { headers, redirect: "error" });
+        if (!up.ok) return void res.writeHead(up.status, { "content-type": "application/json" }).end(await up.text());
+        const j: any = await up.json();
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ...j, data: modelsForPi(j.data ?? [], ROLES, { context: config.contextTokens, output: MAX_OUT }) }));
+      } catch (e) {
+        return void res.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ detail: `Otari unreachable: ${(e as Error).message}` }));
+      }
+    }
     if (isInference) {
       headers["otari-conversation-id"] = b.sessionId;
       headers["otari-tags"] = `teammate=${b.teammateSlug},session=${b.sessionId}${b.runId ? `,run=${b.runId}` : ""}`;
@@ -228,7 +258,9 @@ export function startProxy(): Promise<Server> {
       }
       // three model turns in a row with nothing visible in between (no tool ran, nothing posted) stop the run.
       const silent = b.runId ? Number((await pool.query(
+        // Only answers count: a failed attempt, a retry or Pi's own compaction call (no tools declared) isn't a turn.
         `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
+           AND (data->>'status')::int = 200 AND NOT coalesce((data->>'failed')::boolean, false) AND coalesce((data->>'tools_declared')::int, 1) > 0
            AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'tool.local')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
       // No count or per-job spend limit: a job runs on its budget. Only a stuck run (the same call over and over, or
       // turns with nothing to show) is stopped.

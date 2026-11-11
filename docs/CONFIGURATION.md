@@ -68,7 +68,12 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 |---|---|---|
 | `PEEBLO_APPROVAL_TTL_S` | `1800` | How long an approval card waits while someone is in the conversation. Unattended runs wait 12 hours. |
 | `PEEBLO_PRICE_CARD_USD` | `0.5` | Above this estimate, a job shows a price card first. |
-| `PEEBLO_TURN_TIMEOUT_MS` | `3600000` | The longest one turn of work may run. |
+| `PEEBLO_TURN_TIMEOUT_MS` | `21600000` (6 h) | The hard limit for one job. Time waiting on an approval card doesn't count. At the limit the job stops and posts its status. |
+| `PEEBLO_MAX_OUTPUT_TOKENS` | `32768` | The most one model call may write. Otari reserves budget for all of it. |
+| `PEEBLO_CONTEXT_TOKENS` | `262144` | The context window Pi works in; it compacts before reaching it. Models offer up to 1M, at a cost per call. |
+| `PEEBLO_THINKING_LEVEL` | `medium` | Teammates' reasoning effort. Peeblo's desk work uses `low`, the hard part (`peeblo-heavy`) `high`. |
+| `PEEBLO_PROGRESS_EVERY_MS` | `1200000` (20 min) | How often a long job is asked to post a one-line progress note. The note is steered in between tool calls; nothing is interrupted. |
+| `PEEBLO_MAX_CONTINUATIONS` | `2` | How many times the Stop check or the outcome grader may send an unfinished job back. |
 | `PEEBLO_MAX_RUNNING` | 1 per GB of memory above 2 GB, at least 2 | The most jobs working at once. The rest wait in line. |
 | `PEEBLO_CHAIN_DEPTH` | `3` | How deep teammates may hand work to each other. |
 | `PEEBLO_CHAIN_CALLS` | `6` | The most hand-offs in one chain. |
