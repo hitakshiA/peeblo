@@ -62,5 +62,8 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # ESLint's major follows what Next.js's ESLint config supports.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
