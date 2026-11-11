@@ -134,20 +134,7 @@ export async function policyApprovers(
   }));
   const tool = String(call.tool ?? "").toLowerCase();
   const args = JSON.stringify(call.arguments ?? {}).toLowerCase();
-  const ids = async (names: string[]) =>
-    uniq(
-      await Promise.all(
-        names.map(
-          async (n) =>
-            (
-              await pool.query(
-                "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1",
-                [n],
-              )
-            ).rows[0]?.id,
-        ),
-      ),
-    );
+  const ids = async (names: string[]) => uniq(await Promise.all(names.map(personIdByName)));
   const pick = async (pred: (k: string) => boolean, why: string) => {
     const r = rules.find((x) => pred(x.key));
     if (!r) return null;
@@ -177,7 +164,7 @@ export async function policyApprovers(
     if (r) return r;
   }
   if (call.risk === "shipping" || (!reads && /merge|deploy|release|rollout|flag/.test(tool))) {
-    const r = await pick((k) => /merge|flag|deploy|release/.test(k), "merges, flags and deploys go to their approver");
+    const r = await pick((k) => /ship|merge|flag|deploy|release/.test(k), "merges, flags and deploys go to their approver");
     if (r) return r;
   }
   if (!reads && /send|broadcast|publish|campaign/.test(tool)) {
@@ -199,4 +186,41 @@ export async function policyApprovers(
     if (who.length) return { who, why: "money, deletes and shipping go to an admin or the teammate's owner" };
   }
   return null;
+}
+
+// A person named in the approvals map, by name. Someone who has never talked to a teammate isn't in Peeblo yet: they
+// are found among the workspace's Slack members (real or display name, first name enough) and added, so their card
+// reaches them instead of falling back to an admin.
+async function personIdByName(name: string): Promise<string | undefined> {
+  const q =
+    "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1";
+  const hit = (await pool.query(q, [name])).rows[0]?.id;
+  if (hit) return hit;
+  const app = (
+    await pool.query(
+      "SELECT a.app_id, a.team_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1",
+    )
+  ).rows[0];
+  if (!app?.team_id) return undefined;
+  const { slack } = await import("../slack/api.ts");
+  const n = name.trim().toLowerCase();
+  let cursor = "";
+  for (let page = 0; page < 10; page++) {
+    const r: any = await slack(app.app_id, "users.list", { limit: 200, ...(cursor ? { cursor } : {}) }).catch(() => null);
+    const m = (r?.members ?? []).find(
+      (u: any) =>
+        !u.deleted &&
+        !u.is_bot &&
+        [u.real_name, u.profile?.display_name, u.profile?.real_name].some(
+          (x: string | undefined) => x && (x.toLowerCase() === n || x.toLowerCase().split(" ")[0] === n),
+        ),
+    );
+    if (m) {
+      const { personForSlack } = await import("../store/people.ts");
+      return (await personForSlack(app.team_id, m.id, { displayName: m.real_name || m.profile?.display_name, email: m.profile?.email })).id;
+    }
+    cursor = r?.response_metadata?.next_cursor ?? "";
+    if (!cursor) break;
+  }
+  return undefined;
 }

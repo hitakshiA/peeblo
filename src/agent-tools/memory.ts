@@ -331,10 +331,18 @@ export const companyMemoryTool: AgentTool = {
   }),
   kind: "write",
   // An empty change never reaches a person's card.
-  authorize: async (_ctx, a) =>
-    (a.notes ?? []).length || (a.remove ?? []).length
-      ? null
-      : "Nothing to propose: add at least one note or one removal, or skip company memory.",
+  authorize: async (_ctx, a) => {
+    if (!(a.notes ?? []).length && !(a.remove ?? []).length)
+      return "Nothing to propose: add at least one note or one removal, or skip company memory.";
+    // Approval cards are routed by one note in a fixed shape; anything else about who approves would be ignored.
+    for (const n of a.notes ?? []) {
+      if (!/approv/i.test(`${n.path} ${n.title}`)) continue;
+      const path = String(n.path).replace(/\.md$/, "");
+      if (path !== "company/approvals" || !/^-\s*[^:\n]+:\s*\S/m.test(String(n.body)))
+        return "Who approves what goes in one note, company/approvals, one line per kind of write, because approval cards are routed by it: `- money: <name>`, `- merges, flags, deploys: <name>`, `- marketing sends: <name>`, `- account <customer>: <name>`. A sentence of context above the lines is fine. Propose it there in that shape (and remove any other approvals note).";
+    }
+    return null;
+  },
   describe(_ctx, a) {
     const adds = (a.notes ?? []).map((n: any) => `${n.path}: ${n.title}`);
     const dels = (a.remove ?? []).map((r: any) => `remove ${r.path} (${r.why})`);
