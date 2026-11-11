@@ -275,7 +275,7 @@ export const shareFileTool: AgentTool = {
 // An image made from a description, by an open-weight image model through Otari (FLUX.1 schnell, Apache-2.0; FLUX.1
 // dev's licence isn't open, so it's never used). The picture lands in the session's folder on the teammate's computer,
 // where share_file attaches it and computer tools can work on it.
-export const IMAGE_MODEL = "flux-1-schnell";
+const IMAGE_MODEL = "flux-1-schnell";
 const SIZES: Record<string, string> = { square: "1024x1024", landscape: "1344x768", portrait: "768x1344", small: "512x512" };
 export const makeImageTool: AgentTool = {
   name: "make_image",
