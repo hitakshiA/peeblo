@@ -4,6 +4,9 @@
 // rerank at half the latency, so rerank is the part that matters and embeddings are optional.
 import { otari } from "./client.ts";
 
+// No `user` on these calls: with a service key, Otari answers 403 "'user' field does not match the authenticated
+// API key's user" on /embeddings and /rerank (chat accepts it). endUser stays in the signatures for when it does.
+
 export const EMBED_MODEL = process.env.PEEBLO_EMBED_MODEL ?? "alibaba/qwen3-embedding-0.6b";
 export const RERANK_MODEL = process.env.PEEBLO_RERANK_MODEL ?? "alibaba/qwen3-reranker-8b";
 export const EMBED_DIMS = Number(process.env.PEEBLO_EMBED_DIMS ?? 256);
@@ -13,7 +16,7 @@ const QUERY_INSTRUCTION = "Instruct: Given a question from a teammate, find the 
 export async function embed(texts: string[], kind: "query" | "document", endUser?: string): Promise<{ vectors: number[][]; requestId: string | null; cost: number | null }> {
   const input = kind === "query" && EMBED_MODEL.includes("qwen3-embedding") ? texts.map((t) => QUERY_INSTRUCTION + t) : texts;
   const { data, requestId } = await otari<{ data: { index: number; embedding: number[] }[]; usage?: { cost_usd?: string | number } }>("POST", "/embeddings", {
-    model: EMBED_MODEL, input, dimensions: EMBED_DIMS, ...(endUser ? { user: endUser } : {}),
+    model: EMBED_MODEL, input, dimensions: EMBED_DIMS,
   });
   const vectors = [...data.data].sort((a, b) => a.index - b.index).map((d) => d.embedding);
   return { vectors, requestId, cost: data.usage?.cost_usd === undefined ? null : Number(data.usage.cost_usd) };
@@ -23,7 +26,7 @@ export type Ranked = { index: number; score: number };
 export async function rerank(query: string, documents: string[], topN = 5, endUser?: string): Promise<{ results: Ranked[]; requestId: string | null; cost: number | null }> {
   if (!documents.length) return { results: [], requestId: null, cost: 0 };
   const { data, requestId } = await otari<{ results: { index: number; relevance_score: number }[]; usage?: { cost_usd?: string | number } }>("POST", "/rerank", {
-    model: RERANK_MODEL, query, documents: documents.map((d) => d.slice(0, 4000)), top_n: Math.min(topN, documents.length), ...(endUser ? { user: endUser } : {}),
+    model: RERANK_MODEL, query, documents: documents.map((d) => d.slice(0, 4000)), top_n: Math.min(topN, documents.length),
   });
   return { results: data.results.map((r) => ({ index: r.index, score: r.relevance_score })), requestId, cost: data.usage?.cost_usd === undefined ? null : Number(data.usage.cost_usd) };
 }

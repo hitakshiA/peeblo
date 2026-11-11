@@ -149,9 +149,9 @@
       "fallback": [
         "deepseek/deepseek-v4.1-flash-1017"
       ],
-      "purpose": "the hard part of a job, run as its own sub-task when Otari's router picks it (reconciling conflicting sources, long multi-step plans, hard code): the strongest open model, priced before it's used; steps down to DeepSeek once half the key's budget is used",
+      "purpose": "the hard part of a job, run as its own sub-task when Otari's router picks it (reconciling conflicting sources, long multi-step plans, hard code): the strongest open model, priced before it's used; steps down to DeepSeek once 80% of the key's budget is used",
       "step_down": {
-        "at_budget_pct": 50,
+        "at_budget_pct": 80,
         "model": "deepseek/deepseek-v4.1-flash-1017"
       }
     }
