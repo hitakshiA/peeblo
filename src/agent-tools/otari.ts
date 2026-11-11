@@ -105,6 +105,14 @@ export const otariTools: AgentTool[] = [
       const lines = [
         `${ctx.teammate.config.name}: ${usd(t.spent)} of ${usd(t.cap)} used this month (${usd(Math.max(0, t.cap - t.spent))} left; enforced by ${t.mode === "key" ? "its own Otari key" : "Peeblo, by tag"}).`,
       ];
+      const { session, wallet } = await import("../otari/admin.ts");
+      if (await session()) {
+        const w = await wallet().catch(() => null);
+        if (w)
+          lines.push(
+            `The org's Otari balance: ${usd(Number(w.available))} available${Number(w.available) < 1 ? "; when it reaches $0 every call stops until an admin adds funds" : ""}.`,
+          );
+      }
       if (ctx.endUser) {
         const p = await personSpend(ctx.endUser);
         lines.push(
@@ -267,14 +275,21 @@ export const otariTools: AgentTool[] = [
             };
           const list = await routingPolicies();
           const mine = ((list.data ?? list) as { name: string; spec: any }[]).filter((p) => p.name in ROLES);
+          // Otari's own plan for each role (explain dispatches nothing), and for a role that steps down, the plan at 80%.
+          const { explainPolicy } = await import("../otari/admin.ts");
+          const plan = async (name: string, pct?: number) => {
+            const r = await explainPolicy({ name, budgetUsedPct: pct }).catch(() => null);
+            return r ? r.candidates.map((c) => String(c.model ?? c.selector ?? "?")).join(" → ") || "nothing can serve it" : null;
+          };
+          const lines = await Promise.all(
+            mine.map(async (p) => {
+              const now = await plan(p.name);
+              const step = ROLES[p.name]?.step_down ? await plan(p.name, ROLES[p.name].step_down!.at_budget_pct) : null;
+              return `${p.name}: ${now ?? p.spec?.select?.map((x: any) => x.default ?? x.target).join(", ")}${step ? ` (at ${ROLES[p.name].step_down!.at_budget_pct}% of a key's budget: ${step})` : ""}`;
+            }),
+          );
           return {
-            text:
-              mine
-                .map(
-                  (p) =>
-                    `${p.name}: ${p.spec?.select?.map((x: any) => x.default).join(", ")}${p.spec?.on_failure?.length ? ` → ${p.spec.on_failure.join(", ")}` : ""}`,
-                )
-                .join("\n") || "No Peeblo role policies in Otari yet.",
+            text: lines.join("\n") || "No Peeblo role policies in Otari yet.",
           };
         }
         case "mcp_servers": {
@@ -385,6 +400,39 @@ export const otariTools: AgentTool[] = [
     },
   },
   {
+    name: "otari_set_crew_cap",
+    description:
+      "Cap the whole crew's AI spend for the month: one ceiling in Otari over everything this Peeblo spends (every teammate, Peeblo and the guard together), on top of each teammate's own budget. Admins only; a person approves before it changes.",
+    input_schema: object({
+      monthly_usd: { type: "number", minimum: 1, maximum: 100000, description: "The most the whole crew may spend in a calendar month." },
+      reason: { type: "string" },
+    }),
+    kind: "write",
+    authorize: (ctx) => adminOnly(ctx),
+    describe(_ctx, a) {
+      return {
+        summary: `Cap the whole crew at $${a.monthly_usd} a month`,
+        setting: "crew_cap",
+        monthly_usd: a.monthly_usd,
+        reason: a.reason,
+      };
+    },
+    async run(_ctx, a) {
+      const { budgets, createBudget, updateBudget, createWorkspaceCeiling, spendCeilings, session } = await import("../otari/admin.ts");
+      const NAME = "peeblo-crew-monthly";
+      const s = await session();
+      if (!s) return { text: `Capping the crew needs an admin signed in to Otari in the console (${links.budgets()}).`, isError: true };
+      const existing = (await budgets()).find((b) => b.name === NAME);
+      const budget = existing ? await updateBudget(existing.id, a.monthly_usd) : await createBudget(NAME, a.monthly_usd, "month");
+      const ceilings = await spendCeilings();
+      if (!ceilings.some((c) => c.scope_type === "workspace" && c.scope_id === s.workspaceId && c.budget_id === budget.id))
+        await createWorkspaceCeiling(budget.id, NAME);
+      return {
+        text: `The whole crew is capped at $${a.monthly_usd} a month in Otari (budget ${NAME}, on the workspace). Each teammate's own budget still applies under it.`,
+      };
+    },
+  },
+  {
     name: "otari_set_routing_policy",
     description:
       "Set which models one of Peeblo's role policies uses: a default model and up to 3 fallbacks, all open-weight. Admins only; a person approves before it changes.",
@@ -402,6 +450,12 @@ export const otariTools: AgentTool[] = [
         const bad = await chatModel(m);
         if (bad) return bad;
       }
+      // Otari compiles the draft without sending anything: a target it can't serve is named now, not after saving.
+      const { explainPolicy } = await import("../otari/admin.ts");
+      const spec = await policySpec({ ...ROLES[a.name], default: a.default_model, fallback: a.fallback_models });
+      const plan = await explainPolicy({ name: a.name, spec }).catch(() => null);
+      if (plan && !plan.candidates.length)
+        return `Otari can't serve that policy: ${plan.dropped.map((d) => `${d.selector} (${d.reason}${d.detail ? `: ${d.detail}` : ""})`).join("; ") || "no target is available"}.`;
       return null;
     },
     async describe(_ctx, a) {

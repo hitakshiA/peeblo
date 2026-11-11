@@ -69,14 +69,27 @@ export async function tiers(): Promise<Tier[]> {
 }
 
 // Otari's refusal: 403 budget_exceeded, Otari-Budget-Scope (user, key, …) and a message with its estimate.
-export type BudgetRefusal = { scope: string | null; message: string; remaining: number | null; estimate: number | null };
+export type BudgetRefusal = {
+  scope: string | null;
+  message: string;
+  remaining: number | null;
+  estimate: number | null;
+  endUser?: string | null;
+};
 export function budgetRefusal(status: number, headers: Headers, body: string): BudgetRefusal | null {
   if (status !== 403 && status !== 402 && status !== 429) return null;
-  if (!body.includes("budget_exceeded") && headers.get("otari-error-code") !== "budget_exceeded") return null;
+  const code = headers.get("otari-error-code");
+  // The org's prepaid balance ran out: every key stops, whatever its own budget says.
+  if (code === "insufficient_funds" || body.includes("insufficient_funds"))
+    return { scope: "org_balance", message: "the org's Otari balance has run out", remaining: 0, estimate: null };
+  if (!body.includes("budget_exceeded") && code !== "budget_exceeded") return null;
   let message = "";
+  let endUser: string | null = null;
   try {
     const j = JSON.parse(body);
     message = typeof j.detail === "string" ? j.detail : (j.detail?.message ?? JSON.stringify(j.detail));
+    // Otari names the person whose budget it was (#3019).
+    endUser = j.end_user ?? j.detail?.end_user ?? null;
   } catch {
     message = body.slice(0, 300);
   }
@@ -86,6 +99,7 @@ export function budgetRefusal(status: number, headers: Headers, body: string): B
   };
   return {
     scope: headers.get("otari-budget-scope"),
+    endUser,
     message,
     remaining: num(/\$(\d+(?:\.\d+)?) of budget remaining/),
     estimate: num(/estimated cost of \$(\d+(?:\.\d+)?)/),
@@ -93,6 +107,10 @@ export function budgetRefusal(status: number, headers: Headers, body: string): B
 }
 
 export function budgetReply(r: BudgetRefusal, teammate: string): string {
+  if (r.scope === "org_balance")
+    return "I can't run this: the team's Otari balance has run out, so every AI call is paused until an admin adds funds in Otari (Billing). Nothing is lost; ask me again after that.";
+  if (r.scope === "workspace")
+    return 'I can\'t run this: the whole crew has reached its monthly cap in Otari. An admin can raise it ("raise the crew cap to $…"), or it resets at the start of the month.';
   const who =
     r.scope === "user"
       ? "your personal Otari budget"

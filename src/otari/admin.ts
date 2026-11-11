@@ -154,6 +154,70 @@ export const createKeyCeiling = (keyId: string, budgetId: string, name: string) 
 export const deleteCeiling = (id: string) =>
   admin("DELETE", `/organizations/me/spend-ceilings/${id}`, undefined, "removing a spend ceiling", links.budgets());
 
+// A key switched off (a paused teammate) keeps its grants, ceiling and history; switched on again it works as before.
+export const setKeyActive = (id: string, active: boolean) =>
+  admin(
+    "PATCH",
+    `/organizations/me/keys/${id}`,
+    { is_active: active },
+    active ? "switching a key back on" : "switching a key off",
+    links.keys(),
+  );
+// A new secret for the same key (a leak, a routine rotation): grants, ceiling and history stay.
+export const rotateKey = (id: string) =>
+  admin<{ key?: string; api_key?: string; id?: string }>("POST", `/organizations/me/keys/${id}/rotate`, {}, "rotating a key", links.keys());
+
+// One ceiling over the whole workspace: every teammate, Peeblo and the guard together.
+export const createWorkspaceCeiling = async (budgetId: string, name: string) => {
+  const s = await session();
+  if (!s) throw new NoSession(links.budgets(), "capping the whole crew");
+  return admin<{ id: string }>(
+    "POST",
+    "/organizations/me/spend-ceilings",
+    { scope_type: "workspace", scope_id: s.workspaceId, budget_id: budgetId, name },
+    "capping the whole crew",
+    links.budgets(),
+  );
+};
+export const spendCeilings = async () => {
+  const r = await admin<any>("GET", "/organizations/me/spend-ceilings", undefined, "listing spend ceilings", links.budgets());
+  return (r.data ?? r) as { id: string; scope_type: string; scope_id: string; budget_id: string; name?: string }[];
+};
+
+// What the org has left to spend on hosted Otari (its prepaid balance). Every key stops when it runs out.
+export const wallet = () =>
+  admin<{ balance: string; available: string; reserved: string; currency: string; can_add_funds: boolean }>(
+    "GET",
+    "/wallet",
+    undefined,
+    "reading the org's balance",
+    links.billing(),
+  );
+
+// What a routing policy compiles to, without sending anything: its ordered candidates and what was left out and why.
+// A draft spec can be checked before it is saved; budget_used_pct shows a step-down.
+export type PolicyPlan = {
+  selection_reason: string;
+  candidates: { model?: string; selector?: string; [k: string]: unknown }[];
+  dropped: { selector: string; reason: string; detail?: string }[];
+};
+export async function explainPolicy(q: { name?: string; spec?: PolicySpec; budgetUsedPct?: number }): Promise<PolicyPlan> {
+  const s = await session();
+  if (!s) throw new NoSession(links.routing(), "checking a routing policy");
+  return admin<PolicyPlan>(
+    "POST",
+    "/organizations/me/routing-policies/explain",
+    {
+      workspace_id: s.workspaceId,
+      ...(q.name ? { name: q.name } : {}),
+      ...(q.spec ? { spec: q.spec } : {}),
+      ...(q.budgetUsedPct !== undefined ? { budget_used_pct: q.budgetUsedPct } : {}),
+    },
+    "checking a routing policy",
+    links.routing(),
+  );
+}
+
 export type PolicySpec = { select: ({ default: string } | { when: Record<string, unknown>; target: string })[]; on_failure?: string[] };
 export async function upsertRoutingPolicy(name: string, spec: PolicySpec): Promise<void> {
   const s = await session();

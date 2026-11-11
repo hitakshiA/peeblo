@@ -85,11 +85,11 @@ case "${1:-up}" in
     load_env
     if [ "$(uname)" = Darwin ]; then mac_compose ps; pid=$(core_pid) && echo "core: running (pid $pid)" || echo "core: stopped"; else compose --profile linux ps; fi ;;
   logs) if [ "$(uname)" = Darwin ]; then tail -f "$RUN/core.log"; else load_env; compose logs -f peeblo; fi ;;
-  check|image|slack-app)
+  check|image|slack-app|rotate-key)
     load_env
     if [ "$(uname)" = Darwin ]; then native_env; node src/bin.ts "$@"
     # The large image is built from a Debian container image, with the host's Docker, for this command only.
     elif [ "${1:-}" = image ] && [ "${2:-}" = large ]; then compose --profile linux run --rm --no-deps --user "1000:$(stat -c %g /var/run/docker.sock)" -v /var/run/docker.sock:/var/run/docker.sock peeblo "$@"
     else compose --profile linux run --rm peeblo "$@"; fi ;;
-  *) echo "usage: ./peeblo up|down|status|logs|check|image|slack-app|backup|upgrade"; exit 2 ;;
+  *) echo "usage: ./peeblo up|down|status|logs|check|image|slack-app|rotate-key|backup|upgrade"; exit 2 ;;
 esac

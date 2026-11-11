@@ -85,6 +85,37 @@ async function teammateKeyOnce(tm: Teammate): Promise<{ keyId: string; secret: s
 }
 
 // Removes the teammate's key, ceiling and budget from Otari (on fire, or when switching modes).
+// A paused teammate's key is switched off in Otari, so nothing can spend on it (not only nothing Peeblo starts); its
+// grants, ceiling and history stay, and resuming switches it back on. Returns false when there's no key or no session.
+export async function setTeammateKeyActive(teammateId: string, active: boolean): Promise<boolean> {
+  const { rows } = await pool.query<{ key_id: string }>("SELECT key_id FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [
+    teammateId,
+  ]);
+  if (!rows[0]) return false;
+  const { session, setKeyActive } = await import("./admin.ts");
+  if (!(await session())) return false;
+  await setKeyActive(rows[0].key_id, active);
+  return true;
+}
+
+// A new secret for a teammate's key (a leak, or a routine rotation), sealed in place of the old one.
+export async function rotateTeammateKey(teammateId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ key_id: string }>("SELECT key_id FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [
+    teammateId,
+  ]);
+  if (!rows[0]) return false;
+  const { rotateKey } = await import("./admin.ts");
+  const r = await rotateKey(rows[0].key_id);
+  const secret = r.key ?? r.api_key;
+  if (!secret) throw new Error("Otari didn't return the new secret");
+  await pool.query("UPDATE teammate_keys SET secret = $2 WHERE teammate_id = $1 AND key_id = $3", [
+    teammateId,
+    seal(secret),
+    rows[0].key_id,
+  ]);
+  return true;
+}
+
 export async function retireTeammateKey(teammateId: string): Promise<void> {
   const { rows } = await pool.query<KeyRow>(
     "SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL",

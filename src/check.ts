@@ -275,6 +275,18 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: "Otari balance",
+    run: async () => {
+      // Hosted Otari is prepaid: when the org's balance reaches $0, every key stops, whatever its budget says.
+      const { session, wallet } = await import("./otari/admin.ts");
+      if (!(await session())) return "not checked without a dashboard session";
+      const w = await wallet();
+      const left = Number(w.available);
+      if (left <= 0) throw new Error(`the org's balance is $${left.toFixed(2)}, so every AI call is refused; add funds in Otari (Billing)`);
+      return `$${left.toFixed(2)} available${left < 5 ? " (low: add funds in Otari, Billing, before it runs out)" : ""}`;
+    },
+  },
+  {
     name: "Otari zero data retention",
     run: async () => {
       // A workspace setting in Otari (Settings → Providers → require zero data retention). Peeblo then pins every role

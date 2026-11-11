@@ -308,6 +308,9 @@ async function homeControl({ appId, payload, a, who }: Click): Promise<void> {
     if (!tm || !mayManageTeammate(tm, who)) return;
     await pool.query("UPDATE teammates SET paused_at = $2 WHERE id = $1", [tm.id, a.action_id === "pause_teammate" ? new Date() : null]);
     await appendEvent({ type: "teammate.paused", data: { teammate_id: tm.id, paused: a.action_id === "pause_teammate", by: who.id } });
+    // Otari holds the pause too: the teammate's key is switched off (and back on when resumed).
+    const { setTeammateKeyActive } = await import("../otari/spend.ts");
+    await setTeammateKeyActive(tm.id, a.action_id !== "pause_teammate").catch((e) => console.error("key on/off:", (e as Error).message));
     tmId = tm.id;
   }
   if (tmId && payload.view?.type === "home") {

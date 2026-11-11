@@ -19,6 +19,7 @@ export const links = {
   keys: () => `${DASH}/#/keys`,
   setPassword: () => `${DASH}/#/recover-password`,
   budgets: () => `${DASH}/#/budgets`,
+  billing: () => `${DASH}/#/organization/billing`,
   guardrails: () => `${DASH}/#/organization/guardrails`,
   webSearch: () => `${DASH}/#/tools/web-search`,
   codeExecution: () => `${DASH}/#/tools/code-execution`,
