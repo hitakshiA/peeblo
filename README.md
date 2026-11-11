@@ -16,6 +16,7 @@ It signs every reply with what it cost.
 - "Every Monday at 9", "when a dispute comes in", "remind me at 6": teammates set their own routines, in your time zone.
 - Voice notes, PDFs and screenshots work. So does "give Beacon Linear too, read only".
 - It remembers corrections. What you tell it in a DM stays in that DM.
+- Big jobs run for hours: background builds and tests, helpers working in parallel, files handed back in the thread.
 
 ## One wallet, many agents, many people
 
@@ -50,6 +51,7 @@ The full guide, with the server's network (ports, HTTPS, DNS, the SSH tunnel to 
 - [skills/](skills/): how teammates hire, reconcile numbers, handle approvals, and decide when to speak.
 - [CONTRIBUTING.md](CONTRIBUTING.md): set up a dev copy, where things live, and what a good pull request has.
 - [SECURITY.md](SECURITY.md): report a vulnerability privately.
+- [CHANGELOG.md](CHANGELOG.md): what changed.
 
 ## License
 

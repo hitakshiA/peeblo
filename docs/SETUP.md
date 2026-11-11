@@ -106,7 +106,7 @@ Open to the internet: **443** (and **80**, so Caddy can get its certificate). Op
    Check after login: `ls -l /dev/kvm` must exist.
 2. **Security group:** inbound TCP 22 from your IP only; TCP 80 and 443 from anywhere. Nothing else.
 3. **A name for the server:** point a DNS A record (e.g. `peeblo.example.com`) at its public IP. To try it without
-   a domain, `<ip-with-dashes>.sslip.io` (e.g. `44-200-237-52.sslip.io`) resolves to that IP and gets a real certificate.
+   a domain, `<ip-with-dashes>.sslip.io` (e.g. `203-0-113-10.sslip.io`) resolves to that IP and gets a real certificate.
 
 ### Install
 
