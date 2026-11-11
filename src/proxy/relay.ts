@@ -76,6 +76,10 @@ async function body(req: IncomingMessage): Promise<Buffer> {
 // The most one model call may write (Claude Code's default is 32k). Otari reserves budget for all of it, so it can't
 // be the model's own limit (384k on some): a teammate near its budget would be refused a one-line answer.
 const MAX_OUT = config.maxOutputTokens;
+// Otari holds a call's whole output allowance against the budget before it routes. A role that steps down near its
+// budget asks for less, so its strong model still fits under the line and the step-down gets its turn (at 32k output
+// a Kimi call needs ~$0.34 free, more than the last 20% of a small budget).
+const STEP_OUT = Math.min(MAX_OUT, 8192);
 
 function prepare(
   path: string,
@@ -87,6 +91,7 @@ function prepare(
 ): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
+  const role = typeof j.model === "string" ? ROLES[j.model] : undefined;
   if (typeof j.model === "string") j.model = modelFor(j.model);
   // Otari's Sessions view names the job the way people know it ("Rivet · #incidents · checkout timeouts").
   if (label && (path === "/chat/completions" || path === "/messages" || path === "/responses")) j.session_label = label;
@@ -98,7 +103,7 @@ function prepare(
   } else if (b.endUser && config.otariKeyKind === "service") j.user = b.endUser;
   else delete j.user;
   for (const k of ["max_tokens", "max_completion_tokens", "max_output_tokens"])
-    if (typeof j[k] === "number" && j[k] > MAX_OUT) j[k] = MAX_OUT;
+    if (typeof j[k] === "number" && j[k] > (role?.step_down ? STEP_OUT : MAX_OUT)) j[k] = role?.step_down ? STEP_OUT : MAX_OUT;
   if (Array.isArray(j.tools)) j.tools = gatewayTools(j.tools, b.web);
   // Code runs in Otari's sandbox, inside the model call. One sandbox per session, held between calls.
   if (path === "/chat/completions" && b.code && sandbox)
