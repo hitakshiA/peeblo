@@ -2,7 +2,7 @@
 // harness must act or check. repo_open makes (or restores) the session's checkout on its own branch; repo_publish
 // pushes that branch from the host-owned mirror and can open a draft PR. Branch names, refusals and the push
 // itself are code (environment/repos.ts).
-import { openRepo, publish, repoKey, reposOf } from "../environment/repos.ts";
+import { openRepo, publish, repoKey, reposOf, worktreesOf } from "../environment/repos.ts";
 import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";
 
@@ -22,6 +22,28 @@ export const repoTools: AgentTool[] = [
       return {
         text: `${r.created ? "Opened" : r.restored ? "Restored (from your last saved state)" : "Already open:"} ${a.repo} at ${r.wt.path}, branch ${r.wt.branch}, based on origin/${r.wt.base} @ ${(r.wt.base_commit ?? "").slice(0, 10)}. Setup: ${r.setup}. Commit on this branch; publish with repo_publish.`,
         data: { path: r.wt.path, branch: r.wt.branch, base: r.wt.base },
+      };
+    },
+  },
+  {
+    name: "repo_check",
+    description:
+      "Run the repo's own guardrails (.otari/guardrails) on your branch as it stands, the same check repo_publish runs: changed files, required commands, the repo's verifier scripts and its review rubrics. Use it before publishing to fix what fails. Nothing is pushed.",
+    input_schema: object({ repo: { type: "string" } }),
+    kind: "local",
+    async run(ctx, a) {
+      const w = (await worktreesOf(ctx.sessionId)).find((x) => x.repo === repoKey(ctx.teammate, String(a.repo)));
+      if (!w) return { text: `Open ${a.repo} with repo_open first.`, isError: true };
+      const { checkFinishedWork } = await import("../environment/guardrails.ts");
+      const r = await checkFinishedWork(ctx.teammate, ctx.sessionId, w, ctx.endUser);
+      if (!r)
+        return {
+          text: `${a.repo} has no guardrails of its own (.otari/guardrails.yml or .otari/guardrails/); Peeblo's rules still apply.`,
+        };
+      return {
+        text: `${r.report}${r.blocked ? "\nPublishing would be refused until the required ones pass." : ""}`,
+        isError: r.blocked,
+        untrusted: "computer:repo",
       };
     },
   },
@@ -66,6 +88,7 @@ export const repoTools: AgentTool[] = [
           repoKey(ctx.teammate, String(a.repo)),
           a.pr && !a.onto_pr ? { title: a.pr.title, body: a.pr.body ?? "" } : null,
           a.onto_pr ?? null,
+          ctx.endUser,
         );
         return { text: r.text, data: { commit: r.pushed, pr_url: r.pr_url } };
       } catch (e) {

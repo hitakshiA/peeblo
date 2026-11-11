@@ -59,6 +59,7 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
     computer_edit: "Edited a file",
     repo_open: "Opened the repo",
     repo_publish: "Opened a pull request",
+    repo_check: "Checked the repo's guardrails",
     subagent: "Asked a helper",
     ask_teammate: d.callee ? `Asked ${cap(d.callee)}` : "Asked a teammate",
     ask_human: "Asked a question",

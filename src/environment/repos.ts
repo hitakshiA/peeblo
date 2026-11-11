@@ -347,6 +347,7 @@ export async function publish(
   repo: string,
   pr?: { title: string; body?: string } | null,
   ontoPr?: number | null,
+  endUser: string | null = null,
 ): Promise<{ text: string; pushed: string; pr_url?: string | null }> {
   if (String((tm.config as any).git?.publish ?? "own-branches") === "off") throw new Error("publishing is off for this teammate");
   const r = reposOf(tm).find((x) => x.name === repo);
@@ -364,6 +365,14 @@ export async function publish(
       `refused: these look like scratch files and don't belong in the PR: ${scratch.join(", ")}. Remove them in a new commit (git rm), then publish.`,
     );
   }
+  // The repo's own guardrails for finished work (environment/guardrails.ts): a required one that doesn't pass stops it.
+  const { checkFinishedWork } = await import("./guardrails.ts");
+  const guard = await checkFinishedWork(tm, sessionId, w, endUser);
+  if (guard?.blocked) {
+    await appendEvent({ sessionId, runId: null, type: "repo.publish_refused", data: { repo, reason: "repo guardrails" } });
+    throw new Error(`refused by the repo's guardrails. Fix these, commit, then publish again.\n${guard.report}`);
+  }
+  const notes = guard?.results.some((g) => g.outcome !== "pass" && g.outcome !== "not_applicable") ? `\n${guard.report}` : "";
   const out = join(workspaceOf(tm.slug), ".peeblo", "out");
   await mkdir(out, { recursive: true });
   const file = `${sessionId}-${repo}.bundle`;
@@ -449,7 +458,7 @@ export async function publish(
         data: { repo, branch: target, pr: ontoPr, commit: incoming, pr_url: pj.html_url },
       });
       return {
-        text: `Pushed ${incoming.slice(0, 10)} onto #${ontoPr}'s branch ${target}: ${pj.html_url}`,
+        text: `Pushed ${incoming.slice(0, 10)} onto #${ontoPr}'s branch ${target}: ${pj.html_url}${notes}`,
         pushed: incoming,
         pr_url: pj.html_url,
       };
@@ -475,7 +484,7 @@ export async function publish(
       data: { repo, branch: w.branch, commit: incoming, pr_url: prUrl },
     });
     return {
-      text: `Pushed ${w.branch} (${incoming.slice(0, 10)})${prUrl ? ` and opened a draft PR: ${prUrl}` : ""}.`,
+      text: `Pushed ${w.branch} (${incoming.slice(0, 10)})${prUrl ? ` and opened a draft PR: ${prUrl}` : ""}.${notes}`,
       pushed: incoming,
       pr_url: prUrl,
     };

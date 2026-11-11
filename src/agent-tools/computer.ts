@@ -12,6 +12,7 @@ import { exec as vmExec, holdAwake, releaseAwake, workspaceOf } from "../environ
 import { config } from "../config.ts";
 import { newId } from "../ids.ts";
 import { checkAction, ruleMessage } from "../otari/rules.ts";
+import { checkRepoAction } from "../environment/guardrails.ts";
 import { CACHE_ENV, worktreesOf } from "../environment/repos.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
@@ -112,12 +113,16 @@ const writeT = async (ctx: ToolContext, t: Target, c: string) => {
   } else await vmWrite(ctx, t.guest, c);
 };
 
-// The rule engine's answer for an action; a refusal or "ask" sentence, or null to go ahead.
-async function rules(action: Parameters<typeof checkAction>[0]): Promise<{ deny?: string; ask?: string } | null> {
+// The rule engine's answer for an action; a refusal or "ask" sentence, or null to go ahead. Peeblo's own policy
+// first, then the guardrails of the repo the call works in (environment/guardrails.ts).
+async function rules(ctx: ToolContext, action: Parameters<typeof checkAction>[0]): Promise<{ deny?: string; ask?: string } | null> {
   const d = await checkAction(action);
   if (d.decision === "deny") return { deny: `Refused by the computer's rules: ${ruleMessage(d)}` };
-  if (d.decision === "ask") return { ask: ruleMessage(d) };
-  return null;
+  const worktrees = await worktreesOf(ctx.sessionId);
+  const repo = worktrees.length ? await checkRepoAction(ctx.teammate, ctx.sessionId, worktrees, action).catch(() => null) : null;
+  if (repo?.decision === "deny") return { deny: `Refused by the repo's guardrails: ${ruleMessage(repo)}` };
+  const asks = [d, repo].filter((x) => x?.decision === "ask").map((x) => ruleMessage(x!));
+  return asks.length ? { ask: asks.join(" ") } : null;
 }
 
 // Every command runs as a job: its output goes to files in the VM (/work/<session>/.jobs/<id>), so a command that
@@ -210,8 +215,8 @@ export const computerTools: AgentTool[] = [
       };
     },
     kind: "local",
-    async gate(_ctx, a) {
-      return rules({ commands: [a.command] });
+    async gate(ctx, a) {
+      return rules(ctx, { commands: [a.command] });
     },
     async run(ctx, a) {
       await sessionFolder(ctx);
@@ -232,7 +237,7 @@ export const computerTools: AgentTool[] = [
         watchJob(ctx, id, a.command);
         return {
           text: `Started in the background as job ${id}. Use computer_job to see its output, wait for it, or stop it.`,
-          data: { job: id },
+          data: { job: id, command: a.command },
         };
       }
       const r = await vmExec(ctx.teammate.id, ["sh", "-c", RUN, "sh", J, cwd, a.command], {
@@ -247,7 +252,7 @@ export const computerTools: AgentTool[] = [
         return {
           text: `Still running after ${a.timeout_seconds ?? 120} s, so it carries on in the background as job ${id} (computer_job waits for it or stops it). Output so far:\n${fmt(j)}`,
           ...(outside ? { untrusted: outside } : {}),
-          data: { job: id, ms: r.ms },
+          data: { job: id, ms: r.ms, command: a.command },
         };
       }
       // A fact: ad-hoc installs land on the working disk, which a reset throws away.
@@ -257,7 +262,12 @@ export const computerTools: AgentTool[] = [
       const note =
         install && r.exitCode === 0 ? "\n[peeblo: this install is lost at the next computer reset unless it's in your recipe.]" : "";
       const text = `exit ${r.exitCode} (${(r.ms / 1000).toFixed(1)} s)\n${fmt(j)}${note}`;
-      return { text, isError: r.exitCode !== 0, ...(outside ? { untrusted: outside } : {}), data: { exit_code: r.exitCode, ms: r.ms } };
+      return {
+        text,
+        isError: r.exitCode !== 0,
+        ...(outside ? { untrusted: outside } : {}),
+        data: { exit_code: r.exitCode, ms: r.ms, command: a.command },
+      };
     },
   },
   {
@@ -335,7 +345,7 @@ export const computerTools: AgentTool[] = [
     async gate(ctx, a) {
       const p = await target(ctx, a.path);
       if (!p) return { deny: `${a.path} is outside your workspace and your own checkouts.` };
-      return rules({ paths: [p.rel], pathSource: "pre_tool_use.read_target" });
+      return rules(ctx, { paths: [p.rel], pathSource: "pre_tool_use.read_target" });
     },
     async run(ctx, a) {
       await sessionFolder(ctx);
@@ -364,7 +374,7 @@ export const computerTools: AgentTool[] = [
     async gate(ctx, a) {
       const p = await target(ctx, a.path);
       if (!p) return { deny: `${a.path} is outside your workspace and your own checkouts.` };
-      return rules({ paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
+      return rules(ctx, { paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
     },
     async run(ctx, a) {
       await sessionFolder(ctx);
@@ -388,7 +398,7 @@ export const computerTools: AgentTool[] = [
     async gate(ctx, a) {
       const p = await target(ctx, a.path);
       if (!p) return { deny: `${a.path} is outside your workspace and your own checkouts.` };
-      return rules({ paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
+      return rules(ctx, { paths: [p.rel], pathSource: "pre_tool_use.edit_target" });
     },
     async run(ctx, a) {
       await sessionFolder(ctx);

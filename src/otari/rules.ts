@@ -33,8 +33,10 @@ export function policyYaml(): { yaml: string; hash: string } {
 const cache = new Map<string, Omit<RuleDecision, "cached">>();
 const MAX = 2000;
 
-export async function checkAction(a: Action): Promise<RuleDecision> {
-  const p = policyYaml();
+// `own`: another policy to check instead of Peeblo's (a repo's own guardrail file). It has no local fallback: when
+// Otari can't be reached the error goes to the caller, which asks a person.
+export async function checkAction(a: Action, own?: { yaml: string; hash: string }): Promise<RuleDecision> {
+  const p = own ?? policyYaml();
   const commands = a.commands ?? [];
   const paths = a.paths ?? [];
   const key = createHash("sha256")
@@ -51,7 +53,7 @@ export async function checkAction(a: Action): Promise<RuleDecision> {
     paths,
     path_source: a.pathSource ?? "pre_tool_use.edit_target",
   }).catch((e: { status?: number }) => {
-    if (e.status && e.status < 500 && e.status !== 429) throw e;
+    if (own || (e.status && e.status < 500 && e.status !== 429)) throw e;
     return { data: localCheck(p.yaml, commands, paths, a.pathSource ?? "pre_tool_use.edit_target"), requestId: null };
   });
   const failing = data.results.filter((g) => g.outcome !== "pass" && g.outcome !== "not_applicable");
@@ -114,7 +116,7 @@ export function parseGates(yaml: string): LocalGate[] {
       } as LocalGate;
     });
 }
-const globRe = (g: string) =>
+export const globRe = (g: string) =>
   new RegExp(
     `^${g
       .split("**")

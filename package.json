@@ -25,7 +25,8 @@
     "@mozilla-ai/pi-otari": "0.6.0",
     "open-bot-avatar": "0.1.2",
     "pg": "8.23.1",
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
