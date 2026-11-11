@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { salvageList, summarize, urlsIn } from "../src/proxy/tools.ts";
+import { salvageList, summarize, urlsIn } from "../src/proxy/results.ts";
 
 test("summarize: a list is counted, a record is named, text gives its first line", () => {
   assert.equal(summarize('[{"a":1},{"a":2}]'), "2 results");

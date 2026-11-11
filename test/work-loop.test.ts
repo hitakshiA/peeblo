@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countRepeat, isLoop } from "../src/proxy/tools.ts";
+import { countRepeat, isLoop } from "../src/proxy/loops.ts";
 import { modelsForPi } from "../src/proxy/relay.ts";
 import { bm25Index } from "../src/pi/peeblo-tools.ts";
 import { DEFAULT_HOSTS, egressRefusal } from "../src/environment/controller.ts";
