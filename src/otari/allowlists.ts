@@ -4,7 +4,8 @@
 //   refused, whatever the code asks for.
 //   Otari matches the list against where a call is sent (instance:model, e.g. deepinfra:Qwen/Qwen3-32B), not the
 //   catalog id asked for: a catalog id in the list is accepted but matches nothing (measured Nov 2026). So each
-//   catalog model is turned into its dispatch name with Otari's routing explain, five at a time (its limit).
+//   catalog model is listed under every provider Otari may send it to, its automatic fallbacks included (from
+//   Otari's fallbacks view); a model that view doesn't cover is resolved with routing explain, five at a time.
 // - tools: a teammate without the web tool gets none of Otari's search or fetch tools ([]); one with it inherits the
 //   workspace's (null).
 // Applied when a key is made, at start, and when a teammate's tools change; a key that already holds the same lists
@@ -16,13 +17,25 @@ const ROUTER = "otari:subagent-router";
 const EXPLAIN_MAX = 5;
 let cached: { at: number; models: string[] } | null = null;
 
-// Where each of these catalog models is sent. A group Otari refuses (one model it can't route) is explained one by one,
-// and a model that still can't be routed is left out: nothing could call it anyway.
+// Where each of these catalog models may be sent. A group explain refuses (one model it can't route) is explained one
+// by one, and a model that still can't be routed is left out: nothing could call it anyway.
 async function dispatchNames(ids: string[]): Promise<string[]> {
-  const { explainPolicy } = await import("./admin.ts");
+  const { admin, explainPolicy, session } = await import("./admin.ts");
+  const s = await session();
+  const fallbacks = s
+    ? await admin<{ models: { id: string; offerings: { selector: string }[] }[] }>(
+        "GET",
+        `/organizations/me/automatic-fallbacks?workspace_id=${s.workspaceId}`,
+        undefined,
+        "reading automatic fallbacks",
+        "",
+      ).catch(() => null)
+    : null;
+  const offered = new Map((fallbacks?.models ?? []).map((m) => [m.id, m.offerings.map((o) => o.selector)]));
+  const out = ids.flatMap((id) => offered.get(id) ?? []);
+  ids = ids.filter((id) => !offered.get(id)?.length);
   const plan = (g: string[]) =>
     explainPolicy({ spec: { select: [{ default: g[0] }], ...(g.length > 1 ? { on_failure: g.slice(1) } : {}) } });
-  const out: string[] = [];
   for (let i = 0; i < ids.length; i += EXPLAIN_MAX) {
     const group = ids.slice(i, i + EXPLAIN_MAX);
     const groups = await plan(group)
