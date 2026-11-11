@@ -443,7 +443,7 @@ export const otariTools: AgentTool[] = [
     async run(ctx, a) {
       if (!config.traceContent)
         return {
-          text: "This team doesn't keep conversation content in Otari (only the call records), so there's nothing to share. An admin can turn it on in the console's settings (keep trace content).",
+          text: "This team doesn't keep conversation content in Otari (only the call records), so there's nothing to share. Whoever runs Peeblo can turn it on: PEEBLO_TRACE_CONTENT=keep in .env, then restart. Only conversations after that can be shared.",
           isError: true,
         };
       const { traceOfSession } = await import("../otari/traces.ts");
