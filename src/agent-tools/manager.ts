@@ -56,7 +56,7 @@ async function keepModelIfNamed(runId: string | null, a: any): Promise<void> {
   if (!parts.some((p) => said.includes(p))) a.model = null;
 }
 
-export function configFrom(a: any): Partial<TeammateConfig> {
+function configFrom(a: any): Partial<TeammateConfig> {
   return {
     // Teammates run on the worker role policy in Otari (config/model-tiers.json), unless a person picked a model.
     name: a.name, role: a.role, instructions: a.instructions ?? "", model: { default: a.model || "peeblo-worker" }, // the worker role policy: Otari owns the fallback

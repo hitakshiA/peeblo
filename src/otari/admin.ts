@@ -9,7 +9,7 @@ import { pool } from "../db.ts";
 import { otari, OtariError } from "./client.ts";
 import { links } from "./links.ts";
 
-export class NoSession extends Error {
+class NoSession extends Error {
   link: string;
   constructor(link: string, what: string) {
     super(`Peeblo has no Otari dashboard session, so ${what} has to be done by a person: ${link}`);
@@ -60,15 +60,12 @@ export async function signOut(): Promise<void> {
   cached = undefined;
 }
 
-export let lastAdminRequestId: string | null = null;
-
 // One admin call with the session. A 401 means the session ended: forget it, so Peeblo asks again.
 export async function admin<T = any>(method: string, path: string, body: unknown, what: string, link: string): Promise<T> {
   const s = await session();
   if (!s) throw new NoSession(link, what);
   try {
     const r = await otari<T>(method, path.replaceAll("{workspace}", s.workspaceId), body, { auth: { cookie: s.cookie } });
-    lastAdminRequestId = r.requestId;
     return r.data;
   } catch (e) {
     if ((e as OtariError).status === 401) { await signOut(); throw new NoSession(link, what); }
@@ -107,7 +104,7 @@ export async function upsertRoutingPolicy(name: string, spec: PolicySpec): Promi
     await admin("POST", "/organizations/me/routing-policies", body, `setting the routing policy ${name}`, links.routingPolicy(name));
   }
 }
-export const deleteRoutingPolicy = (name: string) =>
+const deleteRoutingPolicy = (name: string) =>
   admin("DELETE", `/organizations/me/routing-policies/${encodeURIComponent(name)}?workspace_id={workspace}`, undefined, `deleting the routing policy ${name}`, links.routingPolicy(name));
 export const routingPolicies = () => admin<any>("GET", "/organizations/me/routing-policies", undefined, "listing routing policies", links.routing());
 

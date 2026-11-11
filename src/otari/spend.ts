@@ -14,7 +14,7 @@ import { otari, type OtariError, usageSummary } from "./client.ts";
 import { tiers } from "./people.ts";
 
 export type SpendMode = "key" | "tag";
-export async function spendMode(): Promise<SpendMode> {
+async function spendMode(): Promise<SpendMode> {
   if (config.teammateSpend === "key" || config.teammateSpend === "tag") return config.teammateSpend;
   return (await session()) ? "key" : "tag";
 }

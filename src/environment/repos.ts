@@ -29,10 +29,10 @@ export function reposOf(tm: Teammate): RepoConfig[] {
   const list = ((tm.config.computer as any)?.repos ?? []) as any[];
   return list.filter((r) => r && NAME.test(String(r.name)) && typeof r.remote === "string").map((r) => ({ base: "main", ...r }));
 }
-export const branchPrefix = (tm: Teammate) => String((tm.config as any).git?.branch_prefix ?? "peeblo/{teammate}/").replace("{teammate}", tm.slug);
+const branchPrefix = (tm: Teammate) => String((tm.config as any).git?.branch_prefix ?? "peeblo/{teammate}/").replace("{teammate}", tm.slug);
 const bare = (repo: string) => `/workspace/repos/${repo}.git`;
 const wtPath = (sessionId: string, repo: string) => `/work/${sessionId}/${repo}`;
-export const mirrorOf = (slug: string, repo: string) => join(config.dataDir, "teammates", slug, "mirror", `${repo}.git`);
+const mirrorOf = (slug: string, repo: string) => join(config.dataDir, "teammates", slug, "mirror", `${repo}.git`);
 // Shared package caches on the VM disk, so a second worktree installs from cache.
 export const CACHE_ENV = { npm_config_cache: "/var/cache/peeblo/npm", npm_config_store_dir: "/var/cache/peeblo/pnpm-store", UV_CACHE_DIR: "/var/cache/peeblo/uv", PIP_CACHE_DIR: "/var/cache/peeblo/pip" };
 
@@ -204,9 +204,9 @@ export async function repoFacts(tm: Teammate, sessionId: string): Promise<string
 }
 
 // --- publishing ---
-export type PublishCheck = { ok: true; heads: string[] } | { ok: false; reason: string };
+type PublishCheck = { ok: true; heads: string[] } | { ok: false; reason: string };
 // The rail: what a bundle may contain. Pure checks over `git bundle list-heads` and the mirror's refs.
-export function checkBundle(mirror: string, bundle: string, w: { branch: string; base: string }, protectedBranches: string[], prefix: string): PublishCheck {
+function checkBundle(mirror: string, bundle: string, w: { branch: string; base: string }, protectedBranches: string[], prefix: string): PublishCheck {
   try { hostGit(["--git-dir", mirror, "bundle", "verify", "--quiet", bundle]); } catch (e) { return { ok: false, reason: `the bundle doesn't verify: ${String((e as any).stderr ?? e).slice(0, 200)}` }; }
   const heads = hostGit(["--git-dir", mirror, "bundle", "list-heads", bundle]).split("\n").filter(Boolean).map((l) => l.split(" ")[1]);
   const def = (() => { try { return hostGit(["--git-dir", mirror, "symbolic-ref", "--short", "HEAD"]); } catch { return "main"; } })();
@@ -313,7 +313,7 @@ async function openDraftPr(tm: Teammate, r: RepoConfig, w: Worktree, pr: { title
 // --- cleanup ---
 // Ends a session's worktrees: WIP snapshot, unlock, remove; the branch stays if it has commits not on the base or
 // was published, else it is deleted. WIP refs are kept 14 days.
-export async function endWorktrees(teammateId: string, sessionId: string): Promise<{ removed: string[]; kept: string[] }> {
+async function endWorktrees(teammateId: string, sessionId: string): Promise<{ removed: string[]; kept: string[] }> {
   const tm = (await getTeammate(teammateId))!;
   const out = { removed: [] as string[], kept: [] as string[] };
   for (const w of await worktreesOf(sessionId)) {

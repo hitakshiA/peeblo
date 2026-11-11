@@ -54,7 +54,7 @@ export function removeSkill(tm: Teammate, name: string): boolean {
   return true;
 }
 
-export function skillsFor(tm: Teammate): string[] {
+function skillsFor(tm: Teammate): string[] {
   const computer = tm.config.tools.includes("computer");
   return [
     ...(tm.slug === "peeblo" ? ["working-as-chief-of-staff", "hiring-a-teammate", "writing-job-specs", "channel-etiquette", "company-setup", "changing-otari-settings"] : []),

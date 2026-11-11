@@ -10,12 +10,12 @@ import { checkModel } from "./model-change.ts";
 import { endUser, tiers } from "./otari/people.ts";
 import type { Person } from "./store/people.ts";
 
-export const TOOLS = ["web", "code", "computer"];
+const TOOLS = ["web", "code", "computer"];
 const ADMIN_CEILING = 500;
 const MONTH = 30 * 86400;
 
 // What the person may give one teammate a month: their own tier's limit, scaled to a month.
-export async function budgetCeiling(p: Person | null): Promise<number> {
+async function budgetCeiling(p: Person | null): Promise<number> {
   if (isOtariAdmin(p)) return ADMIN_CEILING;
   if (!p?.end_user_id) return 0;
   const all = await tiers().catch(() => []);

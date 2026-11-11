@@ -60,13 +60,6 @@ async function record(runId: string, sessionId: string, raw: Record<string, unkn
   return id;
 }
 
-// From inside a run's workflow: the request is a step, so a resumed run waits on the same approval.
-export async function requestApproval(runId: string, sessionId: string, action: Record<string, unknown>, ttlSeconds: number): Promise<ApprovalResult> {
-  const id = await DBOS.runStep(() => record(runId, sessionId, action, ttlSeconds), { name: "approval-request" });
-  const handle = await DBOS.startWorkflow(approvalWorkflow, { workflowID: id })(id, runId, sessionId, ttlSeconds);
-  return handle.getResult();
-}
-
 // The same call in the same run (what a person sees on the card): its kind, teammate, tool and arguments.
 // Free-text fields the model words differently on a retry (why, context, intent) don't make it a different call.
 const PROSE = new Set(["reason", "why", "context", "intent", "note", "explanation"]);

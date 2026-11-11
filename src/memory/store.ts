@@ -26,7 +26,7 @@ export function placeOfSession(session: { kind: string; place: any }): Place {
   if (s.channel_type === "group" || s.channel_type === "mpim" || String(s.channel).startsWith("G")) return { kind: "private", channel: s.channel };
   return { kind: "public", channel: s.channel };
 }
-export const writeBank = (p: Place) => (p.kind === "dm" && p.user ? `dm-${p.user}` : p.kind === "private" && p.channel ? `ch-${p.channel}` : "ws");
+const writeBank = (p: Place) => (p.kind === "dm" && p.user ? `dm-${p.user}` : p.kind === "private" && p.channel ? `ch-${p.channel}` : "ws");
 export const readBanks = (p: Place) => [...new Set([writeBank(p), "ws"])];
 
 function git(dir: string, args: string[]): string {
@@ -51,7 +51,7 @@ function parse(bank: string, path: string, text: string): Note {
 const front = (n: { title: string; verified: boolean; source: string }) => `---\ntitle: ${n.title.replace(/\n/g, " ")}\nverified: ${n.verified}\nsource: ${n.source.replace(/\n/g, " ")}\nupdated: ${new Date().toISOString()}\n---\n`;
 
 // A safe note path inside a bank: lowercase words, folders allowed, .md.
-export function notePath(p: string): string | null {
+function notePath(p: string): string | null {
   const n = normalize(String(p).trim().replace(/^\/+/, "")).toLowerCase().replace(/\s+/g, "-");
   if (!n || n.startsWith("..") || n.includes("/../") || !/^[a-z0-9][a-z0-9/_.-]{0,120}$/.test(n)) return null;
   return n.endsWith(".md") ? n : `${n}.md`;

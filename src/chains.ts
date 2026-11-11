@@ -12,18 +12,18 @@ import type { SlackPlace } from "./slack/inbound.ts";
 import { ownApp } from "./ingress/apps.ts";
 import { getPerson } from "./store/people.ts";
 
-export const MAX_DEPTH = config.chainDepth;
-export const MAX_CALLS = config.chainCalls;
-export const CHAIN_CAP_USD = config.chainCapUsd;
+const MAX_DEPTH = config.chainDepth;
+const MAX_CALLS = config.chainCalls;
+const CHAIN_CAP_USD = config.chainCapUsd;
 
 // The chain a run belongs to: its root run and its depth (0 for a person's own ask).
-export async function chainOf(runId: string | null): Promise<{ root: string | null; depth: number }> {
+async function chainOf(runId: string | null): Promise<{ root: string | null; depth: number }> {
   if (!runId) return { root: null, depth: 0 };
   const { rows } = await pool.query("SELECT data FROM events WHERE type = 'chain.call' AND data->>'child_run' = $1 LIMIT 1", [runId]);
   return rows[0] ? { root: rows[0].data.root, depth: Number(rows[0].data.depth) } : { root: runId, depth: 0 };
 }
 
-export async function chainRuns(root: string): Promise<string[]> {
+async function chainRuns(root: string): Promise<string[]> {
   const { rows } = await pool.query("SELECT data->>'child_run' AS r FROM events WHERE type = 'chain.call' AND data->>'root' = $1", [root]);
   return [root, ...rows.map((x) => x.r)];
 }

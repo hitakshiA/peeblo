@@ -5,11 +5,11 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const RESTART_CODE = 75;
+const RESTART_CODE = 75;
 const dir = () => process.env.PEEBLO_DATA_DIR?.trim() || "/data";
 const file = () => join(dir(), "settings.json");
 
-export function readSettings(): Record<string, string> {
+function readSettings(): Record<string, string> {
   try { return existsSync(file()) ? JSON.parse(readFileSync(file(), "utf8")) : {}; } catch { return {}; }
 }
 

@@ -73,7 +73,7 @@ const runWorkflow = DBOS.registerWorkflow(runWorkflowFn, { name: "run" });
 // At most config.maxRunning jobs work at once (each needs memory for its agent and computer): people's jobs wait
 // in a DBOS queue, oldest first. Work a running job is waiting on (a subagent, a call to another teammate) starts at
 // once instead: queued behind its own parent, the two would wait on each other.
-export const JOBS_QUEUE = "jobs";
+const JOBS_QUEUE = "jobs";
 export async function registerJobsQueue(): Promise<void> {
   await DBOS.registerQueue(JOBS_QUEUE, { workerConcurrency: config.maxRunning, onConflict: "always_update" });
 }

@@ -48,7 +48,7 @@ function target(a: any): string | null {
 }
 
 // The action in plain words: each argument on its own line, long text quoted, nested values flattened.
-export function preview(a: any): string {
+function preview(a: any): string {
   if (a.summary && (!a.arguments || a.kind === "teammate_change")) return String(a.summary);
   if (a.diff) return String(a.diff).slice(0, 2500);
   const args = a.arguments ?? {};

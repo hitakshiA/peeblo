@@ -8,7 +8,7 @@ import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
 import { getApp, saveApp } from "./apps.ts";
 
-export function verifySlack(secret: string, ts: string | undefined, body: string, sig: string | undefined, now = Date.now()): boolean {
+function verifySlack(secret: string, ts: string | undefined, body: string, sig: string | undefined, now = Date.now()): boolean {
   if (!ts || !sig || Math.abs(now / 1000 - Number(ts)) > 300) return false;
   const mine = "v0=" + createHmac("sha256", secret).update(`v0:${ts}:${body}`).digest("hex");
   return mine.length === sig.length && timingSafeEqual(Buffer.from(mine), Buffer.from(sig));
@@ -26,7 +26,7 @@ async function rawBody(req: IncomingMessage): Promise<string> {
 }
 
 // The first delivery of a message to an app wins; returns false for every later delivery of it to the same app.
-export async function claimMessage(teamId: string, channel: string, ts: string, appId: string, eventType: string): Promise<boolean> {
+async function claimMessage(teamId: string, channel: string, ts: string, appId: string, eventType: string): Promise<boolean> {
   const { rowCount } = await pool.query(
     "INSERT INTO slack_claims (team_id, channel, ts, app_id, event_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
     [teamId, channel, ts, appId, eventType],

@@ -16,7 +16,7 @@ import { modelFor, ROLES } from "../otari/routing.ts";
 import { capCheck, noteSpend, type CapRefusal } from "../otari/spend.ts";
 import { teammateAt } from "../store/teammates.ts";
 
-export type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
+type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
 export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; finalStatus?: { runId: string | null; calls: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
 const tokens = new Map<string, Binding>();
 

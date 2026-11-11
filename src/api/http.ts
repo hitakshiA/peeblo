@@ -1,7 +1,7 @@
 // A tiny JSON router over node:http. Handlers throw errors with a numeric `status` for client errors.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-export type Req = { method: string; path: string; params: Record<string, string>; query: URLSearchParams; body: any; headers: IncomingMessage["headers"] };
+type Req = { method: string; path: string; params: Record<string, string>; query: URLSearchParams; body: any; headers: IncomingMessage["headers"] };
 export type Handler = (req: Req) => Promise<unknown>;
 type Route = { method: string; pattern: RegExp; keys: string[]; handler: Handler };
 

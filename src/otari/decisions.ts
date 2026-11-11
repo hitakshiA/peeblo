@@ -17,7 +17,7 @@ export type Decision = { answers: Record<string, Answer>; via: "otari_decisions"
 
 const RECHECK_MS = 30 * 60_000;
 let providerMissingUntil = 0;
-export const decisionProviderMissing = (): boolean => Date.now() < providerMissingUntil;
+const decisionProviderMissing = (): boolean => Date.now() < providerMissingUntil;
 
 // Whether an answer fits its question; the reason is why not.
 function invalid(q: Question, a: unknown): string | null {

@@ -128,7 +128,7 @@ export async function settingsModal(tm: Teammate): Promise<any> {
 }
 
 // Saving it: the same authority rules as teammate_update, then a new version (its Slack profile follows).
-export async function saveSettings(team: string, user: string, slug: string, values: any): Promise<Record<string, string> | null> {
+async function saveSettings(team: string, user: string, slug: string, values: any): Promise<Record<string, string> | null> {
   const tm = await getTeammate(slug);
   const who = await personForSlack(team, user);
   if (!tm) return { instructions: "That teammate is gone." };

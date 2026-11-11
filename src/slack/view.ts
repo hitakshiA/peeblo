@@ -29,7 +29,7 @@ type View = {
 const slackLinks = (t: string) => t.replace(/<(https?:[^|>\s]+)\|([^>]+)>/g, "[$2]($1)").replace(/<(https?:[^>\s]+)>/g, "$1").replace(/`([a-z0-9-]+(\.[a-z0-9-]+)+)`/gi, "$1");
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u.slice(0, 40); } };
 // A source's link text names the thing, not the site: "GRO-327 · Eval check", "acme/web#212", else the page.
-export const sourceText = (u: string): string => {
+const sourceText = (u: string): string => {
   try {
     const url = new URL(u);
     const issue = /\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/([^/?#]+))?/.exec(url.pathname);

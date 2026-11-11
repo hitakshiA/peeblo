@@ -42,7 +42,7 @@ async function catalogModels() {
   return models;
 }
 // PDFs: Otari reads them for any model, so the teammate's own role comes first. Images: the vision role.
-export async function modelsFor(kind: Kind, own: string): Promise<string[]> {
+async function modelsFor(kind: Kind, own: string): Promise<string[]> {
   const first = kind === "pdf" ? [own] : kind === "image" ? ["peeblo-vision"] : [];
   const rank = (id: string) => "SABCDE".indexOf(tierOf(id)?.tier ?? "E");
   const able = (await catalogModels()).filter((m) => !m.deprecated && isOpenWeight(m.id) && (m.input_modalities ?? []).includes(kind)).map((m) => m.id);

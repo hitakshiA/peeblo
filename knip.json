@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/bin.ts",
+    "src/pi/peeblo-tools.ts",
+    "test/**/*.test.ts"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "ignoreDependencies": [
+    "@mozilla-ai/pi-otari"
+  ],
+  "ignoreBinaries": [
+    "vm_stat",
+    "build"
+  ]
+}

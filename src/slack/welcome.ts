@@ -26,7 +26,7 @@ type Where = { channel: string; thread_ts?: string | null; channel_type: string 
 export type Why = "installed" | "opened" | "joined";
 
 // Starts the welcome in a place (the person's DM with the teammate, or the hire thread for a channel hire).
-export async function firstContact(tm: Teammate, appId: string, team: string, slackUser: string, why: Why, where?: Where): Promise<void> {
+async function firstContact(tm: Teammate, appId: string, team: string, slackUser: string, why: Why, where?: Where): Promise<void> {
   let place = where;
   if (!place) {
     const dm: any = await slack(appId, "conversations.open", { users: slackUser }).catch(() => null);

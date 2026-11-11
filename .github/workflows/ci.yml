@@ -30,6 +30,9 @@ jobs:
       # Unit tests: pure rules only, no database or network.
       - name: Test
         run: pnpm test
+      # Unused files, exports and dependencies.
+      - name: Unused code
+        run: pnpm knip
 
   console:
     runs-on: ubuntu-latest

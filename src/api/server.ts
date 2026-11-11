@@ -22,7 +22,7 @@ import { addConsoleRoutes, consoleCookie, consolePerson, login, logout, serveCon
 import { addSetupRoutes } from "./setup.ts";
 
 
-export const router = new Router()
+const router = new Router()
   .add("GET", "/healthz", async () => ({ ok: true }))
   .add("GET", "/v1/teammates", async () => {
     // Each with its face (shape and color), so the console draws the same live avatar as Slack's ID card.

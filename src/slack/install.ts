@@ -33,7 +33,7 @@ async function approvalNote(appId: string, slackUser: string | null): Promise<st
   return `If Slack asks you to request it instead, a Workspace Owner approves it (${who}) under ${where}.`;
 }
 
-export async function installBlocks(tm: Teammate, url: string, peebloApp: string, slackUser: string | null): Promise<any[]> {
+async function installBlocks(tm: Teammate, url: string, peebloApp: string, slackUser: string | null): Promise<any[]> {
   const note = await approvalNote(peebloApp, slackUser);
   return [
     { type: "actions", block_id: `install:${tm.slug}`, elements: [{ type: "button", style: "primary", text: { type: "plain_text", text: `Add ${tm.config.name} to Slack` }, url, action_id: "install" }] },
@@ -54,7 +54,7 @@ export async function offerOnCard(tm: Teammate, runId: string | null, url: strin
 
 // The ID card with its install button. A card inside the reply's message (inline) can't carry it, because that
 // message is redrawn as the work goes on, so the button gets its own message in the thread.
-export async function postInstall(tm: Teammate, card: { app_id: string; channel: string; ts: string; inline: boolean; image: string | null; thread_ts?: string }, url: string, slackUser: string | null): Promise<void> {
+async function postInstall(tm: Teammate, card: { app_id: string; channel: string; ts: string; inline: boolean; image: string | null; thread_ts?: string }, url: string, slackUser: string | null): Promise<void> {
   const blocks = [
     ...(card.image ? [{ type: "image", image_url: card.image, alt_text: `${tm.config.name}'s ID card` }] : []),
     { type: "section", text: { type: "mrkdwn", text: `*${tm.config.name} is hired.* Add it to Slack so it posts as itself.` } },

@@ -8,9 +8,9 @@ import { otari } from "./client.ts";
 // No `user` on these calls: with a service key, Otari answers 403 "'user' field does not match the authenticated
 // API key's user" on /embeddings and /rerank (chat accepts it). endUser stays in the signatures for when it does.
 
-export const EMBED_MODEL = config.embedModel;
-export const RERANK_MODEL = config.rerankModel;
-export const EMBED_DIMS = config.embedDims;
+const EMBED_MODEL = config.embedModel;
+const RERANK_MODEL = config.rerankModel;
+const EMBED_DIMS = config.embedDims;
 // Qwen3 embeddings expect an instruction on queries (not on documents).
 const QUERY_INSTRUCTION = "Instruct: Given a question from a teammate, find the notes that answer it\nQuery: ";
 
@@ -24,8 +24,8 @@ export async function embed(texts: string[], kind: "query" | "document", _endUse
   return { vectors, requestId, cost: data.usage?.cost_usd === undefined ? null : Number(data.usage.cost_usd) };
 }
 
-export type Ranked = { index: number; score: number };
-export async function rerank(query: string, documents: string[], topN = 5, _endUser?: string): Promise<{ results: Ranked[]; requestId: string | null; cost: number | null }> {
+type Ranked = { index: number; score: number };
+async function rerank(query: string, documents: string[], topN = 5, _endUser?: string): Promise<{ results: Ranked[]; requestId: string | null; cost: number | null }> {
   if (!documents.length) return { results: [], requestId: null, cost: 0 };
   const { data, requestId } = await otari<{ results: { index: number; relevance_score: number }[]; usage?: { cost_usd?: string | number } }>("POST", "/rerank", {
     model: RERANK_MODEL, query, documents: documents.map((d) => d.slice(0, 4000)), top_n: Math.min(topN, documents.length),

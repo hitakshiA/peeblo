@@ -56,7 +56,7 @@ export function modeRule(mode: TeammateConfig["mode"], risk: Risk): "allow" | "c
   return mode === "trusted" ? "allow" : "review";
 }
 
-export type ReviewInput = { teammate: string; asks: string[]; agentWritten?: string | null; action: { server: string; tool: string; arguments: Record<string, unknown> }; done: string[]; taint: string[] };
+type ReviewInput = { teammate: string; asks: string[]; agentWritten?: string | null; action: { server: string; tool: string; arguments: Record<string, unknown> }; done: string[]; taint: string[] };
 
 export async function review(runId: string, sessionId: string, action: { teammate: string; server: string; tool: string; arguments: Record<string, unknown> }, endUser?: string): Promise<GateDecision> {
   // Only what a person wrote counts as intent (src/approvers.ts); a schedule's stored prompt is labelled as the agent's.
@@ -70,7 +70,7 @@ export async function review(runId: string, sessionId: string, action: { teammat
 }
 
 // The two stages on given inputs (also what the policy eval calls).
-export async function decideReview(i: ReviewInput, endUser?: string): Promise<GateDecision> {
+async function decideReview(i: ReviewInput, endUser?: string): Promise<GateDecision> {
   const state = [
     `Teammate: ${i.teammate}`,
     `What a person asked, in their own words (oldest first):\n${i.asks.slice(-5).map((a, n) => `${n + 1}. ${a.slice(0, 600)}`).join("\n") || "nothing: no person asked for this job"}`,

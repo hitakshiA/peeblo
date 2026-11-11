@@ -7,7 +7,7 @@ import { links } from "./links.ts";
 
 const traceBySession = new Map<string, string>();
 
-export async function traceIdForRequest(requestId: string): Promise<string | null> {
+async function traceIdForRequest(requestId: string): Promise<string | null> {
   const r = await admin<any>("GET", `/organizations/me/usage?request_group_id=${encodeURIComponent(requestId)}&limit=1`, undefined, "finding a request's trace", links.request(requestId));
   return ((r.data ?? r) as { source_label?: string }[])[0]?.source_label ?? null;
 }

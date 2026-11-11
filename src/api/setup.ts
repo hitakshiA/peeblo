@@ -43,7 +43,7 @@ async function peebloApp(): Promise<{ app_id: string; team_id: string | null; bo
   return (await pool.query("SELECT a.app_id, a.team_id, a.bot_user_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1")).rows[0] ?? null;
 }
 
-export async function setupState(): Promise<any> {
+async function setupState(): Promise<any> {
   const { links } = await import("../otari/links.ts");
   const { session } = await import("../otari/admin.ts");
   const region = config.otariRegion === "eu" || config.otariBaseUrl.includes("eu.api") ? "eu" : "us";
