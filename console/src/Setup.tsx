@@ -79,7 +79,7 @@ function useBusy() {
 
 function LoginForm({ onIn }: { onIn: () => void }) {
   const [pw, setPw] = useState("");
-  const { busy, err, setErr, run } = useBusy();
+  const { busy, err, run } = useBusy();
   const go = (e: FormEvent) => {
     e.preventDefault();
     run(() => post("/v1/console/login", { password: pw }).catch((x) => { throw x instanceof ApiError && x.status === 401 ? new ApiError(400, "That password isn't right.") : x; }))
