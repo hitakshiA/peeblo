@@ -441,8 +441,14 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
           : budgetReply(m, tm.config.name);
     return { text: own, stopReason: "budget_blocked" };
   }
-  if (r.stopReason === "error") {
-    throw new Error(`model error: ${r.error ?? "unknown"}`);
+  if (r.stopReason === "error" || r.stopReason === "aborted") {
+    // A person said stop: the aborted call is how a stop ends, not a model error.
+    const stopped = await pool.query(
+      "SELECT 1 FROM events x JOIN runs r ON r.id = $1 WHERE x.session_id = r.session_id AND x.type = 'slack.stop' AND (x.data->>'stopped')::boolean AND x.at >= r.created_at LIMIT 1",
+      [ctx.run.id],
+    );
+    if (stopped.rows.length) return { text: "", stopReason: "stopped" };
+    if (r.stopReason === "error") throw new Error(`model error: ${r.error ?? "unknown"}`);
   }
   return r;
 }

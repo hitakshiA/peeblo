@@ -192,8 +192,11 @@ export function installSlackInbound(): void {
         }
       }
       let stopped = false;
-      for (const sid of sids.includes(session.id) ? [session.id] : sids)
-        stopped = (stopHandler ? await stopHandler(sid) : false) || stopped;
+      const targets = sids.includes(session.id) ? [session.id] : sids;
+      // Recorded where the stopped job is first, so it ends as stopped (not an error) and its message says who.
+      for (const sid of targets)
+        if (sid !== session.id) await appendEvent({ sessionId: sid, type: "slack.stop", data: { user: ev.user, stopped: true } });
+      for (const sid of targets) stopped = (stopHandler ? await stopHandler(sid) : false) || stopped;
       await appendEvent({ sessionId: session.id, type: "slack.stop", data: { user: ev.user, stopped } });
       return;
     }
