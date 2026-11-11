@@ -114,9 +114,9 @@ export const batchRunTool: AgentTool = {
     name: { type: ["string", "null"], description: "A short name, e.g. ticket-labels." },
     max_tokens: {
       type: ["integer", "null"],
-      minimum: 50,
+      minimum: 300,
       maximum: 32000,
-      description: `The longest one answer may be, in tokens. Default ${DEFAULT_MAX_TOKENS}.`,
+      description: `The longest one answer may be, in tokens, thinking included: the model reasons first, so even a one-word label needs about 300. Default ${DEFAULT_MAX_TOKENS}.`,
     },
     model: {
       type: ["string", "null"],
