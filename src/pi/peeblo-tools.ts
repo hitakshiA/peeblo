@@ -6,7 +6,7 @@
 // stays the same for the whole session (registering them all at start cost ~25 s per session).
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-type Listed = { name: string; description: string; input_schema: Record<string, unknown>; asks: boolean; direct: boolean };
+type Listed = { name: string; description: string; input_schema: Record<string, unknown>; asks: boolean; direct: boolean; note?: string };
 
 export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
   const base = process.env.PEEBLO_TOOLS_URL;
@@ -54,7 +54,7 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
     pi.registerTool({
       name: t.name,
       label: t.name.replace("__", " · "),
-      description: t.asks ? `${t.description}\n(Runs only after a person approves it.)` : t.description,
+      description: `${t.description}${t.note ? `\n${t.note}` : ""}${t.asks ? "\n(Runs only after a person approves it.)" : ""}`,
       parameters: t.input_schema as any,
       async execute(toolCallId, params, signal) {
         return call(t.name, params, toolCallId, signal);
@@ -92,8 +92,15 @@ export default async function peebloTools(pi: ExtensionAPI): Promise<void> {
         (t) =>
           `- ${t.name}: ${t.description.slice(0, 400)}${t.asks ? " (runs only after a person approves it)" : ""}\n  arguments: ${JSON.stringify(t.input_schema)}`,
       );
+      // Each connection's note once, in full: its ids and limits are what the first call needs.
+      const notes = [...new Set(ranked.map((t) => t.note).filter((n): n is string => Boolean(n)))];
       return {
-        content: [{ type: "text", text: `Call one with use_tool, giving its name and arguments:\n${lines.join("\n")}` }],
+        content: [
+          {
+            type: "text",
+            text: `Call one with use_tool, giving its name and arguments:\n${lines.join("\n")}${notes.length ? `\n\n${notes.join("\n")}` : ""}`,
+          },
+        ],
         details: {},
       };
     },

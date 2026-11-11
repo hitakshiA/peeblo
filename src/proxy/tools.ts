@@ -89,7 +89,7 @@ async function oneAtATime<T>(sessionId: string, f: () => Promise<T>): Promise<T>
 // Invalid arguments get one retry with the reason; a second failure in a row stops the tool for the turn.
 const invalidStreak = new Map<string, number>();
 
-type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean };
+type Listed = { name: string; description: string; input_schema: unknown; asks: boolean; direct: boolean; note?: string };
 
 // a session starts with Peeblo's own tools and only the few connector tools this teammate uses most
 // (from its own history; for a new teammate, the first reads). The rest are found with find_tools.
@@ -171,12 +171,10 @@ export async function handleTools(
         .filter((t) => !subagent || classify(t, {}) === "read")
         .map((t) => ({
           name: t.name,
-          description:
-            t.server === "github" && repos
-              ? `${t.description}\n${repos}`
-              : hintFor(t.server, t.tool)
-                ? `${t.description}\n${hintFor(t.server, t.tool)}`
-                : t.description,
+          description: t.server === "github" && repos ? `${t.description}\n${repos}` : t.description,
+          // What Peeblo and the company know about this connection (ids, limits, query shapes), kept apart so a
+          // shortened description never cuts it off.
+          note: hintFor(t.server, t.tool) || undefined,
           input_schema: t.inputSchema,
           asks: needsApproval(tm.config.mode, classify(t, {})),
           direct: direct.has(t.name),
