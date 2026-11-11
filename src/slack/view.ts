@@ -189,17 +189,28 @@ const planTitle = (v: View): string => {
   return `Working on it · step ${k === -1 ? n : k + 1} of ${Math.max(n, 1)}`;
 };
 const rich = (t: string) => ({ type: "rich_text", elements: [{ type: "rich_text_section", elements: [{ type: "text", text: t }] }] });
+// Slack's plan block takes at most 50 tasks (more is invalid_blocks, and the whole redraw is refused, cards included).
+// A long job keeps its newest steps; the oldest finished ones fold into one line.
+const MAX_TASKS = 50;
 function planBlock(v: View, title: string): any {
+  let entries = [...v.tasks.entries()];
+  let folded: any[] = [];
+  if (entries.length > MAX_TASKS) {
+    const over = entries.length - (MAX_TASKS - 1);
+    const old = entries.slice(0, over);
+    entries = entries.slice(over);
+    folded = [{ task_id: "earlier", title: `${old.length} earlier steps`, status: old.some((x) => x[1].status === "error") ? "error" : "complete" }];
+  }
   return {
     type: "plan",
     title: title.slice(0, 120),
-    tasks: [...v.tasks.entries()].map(([id, t]) => ({
+    tasks: [...folded, ...entries.map(([id, t]) => ({
       task_id: id,
       title: t.title.slice(0, 120),
       status: t.status,
       ...(t.output ? { output: rich(t.output.slice(0, 200)) } : {}),
       ...(t.sources?.length ? { sources: t.sources.map((s) => ({ type: "url", url: s.url, text: s.text })) } : {}),
-    })),
+    }))],
   };
 }
 
