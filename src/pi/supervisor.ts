@@ -340,6 +340,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     const into = l.runId;
     const ok = await l.rpc.send("steer", { message: `<peeblo_event kind="mid_job">This message arrived while you were working on the job above. If it's a question, answer it in a line with slack_post (more: true); if it changes the ask, change course; then carry on.</peeblo_event>\n${wrapped}` }).then(() => true, () => false);
     if (ok) {
+      personSteers.set(ctx.session.id, Date.now());
       await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "run.merged", data: { into, steered: true } });
       return { text: "", stopReason: "merged" };
     }
@@ -532,6 +533,11 @@ export function installPiExecutor(): void {
     return { summary: r.text.slice(0, 500) };
   });
 }
+
+// When a person last spoke into a running job: a tool that waits (computer_job wait) returns early, so the
+// message is answered now rather than after the wait.
+const personSteers = new Map<string, number>();
+export const steeredSince = (sessionId: string, t: number) => (personSteers.get(sessionId) ?? 0) > t;
 
 // A fact for a session from outside its turn (a background command finished): steered into the job if one is
 // running there now; otherwise the agent finds it with the tool when it next looks.

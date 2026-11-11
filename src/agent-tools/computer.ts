@@ -203,8 +203,19 @@ export const computerTools: AgentTool[] = [
         watching.delete(id);
       } else if (a.action === "wait") {
         const secs = a.seconds ?? 300;
-        // The wait runs inside the VM with its own limit, so nothing is left looping there.
-        await vmExec(ctx.teammate.id, ["sh", "-c", 'timeout "$1" sh -c \'while [ ! -f "$0/exit" ]; do sleep 1; done\' "$0"', J, String(secs)], { sessionId: ctx.sessionId, timeoutMs: (secs + 15) * 1000 });
+        const { steeredSince } = await import("../pi/supervisor.ts");
+        const t0 = Date.now();
+        // In slices, each with its own limit inside the VM (nothing is left looping there); a person's message
+        // ends the wait so it's answered now.
+        while (Date.now() - t0 < secs * 1000) {
+          const slice = Math.min(15, Math.ceil(secs - (Date.now() - t0) / 1000));
+          const r = await vmExec(ctx.teammate.id, ["sh", "-c", 'timeout "$1" sh -c \'while [ ! -f "$0/exit" ]; do sleep 1; done\' "$0"', J, String(slice)], { sessionId: ctx.sessionId, timeoutMs: (slice + 15) * 1000 });
+          if (r.exitCode === 0) break;
+          if (steeredSince(ctx.sessionId, t0)) {
+            const j = await showJob(ctx, id, 2_000);
+            return { text: `Still running; a message from a person arrived while you waited. Answer it, then wait again.\nOutput so far:\n${fmt(j)}`, untrusted: "computer:job" };
+          }
+        }
       }
       const j = await showJob(ctx, id);
       if (!j.out && !j.err && j.exit === null && a.action !== "stop") {
