@@ -51,6 +51,8 @@ export function Face({ slug, face, size = 56, live = true, mood = "idle", follow
   const [failedFor, setFailedFor] = useState<string | null>(null);
   const failed = failedFor === id;
 
+  // id stands for slug and face, so the face remounts only when it changes; mood is applied below without remounting.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: id covers slug and face
   useEffect(() => {
     if (failed) return;
     let gone = false;
@@ -63,8 +65,6 @@ export function Face({ slug, face, size = 56, live = true, mood = "idle", follow
       avatar.current = mountAvatar(host.current, { definition, color: f.color, mood, followPointer: follow && live, still: !live, reducedMotion: "system", label: "" });
     })().catch(() => { if (!gone) setFailedFor(id); });
     return () => { gone = true; avatar.current?.destroy(); avatar.current = null; };
-    // mood is applied below without remounting
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, live, follow, failed]);
 
   useEffect(() => { avatar.current?.update({ mood }); }, [mood]);

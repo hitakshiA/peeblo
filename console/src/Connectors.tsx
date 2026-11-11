@@ -40,7 +40,7 @@ export function Connectors() {
   return <>
     <div className="page-head">
       <div><h1>Connectors</h1><p className="sub">The services your teammates can use, like Linear, GitHub or Notion. Each connector is an MCP server in your Otari; you choose which teammates get it.</p></div>
-      <div className="row">{data?.add_url && <a className="btn" href={data.add_url} target="_blank" rel="noreferrer">Add a connector in Otari<span className="ext" aria-hidden="true">↗</span></a>}<button className="ghost" disabled={busy} onClick={refresh}>{busy ? "Refreshing…" : "Refresh"}</button></div>
+      <div className="row">{data?.add_url && <a className="btn" href={data.add_url} target="_blank" rel="noreferrer">Add a connector in Otari<span className="ext" aria-hidden="true">↗</span></a>}<button type="button" className="ghost" disabled={busy} onClick={refresh}>{busy ? "Refreshing…" : "Refresh"}</button></div>
     </div>
     <ol className="howto card">
       <li>In Otari, open <b>Tools → MCP servers → Add</b>.</li>

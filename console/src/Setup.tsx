@@ -63,6 +63,8 @@ const Dot = ({ ok }: { ok: boolean | null | undefined }) => <span className={`do
 const Err = ({ msg }: { msg: string | null | undefined }) => (msg ? <div className="err" role="alert">{msg}</div> : null);
 const Head = ({ title, children }: { title: string; children?: ReactNode }) => <div className="step-head"><h2>{title}</h2>{children && <p className="lead">{children}</p>}</div>;
 const Status = ({ ok, children }: { ok: boolean | null; children: ReactNode }) => <div className={`status ${ok === true ? "ok" : ok === false ? "bad" : ""}`}><Dot ok={ok} /><div>{children}</div></div>;
+// A fixed list written in the page itself: its order never changes, so the position is a stable key.
+// biome-ignore lint/suspicious/noArrayIndexKey: static list
 const Howto = ({ steps }: { steps: ReactNode[] }) => <ol className="howto">{steps.map((s, i) => <li key={i}>{s}</li>)}</ol>;
 
 function useBusy() {
@@ -88,7 +90,7 @@ function LoginForm({ onIn }: { onIn: () => void }) {
   return <form className="stack" onSubmit={go}>
     <label>Console password<input type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus /></label>
     <Err msg={err} />
-    <div><button className="moss" disabled={busy || !pw}>{busy ? "Signing in…" : "Sign in"}</button></div>
+    <div><button type="submit" className="moss" disabled={busy || !pw}>{busy ? "Signing in…" : "Sign in"}</button></div>
   </form>;
 }
 
@@ -125,14 +127,14 @@ export function ConnectOtari({ onDone, compact = false }: { onDone: () => void; 
     </div>
     <Err msg={err} />
     {msg && <Status ok>{msg}</Status>}
-    <div><button className="moss" disabled={busy || !email || !password}>{busy ? "Connecting…" : "Connect Otari"}</button></div>
+    <div><button type="submit" className="moss" disabled={busy || !email || !password}>{busy ? "Connecting…" : "Connect Otari"}</button></div>
   </form>;
 }
 
 // ---- steps ---------------------------------------------------------------------------------------------------------
 
 type StepProps = { s: SetupState; reload: () => Promise<void>; advance: () => void; restart: (note?: string) => void };
-const Continue = ({ advance, label = "Continue" }: { advance: () => void; label?: string }) => <div className="step-foot"><button className="moss" onClick={advance}>{label}</button></div>;
+const Continue = ({ advance, label = "Continue" }: { advance: () => void; label?: string }) => <div className="step-foot"><button type="button" className="moss" onClick={advance}>{label}</button></div>;
 
 function PasswordStep({ s, signedIn, reload, advance }: StepProps & { signedIn: boolean }) {
   const [pw, setPw] = useState(""); const [again, setAgain] = useState("");
@@ -160,7 +162,7 @@ function PasswordStep({ s, signedIn, reload, advance }: StepProps & { signedIn: 
         <label>Again, to confirm<input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} /></label>
       </div>
       <Err msg={err} />
-      <div><button className="moss" disabled={busy || !pw || !again}>{busy ? "Saving…" : "Set password"}</button></div>
+      <div><button type="submit" className="moss" disabled={busy || !pw || !again}>{busy ? "Saving…" : "Set password"}</button></div>
     </form>
   </>;
 }
@@ -199,7 +201,7 @@ function OtariStep({ s, reload, advance, restart }: StepProps) {
         {!keyRegion && <label>Region<select value={region} onChange={(e) => setRegion(e.target.value)}><option value="us">US</option><option value="eu">EU</option></select></label>}
       </div>
       <Err msg={err} />
-      <div className="row"><button className="moss" disabled={busy || !key.trim()}>{busy ? "Checking…" : "Save key"}</button>{o.key_set && o.key_ok && <button type="button" className="ghost" onClick={advance}>Keep the current key</button>}</div>
+      <div className="row"><button type="submit" className="moss" disabled={busy || !key.trim()}>{busy ? "Checking…" : "Save key"}</button>{o.key_set && o.key_ok && <button type="button" className="ghost" onClick={advance}>Keep the current key</button>}</div>
     </form>
   </>;
 }
@@ -213,7 +215,7 @@ function ConnectStep({ s, reload, advance }: StepProps) {
     {o.connected && !again
       ? <>
         <Status ok>Connected{o.signed_in_as ? <> as <b>{o.signed_in_as}</b></> : null}{o.session_expires_at ? `, until ${when(o.session_expires_at)}` : ""}.</Status>
-        <div className="step-foot"><button className="moss" onClick={advance}>Continue</button><button className="ghost" onClick={() => setAgain(true)}>Sign in again</button></div>
+        <div className="step-foot"><button type="button" className="moss" onClick={advance}>Continue</button><button type="button" className="ghost" onClick={() => setAgain(true)}>Sign in again</button></div>
       </>
       : <ConnectOtari compact onDone={() => { setAgain(false); reload().then(advance); }} />}
   </>;
@@ -221,7 +223,7 @@ function ConnectStep({ s, reload, advance }: StepProps) {
 
 function ReadinessStep({ s, reload, advance, restart }: StepProps) {
   const [busy, setBusy] = useState(false);
-  const useGuard = (mode: string) => { setBusy(true); post<{ ok: boolean; restarting?: boolean }>("/v1/setup/guard", { mode }).then((r) => { if (r?.restarting) restart(mode === "open" ? "Switched to the open guard model." : "Switched to Lakera."); }).finally(() => setBusy(false)); };
+  const switchGuard = (mode: string) => { setBusy(true); post<{ ok: boolean; restarting?: boolean }>("/v1/setup/guard", { mode }).then((r) => { if (r?.restarting) restart(mode === "open" ? "Switched to the open guard model." : "Switched to Lakera."); }).finally(() => setBusy(false)); };
   const items = s.readiness ?? [];
   const ready = items.filter((i) => i.ok === true).length;
   const passed = STEPS.indexOf(s.next) > STEPS.indexOf("readiness");
@@ -237,13 +239,13 @@ function ReadinessStep({ s, reload, advance, restart }: StepProps) {
             <Dot ok={i.ok} />
             <div className="check-text"><b>{i.label}</b>{i.detail && <span className="muted">{i.detail}</span>}</div>
             {i.ok !== true && i.fix_url && <Ext href={i.fix_url} className="btn ghost small">{i.fix_text || "Fix in Otari"}</Ext>}
-            {(i as any).alt && <button className="ghost small" disabled={busy} onClick={() => useGuard((i as any).alt.mode)}>{(i as any).alt.text}</button>}
+            {(i as any).alt && <button type="button" className="ghost small" disabled={busy} onClick={() => switchGuard((i as any).alt.mode)}>{(i as any).alt.text}</button>}
           </li>)}
         </ul>
       </>}
     <div className="step-foot">
-      <button className={passed ? "ghost" : "moss"} disabled={busy} onClick={check}>{busy ? "Checking…" : "Check again"}</button>
-      {passed && <button className="moss" onClick={advance}>Continue</button>}
+      <button type="button" className={passed ? "ghost" : "moss"} disabled={busy} onClick={check}>{busy ? "Checking…" : "Check again"}</button>
+      {passed && <button type="button" className="moss" onClick={advance}>Continue</button>}
     </div>
   </>;
 }
@@ -273,7 +275,7 @@ function PublicUrlStep({ s, reload, advance, restart }: StepProps) {
       <label>Public address<input type="url" inputMode="url" spellCheck={false} placeholder="https://peeblo.example.com" value={url} onChange={(e) => setUrl(e.target.value)} /></label>
       <Err msg={err} />
       {warn && <Status ok={false}>{warn}</Status>}
-      <div className="row"><button className="moss" disabled={busy || !url.trim()}>{busy ? "Testing…" : "Test and save"}</button>{p.value && p.reachable && <button type="button" className="ghost" onClick={advance}>Keep this address</button>}</div>
+      <div className="row"><button type="submit" className="moss" disabled={busy || !url.trim()}>{busy ? "Testing…" : "Test and save"}</button>{p.value && p.reachable && <button type="button" className="ghost" onClick={advance}>Keep this address</button>}</div>
     </form>
   </>;
 }
@@ -304,7 +306,7 @@ function SlackStep({ s, reload, advance }: StepProps) {
   return <>
     <Head title="Add Peeblo to Slack">Peeblo makes its own Slack app. It needs a configuration token from Slack to do that, once.</Head>
     {tokenOk && !replace
-      ? <Status ok>Slack token saved{sl.workspace ? <> for <b>{sl.workspace}</b></> : null}. <button className="linkish" onClick={() => setReplace(true)}>Replace it</button></Status>
+      ? <Status ok>Slack token saved{sl.workspace ? <> for <b>{sl.workspace}</b></> : null}. <button type="button" className="linkish" onClick={() => setReplace(true)}>Replace it</button></Status>
       : <>
         {sl.token_set && !sl.token_ok && <Status ok={false}>Slack didn't accept the saved token. Generate a new one.</Status>}
         <Howto steps={[<>Open Slack's app page.</>, <>Under <b>Your App Configuration Tokens</b>, choose <b>Generate Token</b> and pick your workspace.</>, <>Copy both tokens here. Already have a token for this workspace (Generate is greyed out)? Use its two <b>Copy</b> buttons.</>]} />
@@ -315,13 +317,13 @@ function SlackStep({ s, reload, advance }: StepProps) {
             <label>Refresh token<input type="password" autoComplete="off" spellCheck={false} value={refresh} onChange={(e) => setRefresh(e.target.value)} /></label>
           </div>
           <Err msg={tok.err} />
-          <div className="row"><button className="moss" disabled={tok.busy || !access.trim() || !refresh.trim()}>{tok.busy ? "Checking…" : "Save tokens"}</button>{replace && <button type="button" className="ghost" onClick={() => setReplace(false)}>Cancel</button>}</div>
+          <div className="row"><button type="submit" className="moss" disabled={tok.busy || !access.trim() || !refresh.trim()}>{tok.busy ? "Checking…" : "Save tokens"}</button>{replace && <button type="button" className="ghost" onClick={() => setReplace(false)}>Cancel</button>}</div>
         </form>
       </>}
 
     {tokenOk && !replace && <div className="slack-stage">
       {!sl.app_created && <>
-        <button className="big moss" disabled={app.busy} onClick={createApp}>{app.busy ? "Creating Peeblo's app…" : "Create Peeblo's Slack app"}</button>
+        <button type="button" className="big moss" disabled={app.busy} onClick={createApp}>{app.busy ? "Creating Peeblo's app…" : "Create Peeblo's Slack app"}</button>
         <Err msg={app.err} />
       </>}
       {sl.app_created && !sl.installed && <>
@@ -331,7 +333,7 @@ function SlackStep({ s, reload, advance }: StepProps) {
       </>}
       {sl.installed && <>
         <div className="arrived"><Face slug="peeblo" face={PEEBLO_FACE} size={64} mood="happy" /><div><b>Peeblo is in Slack: it's sent you a DM.</b>{admins.length > 0 && <div className="muted">Admin: {admins.join(", ")}</div>}</div></div>
-        <div className="step-foot">{sl.peeblo_dm_url && <Ext href={sl.peeblo_dm_url} className="btn moss">Open Peeblo in Slack</Ext>}<button className={sl.peeblo_dm_url ? "ghost" : "moss"} onClick={advance}>Continue</button></div>
+        <div className="step-foot">{sl.peeblo_dm_url && <Ext href={sl.peeblo_dm_url} className="btn moss">Open Peeblo in Slack</Ext>}<button type="button" className={sl.peeblo_dm_url ? "ghost" : "moss"} onClick={advance}>Continue</button></div>
       </>}
     </div>}
   </>;
@@ -382,7 +384,7 @@ export function Wizard({ setup }: { setup: Setup }) {
   if (!s) return <div className="setup"><div className="setup-empty card stack">
     <Face slug="peeblo" face={PEEBLO_FACE} size={72} mood="thinking" />
     <Err msg={error ?? "Couldn't load setup."} />
-    <div><button className="moss" onClick={() => reload()}>Try again</button></div>
+    <div><button type="button" className="moss" onClick={() => reload()}>Try again</button></div>
   </div></div>;
 
   const next: StepId = signedIn ? s.next : "password";
@@ -410,7 +412,7 @@ export function Wizard({ setup }: { setup: Setup }) {
             const open = signedIn ? done || isNext : id === "password";
             const mark = done ? "✓" : String(i + 1);
             return <li key={id}>
-              <button className={`step ${current === id ? "on" : ""} ${done ? "done" : isNext ? "next" : "todo"}`} disabled={!open || restarting !== "no"} onClick={() => setSel(id === next ? null : id)} aria-current={current === id ? "step" : undefined}>
+              <button type="button" className={`step ${current === id ? "on" : ""} ${done ? "done" : isNext ? "next" : "todo"}`} disabled={!open || restarting !== "no"} onClick={() => setSel(id === next ? null : id)} aria-current={current === id ? "step" : undefined}>
                 <span className="mark" aria-hidden="true">{mark}</span>
                 <span className="step-label">{LABELS[id][0]}<small>{LABELS[id][1]}</small></span>
               </button>
