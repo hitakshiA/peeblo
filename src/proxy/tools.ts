@@ -140,8 +140,8 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   const connector = ownTool ? undefined : (await catalogFor(tm.config)).tools.find((x) => x.name === name);
   if (!ownTool && !connector) return json(res, 200, { text: `There is no tool called ${name} in this session. Use one of the tools you were given.`, isError: true });
 
-  const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), args_preview: JSON.stringify(args ?? {}).slice(0, 300), asked_by: person?.id ?? null, end_user: b.endUser };
-  const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
+  const base: Record<string, unknown> & { by: "peeblo"; id: string; tool: string } = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), args_preview: JSON.stringify(args ?? {}).slice(0, 300), asked_by: person?.id ?? null, end_user: b.endUser };
+  const event = (data: Record<string, unknown> & { status: string }) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
   // A call that already ran (Pi resent it after a restart): anything that changes something runs once; the agent
   // gets what it did back.
   if (!(ownTool?.kind === "read") && b.runId) {
@@ -205,7 +205,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
   return runConnector(connector!, ctx, args, base, event, reply, finish, b);
 }
 
-async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown>) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
+async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown> & { status: string }) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
   base.via = "peeblo";
   base.kind = t.kind;
   if (t.name === "computer_bash") base.command = String(args.command ?? "").slice(0, 500); // the audit keeps what ran
@@ -271,7 +271,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
   return t.kind === "read" ? run() : oneAtATime(b.sessionId, run);
 }
 
-async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown>) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
+async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base: Record<string, unknown>, event: (d: Record<string, unknown> & { status: string }) => Promise<unknown>, reply: (r: ToolResult) => void, finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>, b: Binding): Promise<void> {
   const tm = ctx.teammate;
   const mode = await effectiveMode(tm);
   base.mode = mode;

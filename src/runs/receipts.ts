@@ -2,6 +2,7 @@
 // how many calls and attempts, and whether anything fell back. Nothing here is stored separately.
 import { requestUsage } from "../otari/client.ts";
 import { runEvents } from "../store/events.ts";
+import { dataOf, type ModelCallEvent } from "../store/event-types.ts";
 import { receiptLinks } from "../otari/traces.ts";
 
 export type Receipt = {
@@ -18,20 +19,20 @@ export type Receipt = {
 export async function buildReceipt(runId: string, opts: { links?: boolean } = {}): Promise<Receipt> {
   const events = await runEvents(runId);
   // Helpers this job started (subagent, pick_model) are part of its cost: their model calls join the receipt.
-  const helpers = events.filter((e) => e.type === "tool.call" && ["subagent", "pick_model"].includes(String((e.data as any).tool)) && (e.data as any).result?.run_id).map((e) => String((e.data as any).result.run_id));
+  const helpers = events.filter((e) => e.type === "tool.call").map((e) => dataOf(e, "tool.call")).filter((d) => ["subagent", "pick_model"].includes(d.tool) && d.result?.run_id).map((d) => String(d.result?.run_id));
   const helperCalls = (await Promise.all([...new Set(helpers)].map((id) => runEvents(id).catch(() => [])))).flat().filter((e) => e.type === "model.call");
-  const calls = [...events.filter((e) => e.type === "model.call"), ...helperCalls].map((e) => e.data as any);
+  const calls: ModelCallEvent[] = [...events.filter((e) => e.type === "model.call"), ...helperCalls].map((e) => dataOf(e, "model.call"));
   // Calls Otari answered but that never finished here (core died mid-stream): take Otari's settled cost.
   const finished = new Set(calls.map((c) => c.request_id));
-  const opened = events.filter((e) => e.type === "model.call.opened").map((e) => e.data as any).filter((o) => o.request_id && !finished.has(o.request_id));
+  const opened = events.filter((e) => e.type === "model.call.opened").map((e) => dataOf(e, "model.call.opened")).filter((o) => o.request_id && !finished.has(o.request_id));
   const interrupted = await Promise.all(opened.map(async (o) => {
-    const u = await requestUsage(o.request_id).catch(() => null);
+    const u = await requestUsage(String(o.request_id)).catch(() => null);
     return { request_id: o.request_id as string, settled_cost_usd: u ? Number(u.cost_usd) : null };
   }));
-  const sessionId = (events[0] as any)?.session_id as string | undefined;
-  const requestIds = [...calls.map((c) => c.request_id).filter(Boolean), ...interrupted.map((i) => i.request_id)];
+  const sessionId = events[0]?.session_id ?? undefined;
+  const requestIds = [...calls.map((c) => c.request_id).filter((x): x is string => Boolean(x)), ...interrupted.map((i) => i.request_id)];
   const links = sessionId && opts.links !== false ? await receiptLinks(sessionId, requestIds).catch(() => null) : null;
-  const sum = (k: string) => calls.reduce((a, c) => a + (Number(c[k]) || 0), 0);
+  const sum = (k: "cost_usd" | "prompt_tokens" | "cached_tokens" | "completion_tokens") => calls.reduce((a, c) => a + (Number(c[k]) || 0), 0);
   const ok = calls.filter((c) => c.status >= 200 && c.status < 300);
   const work = calls.filter((c) => c.role !== "guard");
   const reported = work.filter((c) => typeof c.guardrails === "string" && c.guardrails.includes('"status":"evaluated"')).length;
@@ -39,9 +40,10 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
   const unreported = work.filter((c) => !c.guardrails && c.status === 200 && c.guard_mandate === true).length;
   const lakeraChecks = reported + unreported;
   const openChecks = events.filter((e) => e.type === "guard.checked");
-  const blocked = events.filter((e) => e.type === "guard.blocked").length + openChecks.filter((e) => (e.data as any).safe === false).length;
-  const guard = openChecks.length ? { checked_by: String((openChecks[0].data as any).checked_by), checks: openChecks.length, blocked }
+  const blocked = events.filter((e) => e.type === "guard.blocked").length + openChecks.filter((e) => dataOf(e, "guard.checked").safe === false).length;
+  const guard = openChecks.length ? { checked_by: String(dataOf(openChecks[0], "guard.checked").checked_by), checks: openChecks.length, blocked }
     : lakeraChecks || blocked ? { checked_by: unreported ? "lakera (Otari org guardrail; streamed verdicts not reported)" : "lakera (Otari org guardrail)", checks: lakeraChecks + blocked, blocked } : { checked_by: null, checks: 0, blocked: 0 };
+  const tools = events.filter((e) => e.type === "tool.call").map((e) => dataOf(e, "tool.call"));
   return {
     run_id: runId,
     calls: ok.length,
@@ -51,19 +53,17 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
     cached_tokens: sum("cached_tokens"),
     completion_tokens: sum("completion_tokens"),
     guard,
-    models: [...new Set(ok.filter((c) => c.role !== "guard").map((c) => c.served_model ?? c.requested_model).filter(Boolean))],
-    providers: [...new Set(ok.map((c) => c.provider).filter(Boolean))],
+    models: [...new Set(ok.filter((c) => c.role !== "guard").map((c) => c.served_model ?? c.requested_model).filter((x): x is string => Boolean(x)))],
+    providers: [...new Set(ok.map((c) => c.provider).filter((x): x is string => Boolean(x)))],
     fallbacks: calls.filter((c) => c.otari_fallback || c.peebloFallback).length,
     failed_attempts: calls.filter((c) => c.failed || c.status >= 400).length,
     request_ids: requestIds,
     links,
-    people: [...new Set(calls.map((c) => c.end_user).filter(Boolean))],
+    people: [...new Set(calls.map((c) => c.end_user).filter((x): x is string => Boolean(x)))],
     interrupted,
-    otari_tools: events.filter((e) => e.type === "tool.call" && (e.data as any).by === "otari" && (e.data as any).status === "completed")
-      .reduce((acc: Record<string, number>, e) => { const t = (e.data as any).tool; acc[t] = (acc[t] ?? 0) + 1; return acc; }, {}),
-    connector_calls: events.filter((e) => e.type === "tool.call" && (e.data as any).via === "otari_mcp" && (e.data as any).status === "completed")
-      .reduce((acc: Record<string, number>, e) => { const s = (e.data as any).server; acc[s] = (acc[s] ?? 0) + 1; return acc; }, {}),
-    approvals: events.filter((e) => e.type === "approval.resolved").reduce((acc, e) => { const st = (e.data as any).status as "approved" | "denied" | "expired"; acc[st] = (acc[st] ?? 0) + 1; return acc; }, { approved: 0, denied: 0, expired: 0 }),
+    otari_tools: tools.filter((d) => d.by === "otari" && d.status === "completed").reduce((acc: Record<string, number>, d) => { acc[d.tool] = (acc[d.tool] ?? 0) + 1; return acc; }, {}),
+    connector_calls: tools.filter((d) => d.via === "otari_mcp" && d.status === "completed" && d.server).reduce((acc: Record<string, number>, d) => { const s = String(d.server); acc[s] = (acc[s] ?? 0) + 1; return acc; }, {}),
+    approvals: events.filter((e) => e.type === "approval.resolved").reduce((acc, e) => { const st = dataOf(e, "approval.resolved").status; acc[st] = (acc[st] ?? 0) + 1; return acc; }, { approved: 0, denied: 0, expired: 0 }),
   };
 }
 
@@ -81,9 +81,8 @@ const money = (usd: number) => (usd === 0 ? "$0" : usd < 0.01 ? `$${usd.toFixed(
 function toolCosts(events: { type: string; data: unknown }[]): number {
   let n = 0;
   for (const e of events) {
-    const d = e.data as any;
-    if (e.type === "tool.cost") n += Number(d?.cost_usd) || 0;
-    else if (e.type === "tool.call" && d?.tool === "understand_file" && d?.status === "completed") n += Number(d?.result?.cost_usd) || 0;
+    if (e.type === "tool.cost") n += Number(dataOf(e, "tool.cost").cost_usd) || 0;
+    else if (e.type === "tool.call") { const d = dataOf(e, "tool.call"); if (d.tool === "understand_file" && d.status === "completed") n += Number(d.result?.cost_usd) || 0; }
   }
   return n;
 }

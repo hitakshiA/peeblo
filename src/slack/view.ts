@@ -11,6 +11,7 @@ import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt } from "../runs/receipts.ts";
 import { appendEvent, onEvent, type EventRow } from "../store/events.ts";
+import { dataOf } from "../store/event-types.ts";
 import { getSession, slackPlaceOf } from "../store/sessions.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { react, slack, unreact } from "./api.ts";
@@ -298,8 +299,9 @@ async function budgetCard(v: View, d: any): Promise<void> {
 
 // The approval card, inline under its step: icon, "Okay to write to Linear?", one quiet line, Approve / Not now.
 async function approvalCard(v: View, e: EventRow): Promise<void> {
-  const a = (e.data as any).action ?? {};
-  const id = (e.data as any).approval_id as string;
+  const req = dataOf(e, "approval.requested");
+  const a: any = req.action ?? {};
+  const id = req.approval_id;
   const { cardBlocks, question } = await import("./approval-card.ts");
   const askedBy = (await pool.query("SELECT sub.person_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [e.run_id])).rows[0]?.person_id;
   const blocks = await cardBlocks(a, id, v.teammate, askedBy);
@@ -434,14 +436,15 @@ export function installSlackView(): void {
       if (!place?.user) return;
       const s = await getSession(e.session_id!);
       const tm = s ? await getTeammate(s.teammate_id) : null;
-      const ahead = Number((e.data as any).ahead ?? 1);
-      await slack(place.app_id, "chat.postEphemeral", { channel: place.channel, user: place.user, ...(place.channel_type === "im" ? {} : { thread_ts: place.thread_ts }), text: `The crew is busy right now (${(e.data as any).max_running} jobs at once on this machine). ${tm?.config.name ?? "Your teammate"} starts on this by itself in a moment${ahead > 1 ? `; ${ahead - 1} job${ahead - 1 === 1 ? " is" : "s are"} ahead of it` : ""}.` }).catch(() => null);
+      const q = dataOf(e, "run.queued");
+      const ahead = Number(q.ahead ?? 1);
+      await slack(place.app_id, "chat.postEphemeral", { channel: place.channel, user: place.user, ...(place.channel_type === "im" ? {} : { thread_ts: place.thread_ts }), text: `The crew is busy right now (${q.max_running} jobs at once on this machine). ${tm?.config.name ?? "Your teammate"} starts on this by itself in a moment${ahead > 1 ? `; ${ahead - 1} job${ahead - 1 === 1 ? " is" : "s are"} ahead of it` : ""}.` }).catch(() => null);
       return;
     }
     // A paused teammate doesn't work; the person who asked hears it privately, with who can resume it.
-    if (e.type === "run.refused" && (e.data as any).reason === "paused") {
+    if (e.type === "run.refused" && dataOf(e, "run.refused").reason === "paused") {
       const place = await slackPlaceOf(e.session_id);
-      const tm = await getTeammate(String((e.data as any).teammate_id));
+      const tm = await getTeammate(dataOf(e, "run.refused").teammate_id);
       if (!place || !tm) return;
       const owner = tm.owner_person ? (await pool.query("SELECT slack_user FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.slack_user : null;
       await slack(place.app_id, "chat.postEphemeral", { channel: place.channel, user: place.user, ...(place.channel_type === "im" ? {} : { thread_ts: place.thread_ts }), text: `${tm.config.name} is paused, so it didn't pick this up. ${owner ? `<@${owner}>` : "Its owner"} or an admin can resume it from its Home tab.` }).catch(() => null);
@@ -473,7 +476,7 @@ export function installSlackView(): void {
     }
     // No view yet when the run posts (a trigger or schedule run whose place was bound after it started, or a run
     // checked after a restart): make one now, so the post shows when it's made.
-    if (!v && e.type === "slack.post" && !(e.data as any)?.private) {
+    if (!v && e.type === "slack.post" && !dataOf(e, "slack.post").private) {
       const place = await slackPlaceOf(e.session_id);
       if (place) {
         const s = await getSession(e.session_id!);

@@ -2,12 +2,14 @@
 // run status, receipts and the job view are read back from it.
 import type pg from "pg";
 import { pool } from "../db.ts";
+import type { DataOf } from "./event-types.ts";
 
 export type EventRow = { id: string; session_id: string | null; run_id: string | null; type: string; data: Record<string, unknown>; at: Date };
 type Queryable = Pick<pg.Pool, "query"> | pg.PoolClient;
 
-export async function appendEvent(
-  e: { sessionId?: string | null; runId?: string | null; type: string; data?: Record<string, unknown> },
+// A known event type's data is checked against its shape (src/store/event-types.ts); others are open.
+export async function appendEvent<T extends string>(
+  e: { sessionId?: string | null; runId?: string | null; type: T; data?: DataOf<T> },
   db: Queryable = pool,
 ): Promise<EventRow> {
   const { rows } = await db.query<EventRow>(
