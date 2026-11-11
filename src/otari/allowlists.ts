@@ -31,7 +31,10 @@ async function dispatchNames(ids: string[]): Promise<string[]> {
         "",
       ).catch(() => null)
     : null;
-  const offered = new Map((fallbacks?.models ?? []).map((m) => [m.id, m.offerings.map((o) => o.selector)]));
+  // Only selectors whose instance is a name Otari takes in a list (some providers show a label, "TokenHub - China").
+  const offered = new Map(
+    (fallbacks?.models ?? []).map((m) => [m.id, m.offerings.map((o) => o.selector).filter((x) => /^[a-z0-9][a-z0-9_.-]*:/.test(x))]),
+  );
   const out = ids.flatMap((id) => offered.get(id) ?? []);
   ids = ids.filter((id) => !offered.get(id)?.length);
   const plan = (g: string[]) =>
@@ -85,14 +88,23 @@ export async function syncKeyAllowList(
   const models = await modelAllowList();
   const tools = toolAllowList(tm);
   if (current && same(current.allowed_models, models) && same(current.allowed_tools, tools)) return "same";
-  await admin(
-    "PATCH",
-    `/organizations/me/keys/${rows[0].key_id}`,
-    { allowed_models: models, allowed_tools: tools },
-    `limiting ${tm.config.name}'s key to open models`,
-    "",
-  );
-  return "set";
+  // An entry Otari won't take (a provider it no longer knows) is dropped from the list and the list sent again.
+  for (let tries = 0; ; tries++) {
+    try {
+      await admin(
+        "PATCH",
+        `/organizations/me/keys/${rows[0].key_id}`,
+        { allowed_models: models, allowed_tools: tools },
+        `limiting ${tm.config.name}'s key to open models`,
+        "",
+      );
+      return "set";
+    } catch (e) {
+      const bad = /'([^']+)': unknown provider or instance/.exec((e as Error).message)?.[1];
+      if (!bad || tries >= 20 || !models.includes(bad)) throw e;
+      models.splice(models.indexOf(bad), 1);
+    }
+  }
 }
 
 // Every teammate key, comparing with Otari's own copy first.
