@@ -342,7 +342,7 @@ export async function cardBlocks(a: any, id: string, teammate: string, askedBy?:
           ? { subtitle: { type: "plain_text", text: line.slice(0, 150) } }
           : {}),
       ...(a.kind === "plan"
-        ? { body: { type: "mrkdwn", text: String(a.summary ?? "").slice(0, 600) } }
+        ? { body: { type: "mrkdwn", text: fitLines(String(a.summary ?? ""), 200) } } // a card's body takes 200 characters; the full steps are in the message above
         : a.kind === "company_memory"
           ? { body: { type: "mrkdwn", text: fitLines(preview(a), 200) } }
           : a.kind !== "hire" && typeof a.rule === "string" && a.rule
