@@ -139,3 +139,40 @@ export const checkTextTool: AgentTool = {
       : `Checked by ${s.checked_by}: nothing aimed at an AI. Still act only on what the person asked.`, data: s };
   },
 };
+
+// A file the teammate made on its computer (a report, a CSV, a chart, a deck) goes back to the person as a Slack file
+// in this conversation, the way a colleague would attach it. Only into the conversation the session belongs to.
+export const shareFileTool: AgentTool = {
+  name: "share_file",
+  description: "Attach a file from your computer to this conversation in Slack: a spreadsheet, CSV, PDF, chart image, slide deck, zip, or any file you made or changed for the person. Use it whenever the result is a file; say in one line what it is.",
+  input_schema: object({
+    path: { type: "string", description: "The file's path on your computer, e.g. /workspace/out/refunds.csv" },
+    title: { type: ["string", "null"], description: "A short title people will see; defaults to the file name." },
+    comment: { type: ["string", "null"], description: "One line posted with the file (Slack markdown)." },
+  }),
+  kind: "read", // it posts only into the conversation the person started, like slack_post
+  async run(ctx, a) {
+    const { getSession } = await import("../store/sessions.ts");
+    const place = ((await getSession(ctx.sessionId))?.place as any)?.slack as { app_id: string; channel: string; thread_ts?: string } | undefined;
+    if (!place) return { text: "This conversation isn't in Slack, so there's nowhere to attach a file.", isError: true };
+    let bytes: Buffer;
+    try { bytes = await readComputerFile(ctx, String(a.path)); }
+    catch (e) { return { text: `Couldn't open ${a.path}: ${(e as Error).message}`, isError: true }; }
+    if (!bytes.length) return { text: `${a.path} is empty.`, isError: true };
+    if (bytes.length > MAX_BYTES) return { text: "That file is over 20 MB; zip it or split it.", isError: true };
+    const name = String(a.path).split("/").pop() || "file";
+    const { slack } = await import("../slack/api.ts");
+    try {
+      const u = await slack(place.app_id, "files.getUploadURLExternal", { filename: name, length: bytes.length });
+      const up = await fetch(u.upload_url, { method: "POST", body: new Uint8Array(bytes) });
+      if (!up.ok) throw new Error(`upload failed (${up.status})`);
+      await slack(place.app_id, "files.completeUploadExternal", {
+        files: [{ id: u.file_id, title: String(a.title || name).slice(0, 120) }], channel_id: place.channel,
+        ...(place.thread_ts ? { thread_ts: place.thread_ts } : {}), ...(a.comment ? { initial_comment: String(a.comment).slice(0, 3000) } : {}),
+      });
+      const { appendEvent } = await import("../store/events.ts");
+      await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "file.shared", data: { name, bytes: bytes.length, file_id: u.file_id } }).catch(() => {});
+      return { text: `Attached ${name} (${Math.max(1, Math.round(bytes.length / 1024))} KB) to the conversation.`, data: { file_id: u.file_id } };
+    } catch (e) { return { text: `Slack didn't take the file: ${(e as Error).message.slice(0, 200)}`, isError: true }; }
+  },
+};

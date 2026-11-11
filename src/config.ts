@@ -60,7 +60,7 @@ export const config = {
   priceCardUsd: Number(process.env.PEEBLO_PRICE_CARD_USD ?? 0.5),                           // above this a run needs a price card
   teammateSpend: process.env.PEEBLO_TEAMMATE_SPEND ?? "auto",       // auto | key | tag (see src/otari/spend.ts)
   approvalTtlSeconds: Number(process.env.PEEBLO_APPROVAL_TTL_S ?? 1800),
-  turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 10 * 60_000),
+  turnTimeoutMs: Number(process.env.PEEBLO_TURN_TIMEOUT_MS ?? 60 * 60_000),          // one turn of real work (the strongest model takes ~35 min on a hard task); loops are caught by the stuck check
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
   // The most jobs working at once on this machine; the rest wait in line, in order. A job waiting on a person's card
   // doesn't count. Default: one per GB of memory above 2 GB, at least 2.
