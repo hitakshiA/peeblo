@@ -50,7 +50,7 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 | `PEEBLO_VISION` | `on` | Reading images through Otari. |
 | `PEEBLO_TRACE_CONTENT` | `off` | `keep` stores each call's prompt and answer on its Otari trace, for debugging. |
 
-## Guard and judges
+## Guard and decision models
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -59,7 +59,7 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 | `PEEBLO_LAKERA_PROJECT` | empty | The Lakera project whose policy decides what is flagged. |
 | `PEEBLO_GUARD_MODEL` | `alibaba/qwen3guard-gen-8b` | The open guard model. Also confirms Lakera's flags. |
 | `PEEBLO_GUARD_PROBE_MODEL` | the worker role's cheapest | The model for one-token screening calls. |
-| `PEEBLO_JUDGE_MODEL` | `peeblo-judge` | The routing policy typed judges use. |
+| `PEEBLO_JUDGE_MODEL` | `peeblo-judge` | The routing policy for typed decisions (yes or no, pick one, a score): the reviewer and the stop check use it. |
 | `PEEBLO_DECISION_MODEL` | `typesafe:jev-latest` | The model for Otari's `/decisions`, when the deployment has a decision provider. |
 
 ## Approvals, budgets and limits
