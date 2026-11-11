@@ -265,10 +265,6 @@ export async function exec(teammateId: string, argv: string[], opts: { cwd?: str
 export const isAwake = (teammateId: string) => live.has(teammateId);
 export const awake = () => [...live.entries()].map(([id, l]) => ({ teammateId: id, size: l.size, lastUsed: l.lastUsed, inflight: l.inflight }));
 
-export function vmFor(teammateId: string): Promise<VM> {
-  return ensure(teammateId, null).then((l) => { touch(teammateId, l); return l.vm; });
-}
-
 export async function sleepAll(): Promise<void> {
   await Promise.all([...live.keys()].map((id) => sleep(id, "shutdown")));
 }

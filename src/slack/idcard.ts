@@ -6,7 +6,6 @@ import { join } from "node:path";
 import sharp from "sharp";
 import { renderAvatarSvg } from "open-bot-avatar";
 import type { Teammate } from "../store/teammates.ts";
-import { slack } from "./api.ts";
 
 const DIR = join(import.meta.dirname, "..", "..", "assets", "avatars");
 export const SHAPES = readdirSync(DIR).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
@@ -69,15 +68,6 @@ export async function idCardPng(tm: Teammate, face: { shape: string; color: stri
     <text x="40" y="465" font-family="Courier, monospace" font-size="22" fill="#1d1c1d">ID ${esc(id)}</text>${bars}
   </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
-}
-
-// Uploads a PNG to Slack as a file (not shared to any channel) and returns its id for image blocks.
-export async function uploadPng(appId: string, png: Buffer, name: string): Promise<string> {
-  const u = await slack(appId, "files.getUploadURLExternal", { filename: name, length: png.length });
-  const up = await fetch(u.upload_url, { method: "POST", body: new Uint8Array(png) });
-  if (!up.ok) throw new Error(`file upload failed (${up.status})`);
-  await slack(appId, "files.completeUploadExternal", { files: [{ id: u.file_id, title: name }] });
-  return u.file_id;
 }
 
 // A card image Slack can fetch by URL: saved under an unguessable id and served at /cards/<id>.png on the public

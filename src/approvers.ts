@@ -88,7 +88,7 @@ export async function policyApprovers(runId: string, call: { server?: string; to
     try { text = readFileSync(join(config.dataDir, "company-memory", ...at), "utf8"); break; } catch { /* not here */ }
   }
   const rules = [...text.matchAll(/^-\s*([^:\n]+):\s*(.+)$/gm)].map((m) => ({ key: m[1].trim().toLowerCase(), names: m[2].split(/,| or | and /).map((x) => x.trim()).filter(Boolean) }));
-  const tool = String(call.tool ?? "").toLowerCase(), server = String(call.server ?? "").toLowerCase();
+  const tool = String(call.tool ?? "").toLowerCase();
   const args = JSON.stringify(call.arguments ?? {}).toLowerCase();
   const ids = async (names: string[]) => uniq(await Promise.all(names.map(async (n) => (await pool.query(
     "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1", [n])).rows[0]?.id)));

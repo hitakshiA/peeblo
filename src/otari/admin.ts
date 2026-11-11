@@ -90,7 +90,6 @@ export type CreatedKey = { id: string; key: string; key_name: string | null };
 export const createServiceKey = (name: string, endUserBudgetIds: string[] | null, defaultEndUserBudget?: string) =>
   admin<CreatedKey>("POST", "/organizations/me/keys", { key_name: name, is_service_key: true, end_user_budget_ids: endUserBudgetIds, ...(defaultEndUserBudget ? { end_user_budget_id: defaultEndUserBudget } : {}), metadata: { app: "peeblo" } }, `creating the key ${name}`, links.keys());
 export const deleteKey = (id: string) => admin("DELETE", `/organizations/me/keys/${id}`, undefined, "deleting a key", links.keys());
-export const rotateKey = (id: string) => admin<CreatedKey>("POST", `/organizations/me/keys/${id}/rotate`, {}, "rotating a key", links.keys());
 
 export const createKeyCeiling = (keyId: string, budgetId: string, name: string) =>
   admin<{ id: string }>("POST", "/organizations/me/spend-ceilings", { scope_type: "api_token", scope_id: keyId, budget_id: budgetId, name }, `capping the key ${name}`, links.budgets());
@@ -113,15 +112,8 @@ export const deleteRoutingPolicy = (name: string) =>
 export const routingPolicies = () => admin<any>("GET", "/organizations/me/routing-policies", undefined, "listing routing policies", links.routing());
 
 export const guardrailMandates = () => admin<any>("GET", "/organizations/me/guardrails", undefined, "listing guardrails", links.guardrails());
-export const setGuardrailMandate = (id: string, enabled: boolean) =>
-  admin<any>("PATCH", `/organizations/me/guardrails/${id}`, { enabled }, `turning the guardrail ${enabled ? "on" : "off"}`, links.guardrails());
 
 export const mcpServers = () => admin<any>("GET", "/workspaces/{workspace}/mcp-servers", undefined, "listing MCP servers", links.mcpServers());
-export const registerMcpServer = (s: { name: string; url: string; token?: string; readTools?: string[]; everyoneTools?: string[]; purpose?: string }) =>
-  admin<{ id: string }>("POST", "/workspaces/{workspace}/mcp-servers", { name: s.name, url: s.url, authorization_token: s.token ?? null, read_tools: s.readTools ?? [], everyone_tools: s.everyoneTools ?? ["@read"], purpose_hint: s.purpose ?? null, enabled: true }, `adding the MCP server ${s.name}`, links.mcpServers());
-export const deleteMcpServer = (id: string) => admin("DELETE", `/workspaces/{workspace}/mcp-servers/${id}`, undefined, "removing an MCP server", links.mcpServer(id));
-export const grantMcpTools = (serverId: string, apiKeyIds: string[], tools: string[]) =>
-  admin("POST", `/workspaces/{workspace}/mcp-servers/${serverId}/access/grants`, { api_key_ids: apiKeyIds, tools }, "granting MCP tools", links.mcpServer(serverId));
 
 export const webSearch = () => admin<any>("GET", "/workspaces/{workspace}/web-search", undefined, "reading the web-search setting", links.webSearch());
 export async function setWebSearch(enabled: boolean): Promise<void> {

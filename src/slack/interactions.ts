@@ -6,7 +6,6 @@
 import { pool } from "../db.ts";
 import { answerApproval } from "../durable/approvals.ts";
 import { onSlackEvent, onSlackInteraction } from "../ingress/slack.ts";
-import { teammateSpend, usd } from "../otari/spend.ts";
 import { appendEvent } from "../store/events.ts";
 import { personForSlack } from "../store/people.ts";
 import { getTeammate } from "../store/teammates.ts";

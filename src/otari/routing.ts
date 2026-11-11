@@ -3,7 +3,7 @@ import type { PolicySpec } from "./admin.ts";
 // over between providers of that model) or a routing policy name (cross-model fallback, set up per role).
 // Policies and /routing/recommend want pinned names (provider:native-name), not catalog ids, and nothing
 // maps one to the other, so Peeblo asks Otari which provider serves a catalog id with a one-token call.
-import { upsertRoutingPolicy, routingPolicies } from "./admin.ts";
+import { routingPolicies } from "./admin.ts";
 import { tierFile } from "./catalog.ts";
 import { otari, OtariError } from "./client.ts";
 
@@ -61,18 +61,6 @@ export async function waitUntilServing(name: string, timeoutMs = 60_000, inARow 
     }
   }
   return { waitedMs: Date.now() - t0, refusedIds };
-}
-
-// Creates or replaces the role policies in Otari (needs the dashboard session). Returns what was set.
-export async function ensureRolePolicies(): Promise<Record<string, PolicySpec>> {
-  const out: Record<string, PolicySpec> = {};
-  for (const [name, r] of Object.entries(ROLES)) {
-    const spec = await policySpec(r);
-    await upsertRoutingPolicy(name, spec);
-    await waitUntilServing(name);
-    out[name] = spec;
-  }
-  return out;
 }
 
 export async function rolePoliciesInOtari(): Promise<string[]> {

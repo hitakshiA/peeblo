@@ -6,7 +6,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { DBOS } from "@dbos-inc/dbos-sdk";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
@@ -391,7 +390,6 @@ async function stopCheck(ctx: RunContext, r: { text: string; stopReason: string 
   const calls = (await pool.query(`SELECT DISTINCT ON (coalesce(data->>'id', id::text)) data->>'tool' AS t, data->>'status' AS s FROM events
     WHERE run_id = $1 AND type = 'tool.call' ORDER BY coalesce(data->>'id', id::text), id DESC`, [ctx.run.id])).rows as { t: string; s: string }[];
   const said = [...posted, r.text].join("\n");
-  const ok = (names: string[]) => calls.some((c) => names.includes(c.t) && c.s === "completed");
   const ruled = async (rule: string, again: string) => {
     await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "stop_check.decided", data: { verdict: "continue", reason: rule, via: "rule" } });
     return { again: `<peeblo_event kind="stop_check">${again}</peeblo_event>` };
@@ -480,5 +478,3 @@ export async function stopAllPi(): Promise<void> {
   live.clear();
   await pool.query("SELECT 1");
 }
-
-export const piPaths = { cli: fileURLToPath(new URL(`file://${PI_CLI}`)), otari: PI_OTARI };

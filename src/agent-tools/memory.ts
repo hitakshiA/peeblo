@@ -9,7 +9,6 @@ import { deleteNote, notesIn, placeOfSession, readBanks, readNote, sha, writeCom
 import { addToCard, openPromises, recallNotes } from "../memory/work.ts";
 import { embed, cosine, fuse, recall } from "../otari/search.ts";
 import { getSession } from "../store/sessions.ts";
-import { isOtariAdmin } from "../authority.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
 

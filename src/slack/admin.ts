@@ -79,10 +79,3 @@ export function installUrl(appId: string, clientId: string): string {
   const p = new URLSearchParams({ client_id: clientId, scope: BOT_SCOPES.join(","), redirect_uri: `${config.publicUrl}/slack/oauth/callback`, state: `install:${appId}` });
   return `https://slack.com/oauth/v2/authorize?${p}`;
 }
-
-// Removes an app this Peeblo made (used to clean up after checks).
-export async function deleteTeammateApp(appId: string): Promise<void> {
-  const r = await call("apps.manifest.delete", form({ app_id: appId }), await configToken());
-  if (!r.ok) throw new Error(`apps.manifest.delete: ${r.error}`);
-  await pool.query("DELETE FROM slack_apps WHERE app_id = $1", [appId]);
-}

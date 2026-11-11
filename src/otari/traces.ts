@@ -12,12 +12,6 @@ export async function traceIdForRequest(requestId: string): Promise<string | nul
   return ((r.data ?? r) as { source_label?: string }[])[0]?.source_label ?? null;
 }
 
-export type TraceSummary = { trace_id: string; name: string | null; harness: string | null; user_id: string | null; api_key_id: string | null };
-export async function traceSummary(traceId: string): Promise<TraceSummary> {
-  const t = await admin<any>("GET", `/organizations/me/traces/${encodeURIComponent(traceId)}`, undefined, "reading a trace", links.session(traceId));
-  return t.summary;
-}
-
 // Links for a receipt: every request, and the session's trace (or a search for it).
 export async function receiptLinks(sessionId: string, requestIds: string[]): Promise<{ requests: Record<string, string>; session: string; trace_id: string | null }> {
   const requests = Object.fromEntries(requestIds.filter((id) => /^[0-9a-f-]{36}$/.test(id)).map((id) => [id, links.request(id)]));

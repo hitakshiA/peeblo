@@ -26,11 +26,3 @@ export async function runEvents(runId: string, afterId = 0): Promise<EventRow[]>
   const { rows } = await pool.query<EventRow>("SELECT * FROM events WHERE run_id = $1 AND id > $2 ORDER BY id", [runId, afterId]);
   return rows;
 }
-
-export async function sessionEvents(sessionId: string, limit = 200): Promise<EventRow[]> {
-  const { rows } = await pool.query<EventRow>(
-    "SELECT * FROM (SELECT * FROM events WHERE session_id = $1 ORDER BY id DESC LIMIT $2) e ORDER BY id",
-    [sessionId, limit],
-  );
-  return rows;
-}

@@ -17,10 +17,6 @@ export async function setSecret(teammateId: string, name: string, value: string,
   );
 }
 
-export async function removeSecret(teammateId: string, name: string): Promise<void> {
-  await pool.query("DELETE FROM teammate_secrets WHERE teammate_id = $1 AND name = $2", [teammateId, name]);
-}
-
 export async function secretNames(teammateId: string): Promise<{ name: string; hosts: string[] }[]> {
   const { rows } = await pool.query("SELECT name, hosts FROM teammate_secrets WHERE teammate_id = $1 ORDER BY name", [teammateId]);
   return rows;

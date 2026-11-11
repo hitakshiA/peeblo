@@ -1,18 +1,16 @@
 // Peeblo's own tools as the crew's manager (K2–K6). The asker, payer, thread and owner come from the
 // session; authority is checked in code. Hiring is the hiring-a-teammate skill plus these tools: the agent
 // talks and drafts, and the ID card is the one approval, on the finished result.
-import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { callTeammate } from "../chains.ts";
-import { isOtariAdmin, mayManageTeammate } from "../authority.ts";
+import { mayManageTeammate } from "../authority.ts";
 import { teammateSpend, usd } from "../otari/spend.ts";
 import { appendEvent } from "../store/events.ts";
-import { openSession, submit, getSession } from "../store/sessions.ts";
+import { submit, getSession } from "../store/sessions.ts";
 import { createTeammate, getTeammate, listTeammates, updateTeammate, validateConfig, type Teammate, type TeammateConfig } from "../store/teammates.ts";
-import { slack } from "../slack/api.ts";
 import { getApp } from "../ingress/apps.ts";
 import { createTeammateApp } from "../slack/admin.ts";
-import { installBlocks, offerOnCard } from "../slack/install.ts";
+import { offerOnCard } from "../slack/install.ts";
 import { configProblems } from "../hire-rules.ts";
 import { changeModel } from "../model-change.ts";
 import { ROLES } from "../otari/routing.ts";
