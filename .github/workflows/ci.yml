@@ -34,6 +34,34 @@ jobs:
       - name: Unused code
         run: pnpm knip
 
+  # The durable guarantees on a real Postgres: migrations, one run per request, the event log, versioned config.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: peeblo
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: peeblo_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U peeblo" --health-interval 2s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Integration tests
+        env:
+          PEEBLO_TEST_DATABASE_URL: postgres://peeblo:test@127.0.0.1:5432/peeblo_test
+        run: pnpm test:integration
+
   console:
     runs-on: ubuntu-latest
     defaults:

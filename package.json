@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome lint",
     "test": "node --test --import ./test/setup.ts \"test/**/*.test.ts\"",
-    "knip": "knip --no-progress"
+    "knip": "knip --no-progress",
+    "test:integration": "node --test --import ./test/setup.ts \"test/integration/*.test.ts\""
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "5.4.0",

@@ -21,6 +21,8 @@ pnpm install
 pnpm typecheck                     # core: types
 pnpm lint                          # core: Biome
 pnpm test                          # core: unit tests (no database or network)
+pnpm knip                          # core: unused files, exports and dependencies
+PEEBLO_TEST_DATABASE_URL=postgres://… pnpm test:integration   # on an empty Postgres (it is wiped)
 (cd console && pnpm install && pnpm build)   # the console
 ./peeblo up                        # Postgres, core, the console; then open http://127.0.0.1:7340/console/
 ```

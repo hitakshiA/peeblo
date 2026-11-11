@@ -10,6 +10,8 @@ pnpm install --frozen-lockfile
 pnpm typecheck        # tsc, strict, unused locals are errors
 pnpm lint             # Biome, lint only
 pnpm test             # node:test unit tests, no database or network
+pnpm knip             # unused files, exports and dependencies
+pnpm test:integration # needs PEEBLO_TEST_DATABASE_URL: an empty Postgres it may wipe
 (cd console && pnpm install --frozen-lockfile && pnpm build)
 ```
 
