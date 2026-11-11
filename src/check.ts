@@ -293,6 +293,7 @@ const CHECKS: Check[] = [
       if (!(await session())) return "not checked without a dashboard session";
       const { syncAllKeyAllowLists } = await import("./otari/allowlists.ts");
       const r = await syncAllKeyAllowLists();
+      if (r.failed.length) throw new Error(`${r.failed.length} key${r.failed.length === 1 ? "" : "s"} not limited: ${r.failed[0]}`);
       return `${r.same + r.set} teammate key${r.same + r.set === 1 ? "" : "s"} limited to open-weight models in Otari${r.set ? ` (${r.set} updated now)` : ""}; teammates without web get no search or fetch tools`;
     },
   },

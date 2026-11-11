@@ -1,7 +1,10 @@
 // Allow-lists on each teammate's Otari key, so the gateway itself holds two of Peeblo's rules:
 // - models: only open-weight models (every one Otari's catalog lists that Peeblo counts as open), the exact targets of
-//   Peeblo's role policies (as Otari's explain reports them, step-downs included) and Otari's own router for
-//   /routing/recommend. Any other model is refused with model_not_allowed, whatever the code asks for.
+//   Peeblo's role policies (step-downs included) and Otari's own router for /routing/recommend. Any other model is
+//   refused, whatever the code asks for.
+//   Otari matches the list against where a call is sent (instance:model, e.g. deepinfra:Qwen/Qwen3-32B), not the
+//   catalog id asked for: a catalog id in the list is accepted but matches nothing (measured Nov 2026). So each
+//   catalog model is turned into its dispatch name with Otari's routing explain, five at a time (its limit).
 // - tools: a teammate without the web tool gets none of Otari's search or fetch tools ([]); one with it inherits the
 //   workspace's (null).
 // Applied when a key is made, at start, and when a teammate's tools change; a key that already holds the same lists
@@ -10,7 +13,25 @@ import { pool } from "../db.ts";
 import type { Teammate } from "../store/teammates.ts";
 
 const ROUTER = "otari:subagent-router";
+const EXPLAIN_MAX = 5;
 let cached: { at: number; models: string[] } | null = null;
+
+// Where each of these catalog models is sent. A group Otari refuses (one model it can't route) is explained one by one,
+// and a model that still can't be routed is left out: nothing could call it anyway.
+async function dispatchNames(ids: string[]): Promise<string[]> {
+  const { explainPolicy } = await import("./admin.ts");
+  const plan = (g: string[]) =>
+    explainPolicy({ spec: { select: [{ default: g[0] }], ...(g.length > 1 ? { on_failure: g.slice(1) } : {}) } });
+  const out: string[] = [];
+  for (let i = 0; i < ids.length; i += EXPLAIN_MAX) {
+    const group = ids.slice(i, i + EXPLAIN_MAX);
+    const groups = await plan(group)
+      .then((p) => [p])
+      .catch(async () => Promise.all(group.map((id) => plan([id]).catch(() => null))));
+    for (const p of groups) for (const c of p?.candidates ?? []) if (typeof c.dispatch_model === "string") out.push(c.dispatch_model);
+  }
+  return out;
+}
 
 export async function modelAllowList(): Promise<string[]> {
   if (cached && Date.now() - cached.at < 3_600_000) return cached.models;
@@ -25,7 +46,9 @@ export async function modelAllowList(): Promise<string[]> {
       for (const c of plan?.candidates ?? []) if (typeof c.dispatch_model === "string") targets.add(c.dispatch_model);
     }
   }
-  const models = [...new Set([...(await openWeightModels()).map((m) => m.id), ...targets, ROUTER])].sort();
+  const open = await dispatchNames((await openWeightModels()).map((m) => m.id));
+  if (!open.length) throw new Error("Otari's routing explain named no model to allow");
+  const models = [...new Set([...open, ...targets, ROUTER])].sort();
   cached = { at: Date.now(), models };
   return models;
 }
@@ -60,9 +83,9 @@ export async function syncKeyAllowList(
 }
 
 // Every teammate key, comparing with Otari's own copy first.
-export async function syncAllKeyAllowLists(): Promise<{ set: number; same: number }> {
+export async function syncAllKeyAllowLists(): Promise<{ set: number; same: number; failed: string[] }> {
   const { admin, session } = await import("./admin.ts");
-  if (!(await session())) return { set: 0, same: 0 };
+  if (!(await session())) return { set: 0, same: 0, failed: [] };
   const r: any = await admin("GET", "/organizations/me/keys", undefined, "listing keys", "");
   const byId = new Map(((r.data ?? r) as any[]).map((k) => [k.id, k]));
   const { listTeammates } = await import("../store/teammates.ts");
@@ -70,13 +93,14 @@ export async function syncAllKeyAllowLists(): Promise<{ set: number; same: numbe
     "SELECT teammate_id, key_id FROM teammate_keys WHERE retired_at IS NULL",
   );
   const crew = new Map((await listTeammates()).map((t) => [t.id, t]));
-  const out = { set: 0, same: 0 };
+  const out = { set: 0, same: 0, failed: [] as string[] };
   for (const row of rows) {
     const tm = crew.get(row.teammate_id);
     const key = byId.get(row.key_id);
     if (!tm || !key) continue;
     const res = await syncKeyAllowList(tm, key).catch((e) => {
       console.error(`allow-list ${tm.slug}:`, (e as Error).message);
+      out.failed.push(`${tm.slug}: ${(e as Error).message.slice(-160)}`);
       return "skipped" as const;
     });
     if (res === "set") out.set++;
