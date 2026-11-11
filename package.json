@@ -11,6 +11,7 @@
   "packageManager": "pnpm@12.15.0",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint",
     "test": "node --test --import ./test/setup.ts \"test/**/*.test.ts\""
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "sharp": "0.35.5"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "typescript": "5.9.3"

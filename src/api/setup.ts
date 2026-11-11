@@ -20,7 +20,7 @@ async function cached<T>(key: string, ms: number, fn: () => Promise<T>): Promise
   cache.set(key, { at: Date.now(), v });
   return v;
 }
-const forget = (...keys: string[]) => keys.forEach((k) => cache.delete(k));
+const forget = (...keys: string[]) => { for (const k of keys) cache.delete(k); };
 
 const baseUrl = (region: string) => (region === "eu" ? "https://eu.api.otari.ai/api/v1" : "https://api.otari.ai/api/v1");
 async function keyBudget(key: string, region: string): Promise<{ ok: boolean; error?: string; used?: number; limit?: number }> {

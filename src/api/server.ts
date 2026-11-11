@@ -203,7 +203,7 @@ export function startApi(): Promise<Server> {
       // Console actions are made as the console's admin person: the server fills it in.
       if (viaConsole && body && typeof body === "object") { const p = await consolePerson(); if (p) body = { ...body, person_id: p.id }; }
       const out: any = await route.handler({ method: req.method!, path: url.pathname, params: route.params, query: url.searchParams, body, headers: req.headers });
-      if (out && out.__raw) return void res.writeHead(200, { "content-type": out.__type ?? "application/octet-stream", "cache-control": "max-age=3600" }).end(out.__raw);
+      if (out?.__raw) return void res.writeHead(200, { "content-type": out.__type ?? "application/octet-stream", "cache-control": "max-age=3600" }).end(out.__raw);
       send(res, 200, out);
     } catch (error) {
       const status = (error as { status?: number }).status ?? 500;

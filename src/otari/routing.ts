@@ -5,7 +5,7 @@ import type { PolicySpec } from "./admin.ts";
 // maps one to the other, so Peeblo asks Otari which provider serves a catalog id with a one-token call.
 import { routingPolicies } from "./admin.ts";
 import { tierFile } from "./catalog.ts";
-import { otari, OtariError } from "./client.ts";
+import { otari, type OtariError } from "./client.ts";
 
 const pinned = new Map<string, string>();
 

@@ -1,7 +1,7 @@
 // web_fetch: read one page through Otari's fetch (POST /fetch), so the page text passes through the harness,
 // where it is labelled and screened like any other untrusted content. Web search stays Otari's own
 // in-loop tool. The teammate's allowed and blocked sites are enforced here, in code, before and after redirects.
-import { otari, OtariError } from "../otari/client.ts";
+import { otari, type OtariError } from "../otari/client.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
 

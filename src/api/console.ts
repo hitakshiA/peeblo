@@ -31,7 +31,7 @@ export async function consolePerson(): Promise<{ id: string; display_name: strin
 }
 
 // The login: one password (PEEBLO_CONSOLE_PASSWORD), compared in constant time; a wrong one waits a second.
-export async function login(req: IncomingMessage, res: ServerResponse, body: any): Promise<void> {
+export async function login(_req: IncomingMessage, res: ServerResponse, body: any): Promise<void> {
   const want = createHash("sha256").update(config.consolePassword).digest();
   const got = createHash("sha256").update(String(body?.password ?? "")).digest();
   if (!config.consolePassword || !timingSafeEqual(want, got)) {
@@ -41,7 +41,7 @@ export async function login(req: IncomingMessage, res: ServerResponse, body: any
   const exp = Date.now() + 7 * DAY;
   res.writeHead(200, { "content-type": "application/json", "set-cookie": `${COOKIE}=${exp}.${sign(exp)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${7 * 24 * 3600}` }).end(JSON.stringify({ ok: true }));
 }
-export function logout(req: IncomingMessage, res: ServerResponse): void {
+export function logout(_req: IncomingMessage, res: ServerResponse): void {
   res.writeHead(200, { "content-type": "application/json", "set-cookie": `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` }).end(JSON.stringify({ ok: true }));
 }
 

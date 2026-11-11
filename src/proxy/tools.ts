@@ -534,6 +534,7 @@ async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, call
 // use exact owner/repo names instead of guessing. It never blocks a session start: until the first read lands (it's
 // warmed when core starts), the tools carry the "find the owner first" line instead.
 let ghSeen: { at: number; text: string } | null = null;
+// biome-ignore lint/correctness/noUnusedVariables: read by ??= below, so only one read runs at a time
 let ghLoading: Promise<string> | null = null;
 async function githubVisible(tools: ConnectorTool[]): Promise<string> {
   const me = tools.find((t) => t.server === "github" && t.tool === "get_me");

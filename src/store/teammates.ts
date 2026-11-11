@@ -57,7 +57,7 @@ export function validateConfig(c: Partial<TeammateConfig>): TeammateConfig {
   }
   const g = (c as { git?: any }).git ?? {};
   const prefix = String(g.branch_prefix ?? "peeblo/{teammate}/");
-  if (!/^[A-Za-z0-9._\/{}-]{1,60}\/$/.test(prefix) || /\.\.|\/\//.test(prefix)) problems.push("git.branch_prefix must be a branch path ending in /");
+  if (!/^[A-Za-z0-9._/{}-]{1,60}\/$/.test(prefix) || /\.\.|\/\//.test(prefix)) problems.push("git.branch_prefix must be a branch path ending in /");
   const publish = String(g.publish ?? "own-branches");
   if (!["off", "own-branches"].includes(publish)) problems.push("git.publish must be off or own-branches");
   const pr = (c as { profile?: any }).profile;

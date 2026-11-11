@@ -2,7 +2,7 @@
 // service key, so Otari bills and caps each person. Budget tiers are made by an admin (dashboard or
 // admin.ts); Peeblo only assigns them. When Otari refuses a call for budget, the person gets a plain
 // sentence built from Otari's own numbers.
-import { otari, OtariError } from "./client.ts";
+import { otari, type OtariError } from "./client.ts";
 
 const known = new Map<string, string | null>();
 

@@ -22,7 +22,8 @@ export class PiRpc {
     stdout.setEncoding("utf8");
     stdout.on("data", (chunk: string) => {
       buf += chunk;
-      let i;
+      let i: number;
+      // biome-ignore lint/suspicious/noAssignInExpressions: the usual read-a-line-at-a-time loop
       while ((i = buf.indexOf("\n")) >= 0) {
         let line = buf.slice(0, i);
         buf = buf.slice(i + 1);
@@ -44,7 +45,9 @@ export class PiRpc {
     if (r.type === "response" && r.id && this.pending.has(r.id)) {
       const p = this.pending.get(r.id)!;
       this.pending.delete(r.id);
-      return r.success ? p.resolve(r.data) : p.reject(new Error(`${r.command}: ${r.error}`));
+      if (r.success) p.resolve(r.data);
+      else p.reject(new Error(`${r.command}: ${r.error}`));
+      return;
     }
     if (r.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(r.method)) {
       void this.onDialog(r as unknown as DialogRequest).then((ans) =>

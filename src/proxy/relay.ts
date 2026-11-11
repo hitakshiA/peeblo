@@ -269,7 +269,7 @@ export function startProxy(): Promise<Server> {
       return { upstream, model: p.model, stream: p.stream, t0, sandbox, tools: "tools" in p ? p.tools : 0 };
     };
 
-    let a;
+    let a: Awaited<ReturnType<typeof attempt>>;
     try {
       a = await attempt();
       // A sandbox Otari let go of early answers 400; start a fresh one once.

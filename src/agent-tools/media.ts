@@ -5,7 +5,7 @@
 // understanding. Spreadsheets, CSVs and Word files stay with the computer or run_code, which read them exactly.
 import { readFile } from "node:fs/promises";
 import { join, normalize } from "node:path";
-import { otari, OtariError } from "../otari/client.ts";
+import { otari, type OtariError } from "../otari/client.ts";
 import { isOpenWeight, tierOf } from "../otari/catalog.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";

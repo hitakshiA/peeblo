@@ -20,7 +20,7 @@ function table(a: any): any[] | string {
   // A column is numeric (sorts by value) when every cell in it is a number.
   const numeric = cols.map((_, i) => rows.every((r) => typeof r[i] === "number"));
   const cell = (v: unknown, i: number) => (numeric[i] ? { type: "raw_number", value: v as number, text: (v as number).toLocaleString("en-US") } : { type: "raw_text", text: cut(v === null || v === "" ? "–" : v, cols.length > 2 ? 28 : 40) });
-  return [{ type: "data_table", caption: cut(a.title || "Table", 150), page_size: Math.min(Math.max(rows.length, 1), rows.length > 10 ? 10 : rows.length),
+  return [{ type: "data_table", caption: cut(a.title || "Table", 150), page_size: Math.min(Math.max(rows.length, 1), Math.min(rows.length, 10)),
     rows: [cols.map((c) => ({ type: "raw_text", text: cut(c, 20) || "–" })), ...rows.map((r) => r.map(cell))] }];
 }
 

@@ -10,7 +10,7 @@ import { seal, unseal } from "../crypto.ts";
 import { pool } from "../db.ts";
 import type { Teammate } from "../store/teammates.ts";
 import { createBudget, createKeyCeiling, createServiceKey, deleteBudget, deleteCeiling, deleteKey, session, updateBudget } from "./admin.ts";
-import { otari, OtariError, usageSummary } from "./client.ts";
+import { otari, type OtariError, usageSummary } from "./client.ts";
 import { tiers } from "./people.ts";
 
 export type SpendMode = "key" | "tag";

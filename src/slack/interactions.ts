@@ -104,7 +104,7 @@ export function installSlackInteractions(): void {
     // Not now: the small form (only someone who may answer the card can open it).
     if (a.action_id === "not_now") {
       const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
-      if (!row || row.status !== "pending") return;
+      if (row?.status !== "pending") return;
       if (!(row.action.approvers ?? []).includes(who.id) && !(await (await import("../approvers.ts")).adminIds()).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
       const tm = await getTeammate(row.action.teammate);
       const { notNowModal } = await import("./approval-card.ts");
@@ -136,7 +136,7 @@ export function installSlackInteractions(): void {
     // Edit: the form with the call's arguments (only someone who may answer the card can open it).
     if (a.action_id === "edit_approval") {
       const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
-      if (!row || row.status !== "pending") return;
+      if (row?.status !== "pending") return;
       if (!(row.action.approvers ?? []).includes(who.id) && !(await (await import("../approvers.ts")).adminIds()).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
       const tm = await getTeammate(row.action.teammate);
       const { editModal } = await import("./approval-card.ts");

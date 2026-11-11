@@ -13,7 +13,8 @@ export const EMBED_DIMS = Number(process.env.PEEBLO_EMBED_DIMS ?? 256);
 // Qwen3 embeddings expect an instruction on queries (not on documents).
 const QUERY_INSTRUCTION = "Instruct: Given a question from a teammate, find the notes that answer it\nQuery: ";
 
-export async function embed(texts: string[], kind: "query" | "document", endUser?: string): Promise<{ vectors: number[][]; requestId: string | null; cost: number | null }> {
+// _endUser is accepted but not sent: Otari refuses an end-user id on /embeddings and /rerank.
+export async function embed(texts: string[], kind: "query" | "document", _endUser?: string): Promise<{ vectors: number[][]; requestId: string | null; cost: number | null }> {
   const input = kind === "query" && EMBED_MODEL.includes("qwen3-embedding") ? texts.map((t) => QUERY_INSTRUCTION + t) : texts;
   const { data, requestId } = await otari<{ data: { index: number; embedding: number[] }[]; usage?: { cost_usd?: string | number } }>("POST", "/embeddings", {
     model: EMBED_MODEL, input, dimensions: EMBED_DIMS,
@@ -23,7 +24,7 @@ export async function embed(texts: string[], kind: "query" | "document", endUser
 }
 
 export type Ranked = { index: number; score: number };
-export async function rerank(query: string, documents: string[], topN = 5, endUser?: string): Promise<{ results: Ranked[]; requestId: string | null; cost: number | null }> {
+export async function rerank(query: string, documents: string[], topN = 5, _endUser?: string): Promise<{ results: Ranked[]; requestId: string | null; cost: number | null }> {
   if (!documents.length) return { results: [], requestId: null, cost: 0 };
   const { data, requestId } = await otari<{ results: { index: number; relevance_score: number }[]; usage?: { cost_usd?: string | number } }>("POST", "/rerank", {
     model: RERANK_MODEL, query, documents: documents.map((d) => d.slice(0, 4000)), top_n: Math.min(topN, documents.length),
@@ -40,7 +41,7 @@ export const cosine = (a: number[], b: number[]): number => {
 // Reciprocal rank fusion of several candidate lists (indexes into the same documents), k = 60.
 export function fuse(lists: number[][], k = 60): number[] {
   const score = new Map<number, number>();
-  for (const l of lists) l.forEach((idx, rank) => score.set(idx, (score.get(idx) ?? 0) + 1 / (k + rank + 1)));
+  for (const l of lists) l.forEach((idx, rank) => { score.set(idx, (score.get(idx) ?? 0) + 1 / (k + rank + 1)); });
   return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([i]) => i);
 }
 

@@ -192,7 +192,7 @@ async function ending(runId: string, ok: boolean): Promise<any[]> {
       { type: "button", text: { type: "plain_text", text: "Ask the owner" }, action_id: "ask_owner", value: runId },
     ] }]),
     receiptChip(r),
-    ...(r && r.calls ? [{ type: "actions", block_id: `receipt:${runId}`, elements: [{ type: "button", text: { type: "plain_text", text: "Receipt" }, action_id: "open_receipt", value: runId }] }] : []),
+    ...(r?.calls ? [{ type: "actions", block_id: `receipt:${runId}`, elements: [{ type: "button", text: { type: "plain_text", text: "Receipt" }, action_id: "open_receipt", value: runId }] }] : []),
     { type: "context_actions", elements: [{ type: "feedback_buttons", action_id: `feedback:${runId}`, positive_button: { text: { type: "plain_text", text: "Good" }, value: `up:${runId}` }, negative_button: { text: { type: "plain_text", text: "Bad" }, value: `down:${runId}` } }] },
   ];
 }

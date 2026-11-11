@@ -216,7 +216,7 @@ async function screenPart(text: string, endUser: string | null): Promise<Screene
         // Otari confirms: only text both flag is held back; the rest goes on, labelled.
         const second = await openGuard(text, endUser).catch(() => null);
         const requestId = r.headers.get("otari-request-id");
-        if (second && second.safe) return { checked_by: "Lakera Guard in Otari", flagged: false, score: refusal.score, categories: [], requestId, disputed: `Lakera flagged it, ${config.guardModel} found nothing aimed at an AI` };
+        if (second?.safe) return { checked_by: "Lakera Guard in Otari", flagged: false, score: refusal.score, categories: [], requestId, disputed: `Lakera flagged it, ${config.guardModel} found nothing aimed at an AI` };
         return { checked_by: second ? `Lakera Guard in Otari, confirmed by ${config.guardModel}` : "Lakera Guard in Otari", flagged: true, score: refusal.score, categories: second?.categories?.length ? second.categories : ["prompt_injection"], requestId };
       }
     }
