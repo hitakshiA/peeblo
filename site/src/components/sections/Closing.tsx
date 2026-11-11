@@ -22,7 +22,7 @@ const columns = [
     title: "Project",
     links: [
       { label: "GitHub", href: site.repoUrl },
-      { label: "Docs (README)", href: site.repoUrl },
+      { label: "Docs (README)", href: site.docsUrl },
       { label: "Apache-2.0 licence", href: "https://www.apache.org/licenses/LICENSE-2.0" },
     ],
   },

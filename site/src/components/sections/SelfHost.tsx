@@ -9,8 +9,7 @@ import { reducedMotion } from "@/lib/pointer";
 import { site } from "@/content/site";
 import s from "./SelfHost.module.css";
 
-// Until the repo is public, site.repoUrl is just github.com, so the clone line shows a placeholder.
-const repo = /github\.com\/[^/]+\/[^/]+/.test(site.repoUrl) ? site.repoUrl : "<repo-url>";
+const repo = site.repoUrl;
 const commands = [`git clone ${repo} peeblo && cd peeblo`, "./peeblo up"];
 
 // The terminal plays a real start-up: each command typed out, then what ./peeblo up prints. Then the console
