@@ -1,4 +1,4 @@
-// Making a teammate's Slack app (D1): from a manifest with the app configuration token (rotated before it expires),
+// Making a teammate's Slack app: from a manifest with the app configuration token (rotated before it expires),
 // with its face (an Open Bot Avatar), and a one-click install link. The config token lives sealed in core; on first
 // use it comes from the console's setup (or from PEEBLO_SLACK_CONFIG_FILE: {access_token, refresh_token, exp}).
 import { existsSync, readFileSync } from "node:fs";
