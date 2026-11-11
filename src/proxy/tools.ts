@@ -39,7 +39,6 @@ import type { Binding } from "./relay.ts";
 
 const json = (res: ServerResponse, status: number, body: unknown) => void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 
-// An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule).
 // What a task card shows under a finished tool: a short result, from the tool's own output.
 export function summarize(text: string): string {
   const t = text.trim();
@@ -61,8 +60,9 @@ export function urlsIn(text: string): string[] {
   return [...new Set((text.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []).map((u) => u.replace(/[.,;]+$/, "")))].slice(0, 5);
 }
 
+// An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule,
+// a trigger, or a teammate it called).
 export async function approvalTtl(runId: string): Promise<number> {
-  // Unattended (a schedule or trigger, or a teammate it called): 12 hours, then no.
   const { isUnattended } = await import("../approvers.ts");
   return (await isUnattended(runId)) ? 12 * 3600 : config.approvalTtlSeconds;
 }
@@ -442,7 +442,6 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
 
 const toolCallIdOf = (base: Record<string, unknown>) => String(base.id ?? newId("tc"));
 
-// How many records a JSON result holds: the longest array at the top or one level down.
 // A JSON list cut mid-record (a result over MAX_RESULT): the complete records before the cut,
 // as {"data": [...], "has_more": true}. Null when the text isn't the start of a JSON list.
 export function salvageList(text: string): { data: any[]; has_more: true } | null {
@@ -461,6 +460,7 @@ export function salvageList(text: string): { data: any[]; has_more: true } | nul
   return out.length ? { data: out, has_more: true } : null;
 }
 
+// How many records a JSON result holds: the longest array at the top or one level down.
 function recordCount(text: string): number | null {
   try {
     const v = JSON.parse(text);

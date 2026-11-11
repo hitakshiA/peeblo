@@ -1,4 +1,4 @@
-// Peeblo's own tools as the crew's manager (K2–K6). The asker, payer, thread and owner come from the
+// Peeblo's own tools as the crew's manager. The asker, payer, thread and owner come from the
 // session; authority is checked in code. Hiring is the hiring-a-teammate skill plus these tools: the agent
 // talks and drafts, and the ID card is the one approval, on the finished result.
 import { pool } from "../db.ts";

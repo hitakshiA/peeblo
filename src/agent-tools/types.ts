@@ -1,5 +1,5 @@
 // Peeblo's own agent tools. The model chooses when to call them; the harness fills in everything it already
-// knows (who is asking, who pays, which session and run: K6), checks the arguments, and gates writes.
+// knows (who is asking, who pays, which session and run), checks the arguments, and gates writes.
 import type { Person } from "../store/people.ts";
 import type { Teammate } from "../store/teammates.ts";
 import type { Schema } from "./schema.ts";
