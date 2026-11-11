@@ -88,6 +88,8 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
   // Code work reads like the landing page, never the command itself.
   if (tool === "computer_job") return "Checked a background job";
   if (tool === "make_image") return "Made an image";
+  if (tool === "batch_run") return "Sent a batch to Otari";
+  if (tool === "batch_results") return "Collected a batch";
   if (tool === "computer_bash")
     return /\b(pytest|npm test|jest|vitest|go test|cargo test)\b/.test(String(d.command ?? ""))
       ? "Ran the tests"
