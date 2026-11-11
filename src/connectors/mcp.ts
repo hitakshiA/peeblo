@@ -63,21 +63,25 @@ export async function serverList() {
   return servers.list;
 }
 
-async function serverTools(id: string, fresh = false) {
-  const hit = toolCache.get(id);
+// A server's tools as one key sees them: Otari lists only what that key may call, so a teammate with its own grant
+// there is listed on its own key (cached per key), everyone else on the core key.
+type KeyView = { keyId: string; auth: Record<string, string> };
+async function serverTools(id: string, fresh = false, as?: KeyView) {
+  const cacheId = as ? `${as.keyId}:${id}` : id;
+  const hit = toolCache.get(cacheId);
   if (!fresh && hit && Date.now() - hit.at < TTL) return hit;
   if (!fresh && hit) {
-    if (!refreshing.has(id)) {
-      refreshing.add(id);
-      void serverTools(id, true)
+    if (!refreshing.has(cacheId)) {
+      refreshing.add(cacheId);
+      void serverTools(id, true, as)
         .catch(() => {})
-        .finally(() => refreshing.delete(id));
+        .finally(() => refreshing.delete(cacheId));
     }
     return hit;
   }
-  const { data } = await otari<{ server_revision: string; tools: any[] }>("GET", `/mcp/servers/${id}/tools`);
+  const { data } = await otari<{ server_revision: string; tools: any[] }>("GET", `/mcp/servers/${id}/tools`, undefined, as ? { auth: as.auth } : {});
   const entry = { at: Date.now(), revision: data.server_revision, tools: data.tools ?? [] };
-  toolCache.set(id, entry);
+  toolCache.set(cacheId, entry);
   saveCache();
   return entry;
 }
@@ -106,8 +110,12 @@ export function markUnavailable(server: string, tool: string): void {
 export const ALWAYS_REFUSES =
   /not available due to compliance|this tool is (disabled|not enabled)|tool is not available (for|on) (this|your) (plan|account|workspace)/i;
 
-// The tools of every connector the teammate has, as Otari authorizes them for Peeblo's key.
-export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorTool[]; missing: string[]; failed: string[] }> {
+// The tools of every connector the teammate has, as Otari authorizes them: on the teammate's own key for the servers
+// where Otari holds its access (`own`), else on Peeblo's core key.
+export async function catalogFor(
+  c: TeammateConfig,
+  own?: { keyId: string; secret: string; servers: Set<string> },
+): Promise<{ tools: ConnectorTool[]; missing: string[]; failed: string[] }> {
   if (!c.connectors.length) return { tools: [], missing: [], failed: [] };
   const list = await serverList();
   // "all" (Peeblo, the chief of staff): every MCP server connected in Otari. Their tools start deferred; writes
@@ -120,7 +128,7 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
   // Servers are read in parallel (Peeblo's "all" is ~28 servers; one by one took ~40 s cold).
   const found = c.connectors.map((name) => ({ name, s: list.find((x) => x.name === name) }));
   for (const f of found) if (!f.s) missing.push(f.name);
-  const loaded = await Promise.all(found.filter((f) => f.s).map(async (f) => ({ f, t: await serverTools(f.s!.id).catch(() => null) })));
+  const loaded = await Promise.all(found.filter((f) => f.s).map(async (f) => ({ f, t: await serverTools(f.s!.id, false, own?.servers.has(f.name) ? { keyId: own.keyId, auth: { authorization: `Bearer ${own.secret}` } } : undefined).catch(() => null) })));
   for (const { f, t } of loaded) {
     const s = f.s!;
     if (!t) {

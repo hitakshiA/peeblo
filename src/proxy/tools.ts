@@ -144,8 +144,15 @@ export async function handleTools(
     return json(res, 200, { ok: true });
   }
 
+  // The teammate's connectors as its own Otari key sees them, where Otari holds its access.
+  const ownView = async () => {
+    if (!b.otariKey || !b.keyId) return undefined;
+    const { ownKeyServers } = await import("../otari/mcp-access.ts");
+    return { keyId: b.keyId, secret: b.otariKey, servers: ownKeyServers(tm.id, b.keyId) };
+  };
+
   if (req.method === "GET" && path === "/tools") {
-    const cat = await catalogFor(tm.config);
+    const cat = await catalogFor(tm.config, await ownView());
     const direct = await mostUsed(
       tm.id,
       cat.tools.map((t) => t.name),
@@ -214,7 +221,7 @@ export async function handleTools(
     subagent,
   };
   const ownTool = own.find((t) => t.name === name);
-  const connector = ownTool ? undefined : (await catalogFor(tm.config)).tools.find((x) => x.name === name);
+  const connector = ownTool ? undefined : (await catalogFor(tm.config, await ownView())).tools.find((x) => x.name === name);
   if (!ownTool && !connector)
     return json(res, 200, { text: `There is no tool called ${name} in this session. Use one of the tools you were given.`, isError: true });
 
