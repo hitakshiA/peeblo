@@ -18,7 +18,7 @@ async function candidates(): Promise<{ everyday: string; list: Record<string, st
 
 export const pickModelTool: AgentTool = {
   name: "pick_model",
-  description: "Rarely: when one part of a job is clearly harder than everyday work, ask Otari's router which model fits that part. If it picks a stronger model (or another family for a second opinion), that part runs on its pick as a read-only helper and you get the answer back; the strong model costs many times the everyday one. Almost every job, including most analysis, doesn't need this. Typical reasons: sources that disagree and must be reconciled, a long plan with dependent steps, a subtle bug, careful money math, a second opinion. Give the self-contained task, with the facts it needs.",
+  description: "When one part of a job is clearly harder than the rest, ask Otari's router which model fits that part. If it picks a stronger model (or another family for a second opinion), that part runs on its pick as a helper with its own computer folder, and you get the answer back. Typical reasons: sources that disagree and must be reconciled, a long plan with dependent steps, a subtle bug, careful money math, a second opinion. Give the self-contained task, with the facts it needs.",
   input_schema: object({
     work: { type: "string", description: "Why this part is hard, in a line." },
     task: { type: "string", description: "The self-contained task for the chosen model, with the facts and numbers it needs; it can look things up but changes nothing." },

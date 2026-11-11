@@ -24,7 +24,7 @@ import { installSkillTool, readSkillTool, saveSkillTool } from "./skills.ts";
 
 export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): AgentTool[] {
   const all = [planTool, planApprovalTool, readSkillTool, saveSkillTool, installSkillTool, showDataTool, canvasTool, ...slackTools.filter((t) => t.name !== "channel_watch" || tm.slug === "peeblo"), ...memoryTools, ...workMemoryTools, companyMemoryTool, pickModelTool, ...(tm.slug === "peeblo" ? [...managerTools] : [askHumanTool]), askTeammateTool, ...scheduleTools, ...otariTools, ...(tm.config.tools.includes("web") ? [webSearchTool, ...(config.webFetch ? [webFetch] : [])] : []), ...(config.otariCode && tm.config.tools.includes("code") ? [runCodeTool] : []), ...(tm.config.tools.includes("computer") ? [understandFileTool, shareFileTool] : []), checkTextTool, ...(tm.config.tools.includes("computer") ? [...computerTools, ...recipeTools, ...(((tm.config.computer as any)?.repos ?? []).length ? repoTools : []), ...(tm.config.computer?.size === "large" ? browserTools : [])] : []), subagentTool];
-  // A subagent looks things up but changes nothing, and opens no subagents.
+  // A subagent looks things up and works on its computer, but changes nothing outside it, and opens no subagents.
   // The start set is small: how to reply, find more tools, read a skill, recall, plan, hand
   // work on, and the computer. Everything else (hiring, settings, schedules, connectors, web) is found with find_tools and called with use_tool.
   const START = new Set(["slack_post", "share_file", "slack_read_thread", "slack_read_channel", "show_data", "read_skill", "memory_read", "recall", "plan", ...(tm.slug === "peeblo" ? ["delegate", "crew_status"] : ["ask_teammate"]),
@@ -34,7 +34,8 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
     // A teammate with repos opens and publishes them with its own tools, never with git on the computer.
     ...((((tm.config.computer as any)?.repos ?? []).length) ? ["repo_open", "repo_publish"] : [])]);
   const listed = all.map((t) => (START.has(t.name) ? t : { ...t, deferred: true })).map((t) => (t.name === "computer_bash" ? { ...t, description: `${t.description} ${hardware(tm)}` } : t));
-  return opts.subagent ? listed.filter((t) => t.kind === "read") : listed;
+  // A subagent works on its own computer folder (commands, files, background jobs) but changes nothing outside it.
+  return opts.subagent ? listed.filter((t) => t.kind === "read" || /^computer_(bash|job|read|write|edit)$/.test(t.name)) : listed;
 }
 
 // What the teammate's computer is, so it plans work that fits (and installs what it needs, knowing the limits).

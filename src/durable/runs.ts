@@ -40,13 +40,6 @@ async function runWorkflowFn(runId: string): Promise<string> {
     }, { name: "refused" });
     return "refused";
   }
-  // At most config.maxRunning jobs work at once (memory): this one waits for a free slot, oldest first.
-  for (let i = 0; ; i++) {
-    const ahead = await DBOS.runStep(() => claimSlot(runId), { name: "slot" });
-    if (ahead === 0) break;
-    if (i === 0) await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId, type: "run.queued", data: { ahead, max_running: config.maxRunning } }), { name: "queued" });
-    await DBOS.sleep(2000);
-  }
   await DBOS.runStep(async () => {
     await setRunStatus(runId, "running");
     await appendEvent({ sessionId: ctx.session.id, runId, type: "run.started", data: { workflow_id: DBOS.workflowID } });
@@ -77,27 +70,20 @@ async function runWorkflowFn(runId: string): Promise<string> {
 }
 const runWorkflow = DBOS.registerWorkflow(runWorkflowFn, { name: "run" });
 
-// Takes a working slot when one is free and no older job is waiting for one: 0, and the run is marked running.
-// Otherwise how many jobs are ahead. One lock, so two jobs never take the last slot together.
-async function claimSlot(runId: string): Promise<number> {
-  const { pool } = await import("../db.ts");
-  const c = await pool.connect();
-  try {
-    await c.query("BEGIN");
-    await c.query("SELECT pg_advisory_xact_lock(7340001)");
-    const { rows } = await c.query(
-      `SELECT (SELECT count(*)::int FROM runs WHERE status = 'running' AND id <> $1) AS working,
-              (SELECT count(*)::int FROM runs r JOIN events e ON e.run_id = r.id AND e.type = 'run.queued'
-                WHERE r.status = 'queued' AND r.id <> $1 AND r.created_at < (SELECT created_at FROM runs WHERE id = $1)
-                  AND r.created_at > now() - interval '1 hour') AS older`, [runId]);
-    const { working, older } = rows[0];
-    const free = working < config.maxRunning && older === 0;
-    if (free) await c.query("UPDATE runs SET status = 'running', started_at = coalesce(started_at, now()) WHERE id = $1", [runId]);
-    await c.query("COMMIT");
-    return free ? 0 : Math.max(1, working - config.maxRunning + 1 + older);
-  } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; } finally { c.release(); }
+// At most config.maxRunning jobs work at once (each needs memory for its agent and computer): people's jobs wait
+// in a DBOS queue, oldest first. Work a running job is waiting on (a subagent, a call to another teammate) starts at
+// once instead: queued behind its own parent, the two would wait on each other.
+export const JOBS_QUEUE = "jobs";
+export async function registerJobsQueue(): Promise<void> {
+  await DBOS.registerQueue(JOBS_QUEUE, { workerConcurrency: config.maxRunning, onConflict: "always_update" });
 }
 
-export async function startRun(runId: string): Promise<void> {
-  await DBOS.startWorkflow(runWorkflow, { workflowID: runId })(runId);
+export async function startRun(runId: string, opts: { child?: boolean } = {}): Promise<void> {
+  if (opts.child) return void (await DBOS.startWorkflow(runWorkflow, { workflowID: runId })(runId));
+  const { pool } = await import("../db.ts");
+  const { rows } = await pool.query("SELECT (SELECT count(*)::int FROM runs WHERE status = 'running') AS working, (SELECT count(*)::int FROM runs WHERE status = 'queued' AND id <> $1 AND created_at > now() - interval '1 hour') AS waiting, (SELECT session_id FROM runs WHERE id = $1) AS session_id", [runId]);
+  const { working, waiting, session_id } = rows[0] ?? {};
+  // The person hears at once that their job is waiting, and how many are ahead.
+  if (working >= config.maxRunning && session_id) await appendEvent({ sessionId: session_id, runId, type: "run.queued", data: { ahead: Math.max(1, working - config.maxRunning + 1 + waiting), max_running: config.maxRunning } });
+  await DBOS.startWorkflow(runWorkflow, { workflowID: runId, queueName: JOBS_QUEUE })(runId);
 }

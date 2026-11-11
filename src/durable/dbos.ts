@@ -23,6 +23,8 @@ export async function launchDurable(): Promise<void> {
     logLevel: "warn",
   });
   await DBOS.launch();
+  const { registerJobsQueue } = await import("./runs.ts");
+  await registerJobsQueue();
 }
 
 export async function shutdownDurable(): Promise<void> {

@@ -52,7 +52,7 @@ export async function createSchedule(tm: Teammate, by: string | null, s: { kind:
   await pool.query(
     `INSERT INTO schedules (id, teammate_id, session_id, kind, name, cron, run_at, prompt, output_to, budget_usd, filter, watch, created_by, secret)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-    [id, tm.id, session.id, s.kind, s.name, s.cron ?? null, s.runAt ?? null, s.prompt, s.place, Math.min(1, s.budgetUsd ?? 0.05), s.filter ?? {}, s.watch ?? null, by, secret ? seal(secret) : null]);
+    [id, tm.id, session.id, s.kind, s.name, s.cron ?? null, s.runAt ?? null, s.prompt, s.place, Math.min(config.routineMaxUsd, s.budgetUsd ?? config.routineBudgetUsd), s.filter ?? {}, s.watch ?? null, by, secret ? seal(secret) : null]);
   if (s.originRequest) await pool.query("UPDATE schedules SET origin_request = $2 WHERE id = $1", [id, s.originRequest.slice(0, 4000)]);
   if (s.tz) await pool.query("UPDATE schedules SET tz = $2 WHERE id = $1", [id, s.tz]);
   if (s.kind === "cron") { const { syncSchedules } = await import("./durable/schedules.ts"); await syncSchedules(); }

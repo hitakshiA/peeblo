@@ -46,7 +46,7 @@ export const scheduleTools: AgentTool[] = [
       once_at: { type: ["string", "null"], description: "An ISO time for a single run." },
       prompt: { type: ["string", "null"], description: promptHelp },
       channel: { type: ["string", "null"], description: "A public channel id for the results; empty for this conversation." },
-      budget_usd: { type: ["number", "null"], minimum: 0, maximum: 1 },
+      budget_usd: { type: ["number", "null"], minimum: 0, maximum: config.routineMaxUsd, description: `Per run; default $${config.routineBudgetUsd}. Hard work (a strong model, a long job) needs more.` },
     }),
     kind: "local",
     // Setting one up acts on this teammate's behalf later; results in a channel post outside this conversation.
@@ -61,8 +61,8 @@ export const scheduleTools: AgentTool[] = [
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
       const tz = ctx.person ? (await pool.query<{ tz: string | null }>("SELECT tz FROM people WHERE id = $1", [ctx.person.id])).rows[0]?.tz ?? null : null;
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { tz, originRequest: await originRequest(ctx), kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? 0.05 });
-      return { text: `Scheduled "${a.name}" (id ${s.id}: for your tools only, never in a reply) ${a.cron ? `on ${a.cron} (${tz ?? "UTC"})` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? 0.05).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { tz, originRequest: await originRequest(ctx), kind: a.cron ? "cron" : "once", name: a.name, prompt: a.prompt, cron: a.cron, runAt: a.once_at, place: out.place, budgetUsd: a.budget_usd ?? config.routineBudgetUsd });
+      return { text: `Scheduled "${a.name}" (id ${s.id}: for your tools only, never in a reply) ${a.cron ? `on ${a.cron} (${tz ?? "UTC"})` : `for ${a.once_at}`}, with a budget of $${(a.budget_usd ?? config.routineBudgetUsd).toFixed(2)} a run. Writes it makes still need the usual approvals.`, data: { id: s.id } };
     },
   },
   {
@@ -90,7 +90,7 @@ export const scheduleTools: AgentTool[] = [
       source: { type: ["string", "null"], enum: ["stripe", "pagerduty", null], description: "Stripe or PagerDuty (their events come to Peeblo once an admin sets up the webhook)." },
       filter: { type: ["object", "null"], description: "Fields the event must match, e.g. {event: 'deployment_status', 'deployment_status.state': 'success'}.", additionalProperties: true } as any,
       channel: { type: ["string", "null"] },
-      budget_usd: { type: ["number", "null"], minimum: 0, maximum: 1 },
+      budget_usd: { type: ["number", "null"], minimum: 0, maximum: config.routineMaxUsd, description: `Per run; default $${config.routineBudgetUsd}. Hard work (a strong model, a long job) needs more.` },
     }),
     kind: "local",
     outward: (_ctx, a) => (a.action === "create" ? "write" : null),
@@ -100,7 +100,7 @@ export const scheduleTools: AgentTool[] = [
       if (!a.prompt?.trim() || !a.name) return { text: "A trigger needs a name and a prompt.", isError: true };
       const out = await outputPlace(ctx.teammate, await origin(ctx), a.channel ?? null);
       if ("problem" in out) return { text: out.problem, isError: true };
-      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? 0.05, filter: { ...(a.filter ?? {}), ...(a.source ? { source: a.source } : {}) } });
+      const s = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { originRequest: await originRequest(ctx), kind: "webhook", name: a.name, prompt: a.prompt, place: out.place, budgetUsd: a.budget_usd ?? config.routineBudgetUsd, filter: { ...(a.filter ?? {}), ...(a.source ? { source: a.source } : {}) } });
       if (a.source) {
         const on = `Trigger "${a.name}" (id ${s.id}: for your tools only, never in a reply) is on: ${a.source} events${a.filter ? ` matching ${JSON.stringify(a.filter)}` : ""} wake you with the event.`;
         // The service has to send its events to Peeblo once (an admin step); until then the trigger never fires.

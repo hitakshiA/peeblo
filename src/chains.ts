@@ -13,7 +13,7 @@ import { getPerson } from "./store/people.ts";
 
 export const MAX_DEPTH = Number(process.env.PEEBLO_CHAIN_DEPTH ?? 3);
 export const MAX_CALLS = Number(process.env.PEEBLO_CHAIN_CALLS ?? 6);
-export const CHAIN_CAP_USD = Number(process.env.PEEBLO_CHAIN_CAP_USD ?? 1);
+export const CHAIN_CAP_USD = Number(process.env.PEEBLO_CHAIN_CAP_USD ?? 5);
 
 // The chain a run belongs to: its root run and its depth (0 for a person's own ask).
 export async function chainOf(runId: string | null): Promise<{ root: string | null; depth: number }> {
@@ -100,7 +100,7 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
   const { run, created } = await submit({ sessionId: s.id, personId: from.personId, requestId: `${kind}:${from.runId}:${callee.slug}:${from.toolCallId}`, text, source: "teammate", chainId: root });
   if (created) {
     await appendEvent({ sessionId: from.sessionId, runId: from.runId, type: "chain.call", data: { root: root ?? from.runId, parent_run: from.runId, child_run: run.id, depth: depth + 1, caller: from.caller.slug, callee: callee.slug, kind } });
-    await startRun(run.id);
+    await startRun(run.id, { child: true });
   }
   return { runId: run.id, sessionId: s.id, inDm: Boolean(place && here && place.channel !== here.channel) };
 }

@@ -1,6 +1,7 @@
 // plan: the teammate's own plan for the work in hand, kept as an event (the harness shows it).
-// subagent: a fresh session of the same teammate for side work, one level deep and read-only: it can look
-// things up but not change anything, and it can't open subagents of its own. A subagent is a model
+// subagent: a fresh session of the same teammate for side work, one level deep: it can look things up and work on
+// its own computer folder (run commands, write files), but not change anything outside, and it can't open subagents
+// of its own. Several run at once. A subagent is a model
 // boundary: it may run on another open-weight model, and one whose cost estimate is over the price
 // card threshold waits for a person first.
 import { config } from "../config.ts";
@@ -33,12 +34,12 @@ const modelFor = (m: string | null, fallback: string) => (m === null ? fallback 
 
 export const subagentTool: AgentTool = {
   name: "subagent",
-  description: "Hand a self-contained piece of read-only side work (research, reading, comparing) to a fresh session of yourself, and get its answer back. Say what you need and why, not how. It can look things up but not change anything.",
+  description: "Hand a self-contained piece of side work (research, reading, comparing, running and checking something on a computer) to a fresh session of yourself, and get its answer back. Start several in one step for independent parts; they run at the same time. Say what you need and why, not how. It can look things up and use its own computer folder, but not change anything outside it.",
   input_schema: object({
     task: { type: "string", description: "What to find out, and what the answer should look like." },
     model: { type: ["string", "null"], description: "A catalog model id or role policy for this work, or null for your own model (pick_model asks Otari's router)." },
   }),
-  kind: "local",
+  kind: "read", // several at once; each is its own session, and nothing it does reaches outside its computer folder
   async authorize(ctx, a) {
     if (ctx.subagent) return "A subagent can't open subagents of its own; do the work yourself.";
     return a.model ? checkModel(a.model) : null;
@@ -51,8 +52,9 @@ export const subagentTool: AgentTool = {
   async run(ctx, a) {
     const s = await openSession(ctx.teammate.id, "api", `subagent:${ctx.sessionId}:${ctx.toolCallId}`, { subagent_of: ctx.sessionId, model: a.model, read_only: true });
     const sub = await submit({ sessionId: s.id, personId: ctx.person?.id ?? null, requestId: `subagent-${ctx.toolCallId}`, text: a.task, source: "subagent" });
-    await startRun(sub.run.id);
-    const until = Date.now() + 8 * 60_000;
+    await startRun(sub.run.id, { child: true });
+    // As long as its own work takes: it has the same limits as any job (budget, the stuck check, the hard limit).
+    const until = Date.now() + config.turnTimeoutMs;
     for (;;) {
       const run = await getRun(sub.run.id);
       if (run && ["done", "failed", "cancelled"].includes(run.status)) {
@@ -61,8 +63,8 @@ export const subagentTool: AgentTool = {
         if (run.status !== "done") return { text: `The subagent stopped (${run.status}${run.error ? `: ${run.error}` : ""}).`, isError: true, data: { run_id: sub.run.id } };
         return { text: answer, untrusted: "subagent", data: { run_id: sub.run.id, session_id: s.id } };
       }
-      if (Date.now() > until) return { text: "The subagent didn't finish in 8 minutes.", isError: true, data: { run_id: sub.run.id } };
-      await new Promise((r) => setTimeout(r, 1500));
+      if (Date.now() > until) return { text: "The subagent didn't finish in time.", isError: true, data: { run_id: sub.run.id } };
+      await new Promise((r) => setTimeout(r, 2000));
     }
   },
 };

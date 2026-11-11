@@ -225,6 +225,12 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
 
   const base: Record<string, unknown> = { turn: b.turn, by: "peeblo", id: toolCallId, tool: name, args_fingerprint: fingerprint(args), args_preview: JSON.stringify(args ?? {}).slice(0, 300), asked_by: person?.id ?? null, end_user: b.endUser };
   const event = (data: Record<string, unknown>) => appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { ...base, ...data } }).catch(() => {});
+  // A call that already ran (Pi resent it after a restart): anything that changes something runs once; the agent
+  // gets what it did back.
+  if (!(ownTool?.kind === "read") && b.runId) {
+    const done = (await pool.query("SELECT data->>'summary' AS summary FROM events WHERE run_id = $1 AND type = 'tool.call' AND data->>'id' = $2 AND data->>'status' = 'completed' LIMIT 1", [b.runId, toolCallId]).catch(() => ({ rows: [] as any[] }))).rows[0];
+    if (done) return json(res, 200, { text: `[peeblo: this exact call already ran before Peeblo restarted; it isn't run twice.] ${done.summary ?? "It completed."}` });
+  }
   // Loop limits, the same on every model: the 3rd identical call in a run gets a factual note, the 6th
   // stops the run.
   // Free-text fields some servers ask for (Resend's "context", "conversation_id", "llm_model") change every call,

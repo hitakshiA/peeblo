@@ -65,6 +65,9 @@ export const config = {
   maxOutputTokens: Number(process.env.PEEBLO_MAX_OUTPUT_TOKENS ?? 32_768),            // the most one model call may write
   contextTokens: Number(process.env.PEEBLO_CONTEXT_TOKENS ?? 262_144),                // the context window Pi works in (compacts before it); models offer up to 1M
   thinkingLevel: (process.env.PEEBLO_THINKING_LEVEL ?? "medium").trim(),               // teammates' reasoning effort (off, low, medium, high, xhigh)
+  jobRouting: (process.env.PEEBLO_JOB_ROUTING ?? "on").trim() !== "off",               // pick the model per job with Otari's router; move up when a job is sent back
+  routineBudgetUsd: Number(process.env.PEEBLO_ROUTINE_BUDGET_USD ?? 0.25),             // a scheduled or triggered run's budget when none is given
+  routineMaxUsd: Number(process.env.PEEBLO_ROUTINE_MAX_USD ?? 5),                      // the most one scheduled or triggered run may be given
   progressEveryMs: Number(process.env.PEEBLO_PROGRESS_EVERY_MS ?? 20 * 60_000),       // a long job is nudged to post a progress line this often (steered in, nothing interrupted)
   maxContinuations: Number(process.env.PEEBLO_MAX_CONTINUATIONS ?? 2),                // how many times the Stop check or grader may send a job back
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),

@@ -72,12 +72,15 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 | `PEEBLO_MAX_OUTPUT_TOKENS` | `32768` | The most one model call may write. Otari reserves budget for all of it. |
 | `PEEBLO_CONTEXT_TOKENS` | `262144` | The context window Pi works in; it compacts before reaching it. Models offer up to 1M, at a cost per call. |
 | `PEEBLO_THINKING_LEVEL` | `medium` | Teammates' reasoning effort. Peeblo's desk work uses `low`, the hard part (`peeblo-heavy`) `high`. |
+| `PEEBLO_JOB_ROUTING` | `on` | Otari's router picks the everyday or the strong model at the start of each job for teammates on the everyday role, and a job the Stop check sends back moves up to the strong model. `off` keeps every job on the teammate's model. |
+| `PEEBLO_ROUTINE_BUDGET_USD` | `0.25` | A scheduled or triggered run's budget when the teammate doesn't set one. |
+| `PEEBLO_ROUTINE_MAX_USD` | `5` | The most one scheduled or triggered run may be given. |
 | `PEEBLO_PROGRESS_EVERY_MS` | `1200000` (20 min) | How often a long job is asked to post a one-line progress note. The note is steered in between tool calls; nothing is interrupted. |
 | `PEEBLO_MAX_CONTINUATIONS` | `2` | How many times the Stop check or the outcome grader may send an unfinished job back. |
 | `PEEBLO_MAX_RUNNING` | 1 per GB of memory above 2 GB, at least 2 | The most jobs working at once. The rest wait in line. |
 | `PEEBLO_CHAIN_DEPTH` | `3` | How deep teammates may hand work to each other. |
 | `PEEBLO_CHAIN_CALLS` | `6` | The most hand-offs in one chain. |
-| `PEEBLO_CHAIN_CAP_USD` | `1` | The most one chain may spend. |
+| `PEEBLO_CHAIN_CAP_USD` | `5` | The most one chain may spend. |
 | `PEEBLO_TRIGGER_RUNS_PER_HOUR` | `6` | Triggered runs per teammate per hour. |
 | `PEEBLO_UNPROMPTED_PER_HOUR` | `3` | Posts a teammate may make in a watched channel per hour without being asked. |
 | `PEEBLO_MEMBER_WRITES` | `on` | `off`: only admins' requests change connected tools. Everyone can still read. |

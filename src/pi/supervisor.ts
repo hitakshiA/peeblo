@@ -28,7 +28,7 @@ const PI_CLI = join(ROOT, "node_modules", "@earendil-works", "pi-coding-agent", 
 const PI_OTARI = join(ROOT, "node_modules", "@mozilla-ai", "pi-otari", "index.ts");
 const PEEBLO_TOOLS = join(import.meta.dirname, "peeblo-tools.ts");
 
-type Live = { child: ChildProcess; rpc: PiRpc; token: string; teammateVersion: number; queue: Promise<unknown>; idle?: NodeJS.Timeout; busy?: number; runId?: string; personName?: string };
+type Live = { child: ChildProcess; rpc: PiRpc; token: string; teammateVersion: number; queue: Promise<unknown>; idle?: NodeJS.Timeout; busy?: number; runId?: string; model: string };
 const live = new Map<string, Live>();
 
 // The system prompt is short and the same on every turn of a session (a stable prefix for Otari's prompt cache).
@@ -139,7 +139,8 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   // A subagent session may run on the model its parent chose for it (a model boundary).
   const place = (sess?.place ?? {}) as { model?: string | null };
   const model = place.model || tm.config.model.default;
-  const models = [model, tm.config.model.fallback].filter(Boolean).join(",");
+  // The heavy role is listed too: a job can move onto it (job routing, or escalation when it struggles).
+  const models = [...new Set([model, tm.config.model.fallback, "peeblo-heavy"].filter(Boolean))].join(",");
   const web = tm.config.tools.includes("web");
   const key = await teammateKey(tm);
   const token = issueToken({ teammateId: tm.id, teammateVersion: tm.version, teammateSlug: tm.slug, sessionId, fallbackModel: tm.config.model.fallback ?? null, web: web ? tm.config.web : null, code: false, /* code runs through the run_code tool when the agent chooses it, never on every call */ otariKey: key?.secret ?? null, keyId: key?.keyId ?? null });
@@ -160,7 +161,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   });
   child.stderr!.on("data", (d) => { const s = String(d).trim(); if (s && !s.startsWith("Warning: No project session")) console.error(`pi[${tm.slug}/${sessionId}]: ${s.slice(0, 300)}`); });
   const rpc = new PiRpc(child.stdin!, child.stdout!);
-  const l: Live = { child, rpc, token, teammateVersion: tm.version, queue: Promise.resolve() };
+  const l: Live = { child, rpc, token, teammateVersion: tm.version, queue: Promise.resolve(), model };
   child.on("exit", () => { live.delete(sessionId); revokeToken(token); });
   live.set(sessionId, l);
   await rpc.send("get_state");
@@ -277,6 +278,35 @@ async function rosterNote(place: { app_id: string; channel: string }): Promise<s
   return text;
 }
 
+// Routing at the job boundary, the way coding agents run: a strong model for the main loop of hard work, the
+// everyday model for the rest, chosen once per job by Otari's router (switching mid-job would throw away the prompt
+// cache). A job the Stop check sends back moves up to the strong model for the rest of it.
+const jobModels = new Map<string, string>();
+export function escalateJob(runId: string): void { jobModels.set(runId, "peeblo-heavy"); }
+async function modelForJob(ctx: RunContext, tm: Teammate, turnNo: number, internal?: string): Promise<string> {
+  const base = ((ctx.session.place ?? {}) as { model?: string | null }).model || tm.config.model.default;
+  const known = jobModels.get(ctx.run.id);
+  if (known) return known;
+  // Only when the teammate runs on the everyday role (a person-chosen model stays), and only for real work.
+  const subagent = Boolean((ctx.session.place as any)?.subagent_of);
+  const eligible = turnNo === 1 && !internal && !subagent && base === "peeblo-worker" && config.jobRouting && ctx.text.replace(/<[^>]+>/g, "").trim().length >= 80;
+  let pick = base;
+  if (eligible) {
+    const { recommend, ROLES } = await import("../otari/routing.ts");
+    const person = ctx.personId ? await getPerson(ctx.personId) : null;
+    const r = await recommend({ sessionId: ctx.session.id, toolUseId: `job-${ctx.run.id}`, agentType: "job", description: ctx.text.slice(0, 200), prompt: ctx.text.slice(0, 4000), parentModel: ROLES["peeblo-worker"].default, endUser: person?.end_user_id ?? undefined,
+      candidates: {
+        [ROLES["peeblo-worker"].default]: "everyday work: lookups, summaries, drafts, routine tool use, short analysis; fast and cheap",
+        [ROLES["peeblo-heavy"].default]: "the strongest open model, many times the price: hard reasoning over many steps, code changes in a repo, debugging, reconciling sources that disagree, long plans",
+      } });
+    if (!r.fallback && r.model === ROLES["peeblo-heavy"].default) pick = "peeblo-heavy";
+    await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "job.model", data: { model: pick, by: "otari_router", probabilities: r.probabilities, reason: r.reason, request_id: r.requestId, fallback: r.fallback } }).catch(() => {});
+  }
+  jobModels.set(ctx.run.id, pick);
+  if (jobModels.size > 5000) jobModels.delete(jobModels.keys().next().value!);
+  return pick;
+}
+
 // A Pi message's text, whether its content is a string or a list of parts.
 function userText(m: { content?: unknown }): string {
   return typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((p: any) => (typeof p?.text === "string" ? p.text : "")).join("") : "";
@@ -344,6 +374,11 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
       await appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "run.merged", data: { into, steered: true } });
       return { text: "", stopReason: "merged" };
     }
+  }
+  // The model for this job: chosen once at its start (and kept, for the prompt cache), moved up when it struggles.
+  const want = await modelForJob(ctx, tm, turnNo, internal).catch(() => null);
+  if (want && want !== l.model) {
+    await l.rpc.send("set_model", { provider: "otari", modelId: want }).then(() => { l.model = want; }, (e) => console.error(`pi: set_model ${want} failed: ${(e as Error).message}`));
   }
   // A turn run again after a restart whose message Pi already has: the work above it is real, so the agent is told to
   // carry on, not handed the same request a second time.
@@ -526,6 +561,12 @@ export function installPiExecutor(): void {
       if (!check.again) break;
       checks++;
       n++;
+      // Sent back once already, or stuck on everyday work: the rest of the job runs on the strong model.
+      const cur = jobModels.get(ctx.run.id);
+      if (config.jobRouting && cur === "peeblo-worker") {
+        escalateJob(ctx.run.id);
+        await DBOS.runStep(() => appendEvent({ sessionId: ctx.session.id, runId: ctx.run.id, type: "job.model", data: { model: "peeblo-heavy", by: "escalation", reason: "the Stop check sent the job back" } }), { name: `escalate-${n}` });
+      }
       await start(n, { continuation: true });
       r = await DBOS.runStep(() => turn(ctx, n, check.again!), { name: `turn-${n}` });
       await finish(n, r);
