@@ -212,6 +212,18 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: "Otari search provider",
+    run: async () => {
+      // Either way web_search works; this says which way.
+      const { session, searchSetup } = await import("./otari/admin.ts");
+      if (!(await session())) return "needs a dashboard session to read";
+      const s = await searchSetup();
+      return s.provider
+        ? `direct search on ${s.provider}`
+        : "built-in search inside a model call (add a provider's key on the console's Otari page for direct results)";
+    },
+  },
+  {
     name: "Otari routing policies",
     run: async () => {
       const { session } = await import("./otari/admin.ts");

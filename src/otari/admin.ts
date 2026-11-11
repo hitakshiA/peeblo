@@ -274,6 +274,45 @@ export const mcpServers = () =>
 
 export const webSearch = () =>
   admin<any>("GET", "/workspaces/{workspace}/web-search", undefined, "reading the web-search setting", links.webSearch());
+// Which provider the workspace's searches run on, and the org's search keys (name, provider, last 4 only). Without
+// a key, web_search uses Otari's built-in search inside a model call; with one, Otari's /search answers directly.
+export async function searchSetup(): Promise<{
+  provider: string | null;
+  keys: { id: string; name: string; provider: string; last4: string | null; is_default: boolean }[];
+}> {
+  const r = await admin<any>("GET", "/workspaces/{workspace}/web-search-keys", undefined, "reading the search keys", links.webSearch());
+  return {
+    provider: r.search_provider ?? null,
+    keys: (r.data ?? [])
+      .filter((k: any) => k.kind === "search")
+      .map((k: any) => ({
+        id: k.org_web_search_key_id,
+        name: k.name,
+        provider: k.provider,
+        last4: k.last4 ?? null,
+        is_default: Boolean(k.is_default || k.is_org_default),
+      })),
+  };
+}
+// The search providers Otari takes a key for (searxng is the deployment's own, not for tenants).
+export async function searchProviders(): Promise<string[]> {
+  const { data } = await otari<any>("GET", "/search-tools/providers");
+  return (Array.isArray(data) ? data : (data?.data ?? []))
+    .filter((p: any) => p.kind === "search" && p.requires_api_key && p.id !== "searxng")
+    .map((p: any) => String(p.id));
+}
+// Adds an org search key and makes it the org's default for search. The key goes to Otari and is not kept by Peeblo.
+export async function addSearchKey(provider: string, apiKey: string): Promise<{ id: string; last4: string | null }> {
+  const k = await admin<any>(
+    "POST",
+    "/organizations/me/web-search-keys",
+    { kind: "search", provider, name: `peeblo-${provider}`, api_key: apiKey },
+    "adding a search key",
+    links.webSearch(),
+  );
+  await admin("POST", `/organizations/me/web-search-keys/${k.id}/default`, {}, "making the search key the default", links.webSearch());
+  return { id: k.id, last4: k.last4 ?? null };
+}
 export async function setWebSearch(enabled: boolean): Promise<void> {
   // PUT replaces the whole setting, so keep the lists and limits that are there.
   const cur = await webSearch();

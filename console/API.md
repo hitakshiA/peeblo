@@ -39,7 +39,8 @@ The console is a React (Vite) app built to `console/dist` and served by core at 
 - `POST /v1/approvals/:id` `{ decision: "approved"|"denied", scope: "once"|"job"|"always" }` → `{ ok, status }` (`status: "not_allowed"` when only someone else may answer).
 
 ## Otari
-- `GET /v1/otari` → `{ web_search: { enabled: boolean|null }, guardrail: { enabled: boolean|null, profile: string }, routing_policies: string[], links: { dashboard, keys, budgets, guardrails, routing } }`.
+- `GET /v1/otari` → `{ web_search: { enabled: boolean|null, provider: string|null, keys: {id, name, provider, last4, is_default}[], providers: string[] }, guardrail: { enabled: boolean|null, profile: string }, routing_policies: string[], links: { dashboard, keys, budgets, guardrails, routing } }`.
+- `POST /v1/otari/search-key` `{ provider, api_key }` → `{ ok, provider, last4 }`: adds an org search key in Otari and makes it the default; Peeblo doesn't keep the key.
 - `POST /v1/otari/web_search` `{ enabled }`, `POST /v1/otari/guardrail` `{ enabled }` → `{ ok, now }` (read back after the change).
 
 ## Computers

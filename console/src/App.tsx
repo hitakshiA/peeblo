@@ -1,6 +1,6 @@
 // Peeblo's console: everything you can do in Slack, from the same API. Hash routes keep it a single static page.
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, get, money, post, when, type RunEvent, type Teammate } from "./api";
+import { type FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
+import { api, friendly, get, money, post, when, type RunEvent, type Teammate } from "./api";
 import { Connectors } from "./Connectors";
 import { Face, PEEBLO_FACE, primeFaces } from "./Face";
 import { useLoad } from "./hooks";
@@ -843,6 +843,45 @@ function Computers() {
 }
 
 // Otari, mirrored: what this Peeblo uses there and how to change it. Configuration lives in Otari's dashboard.
+// An org search key: the provider and its key go to Otari once; Peeblo doesn't keep the key.
+function SearchKey({ providers, onDone }: { providers: string[]; onDone: () => void }) {
+  const [provider, setProvider] = useState(providers[0]);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await post("/v1/otari/search-key", { provider, api_key: key });
+      setKey("");
+      setMsg(`Saved in Otari (${r.provider}, ending ${r.last4 ?? "…"}).`);
+      onDone();
+    } catch (err) {
+      setMsg(friendly(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="row" onSubmit={save}>
+      <select value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="Search provider">
+        {providers.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+      <input type="password" placeholder="Provider API key" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" />
+      <button type="submit" disabled={busy || key.trim().length < 8}>
+        {busy ? "Saving…" : "Add search key"}
+      </button>
+      {msg && <span className="muted">{msg}</span>}
+    </form>
+  );
+}
+
 function Otari() {
   const { data, error, reload } = useLoad<any>("/v1/otari");
   if (!data)
@@ -924,10 +963,19 @@ function Otari() {
         </div>
         <div className="card stack">
           <h3>Web search</h3>
-          <div>{pill(data.web_search.enabled)}</div>
-          <div className="muted">
-            Teammates with the web tool search and read pages only when they choose to. Turn it on in Otari → Tools → Web search.
+          <div>
+            {pill(data.web_search.enabled)}{" "}
+            {data.web_search.provider ? (
+              <span className="muted">direct search on {data.web_search.provider}</span>
+            ) : (
+              <span className="muted">built-in search inside a model call</span>
+            )}
           </div>
+          <div className="muted">
+            Teammates with the web tool search and read pages only when they choose to. Turn it on in Otari → Tools → Web search. With a
+            search provider's key, results come straight from the provider instead of through a model.
+          </div>
+          {data.session && data.web_search.providers.length > 0 && <SearchKey providers={data.web_search.providers} onDone={reload} />}
           <a href={data.links.web_search} target="_blank" rel="noreferrer">
             Open web search in Otari
           </a>

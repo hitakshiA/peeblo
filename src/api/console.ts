@@ -226,9 +226,16 @@ export function addConsoleRoutes(router: Router): void {
       const s = await session();
       const g = s ? await lakeraMandate().catch(() => null) : null;
       const ws = s ? await webSearch().catch(() => null) : null;
+      const { searchSetup, searchProviders } = await import("../otari/admin.ts");
+      const search = s ? await searchSetup().catch(() => null) : null;
       return {
         session: s ? { signed_in_as: s.signedInAs, expires_at: s.expiresAt } : null,
-        web_search: { enabled: ws?.enabled ?? null },
+        web_search: {
+          enabled: ws?.enabled ?? null,
+          provider: search?.provider ?? null,
+          keys: search?.keys ?? [],
+          providers: s ? await searchProviders().catch(() => []) : [],
+        },
         guardrail: { enabled: g?.enabled ?? null, profile: config.guardProfile, mode: config.guard },
         trace_content: config.traceContent,
         routing_policies: s ? await rolePoliciesInOtari().catch(() => []) : [],
@@ -245,6 +252,16 @@ export function addConsoleRoutes(router: Router): void {
           sessions: links.sessionsFor({ q: "peeblo" }),
         },
       };
+    })
+    // An org search key for direct web search: the provider and its key, typed by an admin here, sent to Otari once.
+    .add("POST", "/v1/otari/search-key", async ({ body }) => {
+      const provider = String(body?.provider ?? "");
+      const key = String(body?.api_key ?? "").trim();
+      const { addSearchKey, searchProviders } = await import("../otari/admin.ts");
+      if (!(await searchProviders()).includes(provider)) throw bad(`${provider || "that"} isn't a search provider Otari takes a key for`);
+      if (key.length < 8) throw bad("paste the provider's API key");
+      const k = await addSearchKey(provider, key);
+      return { ok: true, provider, last4: k.last4 };
     })
     // Connect Otari: the admin signs in once (the password is used for this call only, never stored); Peeblo keeps
     // the session sealed and sets itself up: role routing policies, and a key with a spend ceiling per teammate.
