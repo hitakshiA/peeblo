@@ -75,6 +75,7 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 | `PEEBLO_JOB_ROUTING` | `on` | Otari's router picks the everyday or the strong model at the start of each job for teammates on the everyday role, and a job the Stop check sends back moves up to the strong model. `off` keeps every job on the teammate's model. |
 | `PEEBLO_ROUTINE_BUDGET_USD` | `0.25` | A scheduled or triggered run's budget when the teammate doesn't set one. |
 | `PEEBLO_ROUTINE_MAX_USD` | `5` | The most one scheduled or triggered run may be given. |
+| `PEEBLO_PERSON_DAILY_REQUESTS` | `400` | How many AI calls the default per-person tier allows a day, besides its money cap: a runaway loop stops on the count. `0` caps money only. Set when Peeblo makes the tier. |
 | `PEEBLO_PROGRESS_EVERY_MS` | `1200000` (20 min) | How often a long job is asked to post a one-line progress note. The note is steered in between tool calls; nothing is interrupted. |
 | `PEEBLO_MAX_CONTINUATIONS` | `2` | How many times the Stop check or the outcome grader may send an unfinished job back. |
 | `PEEBLO_MAX_RUNNING` | 1 per GB of memory above 2 GB, at least 2 | The most jobs working at once. The rest wait in line. |

@@ -139,7 +139,9 @@ export async function ensureDefaultTier(): Promise<string | null> {
   );
   if (!key || key.end_user_budget_id) return null;
   const name = "peeblo-person-daily-2";
-  const tier = (await budgets()).find((b) => b.name === name) ?? (await createBudget(name, 2, "day"));
+  const tier =
+    (await budgets()).find((b) => b.name === name) ??
+    (await createBudget(name, 2, "day", { requests: config.personDailyRequests || null }));
   await admin(
     "PATCH",
     `/organizations/me/keys/${key.id}`,

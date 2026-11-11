@@ -107,18 +107,43 @@ export async function admin<T = any>(method: string, path: string, body: unknown
 export type Budget = { id: string; name: string; max_budget: number | null };
 // Otari names the id budget_id; Peeblo calls it id like every other object.
 const asBudget = (b: any): Budget => ({ ...b, id: b.budget_id ?? b.id });
-export const createBudget = async (name: string, maxUsd: number, period: "month" | "day" = "month") =>
+// A budget can also cap how many calls (request_limit) or tokens (token_limit) its period allows, apart from money: a
+// runaway loop is stopped by the count even when each call is cheap.
+export const createBudget = async (
+  name: string,
+  maxUsd: number,
+  period: "month" | "day" = "month",
+  limits: { requests?: number | null; tokens?: number | null } = {},
+) =>
   asBudget(
     await admin<any>(
       "POST",
       "/organizations/me/budgets",
-      { name, max_budget: maxUsd, ...(period === "month" ? { reset_alignment: "calendar_month" } : { reset_alignment: "calendar_day" }) },
+      {
+        name,
+        max_budget: maxUsd,
+        ...(period === "month" ? { reset_alignment: "calendar_month" } : { reset_alignment: "calendar_day" }),
+        ...(limits.requests ? { request_limit: limits.requests } : {}),
+        ...(limits.tokens ? { token_limit: limits.tokens } : {}),
+      },
       `creating the budget ${name}`,
       links.budgets(),
     ),
   );
-export const updateBudget = async (id: string, maxUsd: number) =>
-  asBudget(await admin<any>("PATCH", `/organizations/me/budgets/${id}`, { max_budget: maxUsd }, "changing a budget", links.budgets()));
+export const updateBudget = async (id: string, maxUsd: number, limits: { requests?: number | null; tokens?: number | null } = {}) =>
+  asBudget(
+    await admin<any>(
+      "PATCH",
+      `/organizations/me/budgets/${id}`,
+      {
+        max_budget: maxUsd,
+        ...("requests" in limits ? { request_limit: limits.requests } : {}),
+        ...("tokens" in limits ? { token_limit: limits.tokens } : {}),
+      },
+      "changing a budget",
+      links.budgets(),
+    ),
+  );
 export const budgets = async () => {
   const r = await admin<any>("GET", "/organizations/me/budgets", undefined, "listing budgets", links.budgets());
   return ((r.data ?? r) as any[]).map(asBudget);

@@ -37,3 +37,23 @@ export async function receiptLinks(
   }
   return { requests, session: traceId ? links.session(traceId, s?.workspaceId) : links.sessionsFor({ q: sessionId }), trace_id: traceId };
 }
+
+// The Otari trace of a Peeblo session, from its latest model call (null when it has none yet, or no session).
+export async function traceOfSession(sessionId: string): Promise<string | null> {
+  const hit = traceBySession.get(sessionId);
+  if (hit) return hit;
+  if (!(await session())) return null;
+  const { pool } = await import("../db.ts");
+  const { rows } = await pool.query<{ r: string }>(
+    "SELECT data->>'request_id' AS r FROM events WHERE session_id = $1 AND type = 'model.call' AND data->>'request_id' IS NOT NULL ORDER BY id DESC LIMIT 5",
+    [sessionId],
+  );
+  for (const { r } of rows) {
+    const id = await traceIdForRequest(r).catch(() => null);
+    if (id) {
+      traceBySession.set(sessionId, id);
+      return id;
+    }
+  }
+  return null;
+}

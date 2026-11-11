@@ -227,9 +227,12 @@ export const otariTools: AgentTool[] = [
   {
     name: "otari_read_setting",
     description:
-      "Read one of the team's Otari settings: whether web search and code execution are on, the guardrail, the routing policies, the connected MCP servers, or the budget tiers.",
+      "Read one of the team's Otari settings: whether web search and code execution are on, the guardrail, the routing policies (Otari's plan for each role), the connected MCP servers, the budget tiers, or fallbacks (for each model the team used lately: its providers in order, how often Otari fell back, and how many calls were pinned to one provider, which gets no automatic fallback).",
     input_schema: object({
-      what: { type: "string", enum: ["web_search", "code_execution", "guardrail", "routing_policies", "mcp_servers", "budget_tiers"] },
+      what: {
+        type: "string",
+        enum: ["web_search", "code_execution", "guardrail", "routing_policies", "mcp_servers", "budget_tiers", "fallbacks"],
+      },
     }),
     kind: "read",
     async run(_ctx, a) {
@@ -304,6 +307,28 @@ export const otariTools: AgentTool[] = [
               )
               .join("\n"),
           };
+        }
+        case "fallbacks": {
+          if (!s) return { text: `Fallbacks can't be read without an admin's dashboard session (${links.routing()}).` };
+          const { admin } = await import("../otari/admin.ts");
+          const r = await admin<{
+            window_days: number;
+            models: { id: string; name: string; offerings: { selector: string }[]; requests: number; fell_back: number; pinned: number }[];
+          }>(
+            "GET",
+            `/organizations/me/automatic-fallbacks?workspace_id=${s.workspaceId}`,
+            undefined,
+            "reading automatic fallbacks",
+            links.routing(),
+          );
+          const lines = r.models
+            .filter((m) => m.requests > 0)
+            .slice(0, 12)
+            .map(
+              (m) =>
+                `${m.name || m.id}: ${m.requests} calls, ${m.fell_back} fell back; ${m.offerings.length} provider${m.offerings.length === 1 ? "" : "s"} (${m.offerings.map((o) => o.selector.split(":")[0]).join(" → ")})${m.pinned ? `; ${m.pinned} pinned to one provider (no automatic fallback; a role policy's own fallback covers those)` : ""}`,
+            );
+          return { text: `The last ${r.window_days} days:\n${lines.join("\n") || "No traffic yet."}` };
         }
         default: {
           const t = await tiers();
@@ -400,20 +425,96 @@ export const otariTools: AgentTool[] = [
     },
   },
   {
+    name: "otari_share_trace",
+    description:
+      'Share what this conversation said with the team\'s admins in Otari, when someone wants it looked at ("this answer was wrong, show the team", "flag this for the admins"), with a one-line note. An admin can instead open the conversation themselves (open: true), which Otari records with the reason. Works when the team keeps conversation content in Otari.',
+    input_schema: object({
+      note: { type: "string", description: "Why it should be looked at, in a line." },
+      open: {
+        type: ["boolean", "null"],
+        description: "An admin opening the content for themselves, recorded with the note as the reason.",
+      },
+    }),
+    kind: "read",
+    authorize: (ctx, a) =>
+      a.open && isOtariAdmin(ctx.person) === false
+        ? "Only an Otari admin can open a conversation's content; anyone in it can share it with the admins."
+        : null,
+    async run(ctx, a) {
+      if (!config.traceContent)
+        return {
+          text: "This team doesn't keep conversation content in Otari (only the call records), so there's nothing to share. An admin can turn it on in the console's settings (keep trace content).",
+          isError: true,
+        };
+      const { traceOfSession } = await import("../otari/traces.ts");
+      const trace = await traceOfSession(ctx.sessionId);
+      if (!trace)
+        return { text: "Otari has no record of this conversation yet, or no admin is signed in to Otari in the console.", isError: true };
+      const { admin, session: sess } = await import("../otari/admin.ts");
+      const s = await sess();
+      if (a.open) {
+        await admin(
+          "POST",
+          `/organizations/me/traces/${trace}/break-glass`,
+          { reason: String(a.note).slice(0, 500) },
+          "opening a conversation's content",
+          links.session(trace, s?.workspaceId),
+        );
+        return { text: `Opened for you, and recorded in Otari's audit with your reason: ${links.session(trace, s?.workspaceId)}` };
+      }
+      await admin(
+        "POST",
+        `/organizations/me/traces/${trace}/shares`,
+        { audience: "organization_admins", note: String(a.note).slice(0, 500) },
+        "sharing a conversation with the admins",
+        links.session(trace, s?.workspaceId),
+      );
+      return { text: `Shared with the team's Otari admins, with your note. They see it here: ${links.session(trace, s?.workspaceId)}` };
+    },
+  },
+  {
+    name: "otari_forget_traces",
+    description:
+      'Delete what the team\'s conversations said from Otari (the stored prompts and replies), keeping the records of each call (model, cost, time). For "forget everything we said" or a privacy request. Admins only; a person approves first.',
+    input_schema: object({ reason: { type: "string" } }),
+    kind: "write",
+    authorize: (ctx) => adminOnly(ctx),
+    describe(_ctx, a) {
+      return {
+        summary: "Delete the stored content of every conversation in this Otari workspace (call records stay)",
+        setting: "trace_content",
+        reason: a.reason,
+      };
+    },
+    async run() {
+      const { admin, session: sess } = await import("../otari/admin.ts");
+      const s = await sess();
+      if (!s) return { text: `Needs an admin signed in to Otari in the console (${links.usage()}).`, isError: true };
+      await admin("DELETE", `/workspaces/${s.workspaceId}/trace-content`, undefined, "deleting stored conversation content", links.usage());
+      return { text: "Otari no longer holds what this workspace's conversations said; the records of each call (model, cost, time) stay." };
+    },
+  },
+  {
     name: "otari_set_crew_cap",
     description:
       "Cap the whole crew's AI spend for the month: one ceiling in Otari over everything this Peeblo spends (every teammate, Peeblo and the guard together), on top of each teammate's own budget. Admins only; a person approves before it changes.",
     input_schema: object({
       monthly_usd: { type: "number", minimum: 1, maximum: 100000, description: "The most the whole crew may spend in a calendar month." },
+      monthly_requests: {
+        type: ["integer", "null"],
+        minimum: 100,
+        description: "Also the most AI calls the crew may make in the month, if asked for a count.",
+      },
       reason: { type: "string" },
     }),
     kind: "write",
     authorize: (ctx) => adminOnly(ctx),
     describe(_ctx, a) {
       return {
-        summary: `Cap the whole crew at $${a.monthly_usd} a month`,
+        summary: `Cap the whole crew at $${a.monthly_usd} a month${a.monthly_requests ? ` and ${Number(a.monthly_requests).toLocaleString("en-US")} AI calls` : ""}`,
         setting: "crew_cap",
         monthly_usd: a.monthly_usd,
+        monthly_requests: a.monthly_requests ?? null,
         reason: a.reason,
       };
     },
@@ -423,12 +524,15 @@ export const otariTools: AgentTool[] = [
       const s = await session();
       if (!s) return { text: `Capping the crew needs an admin signed in to Otari in the console (${links.budgets()}).`, isError: true };
       const existing = (await budgets()).find((b) => b.name === NAME);
-      const budget = existing ? await updateBudget(existing.id, a.monthly_usd) : await createBudget(NAME, a.monthly_usd, "month");
+      const limits = { requests: a.monthly_requests ?? null };
+      const budget = existing
+        ? await updateBudget(existing.id, a.monthly_usd, limits)
+        : await createBudget(NAME, a.monthly_usd, "month", limits);
       const ceilings = await spendCeilings();
       if (!ceilings.some((c) => c.scope_type === "workspace" && c.scope_id === s.workspaceId && c.budget_id === budget.id))
         await createWorkspaceCeiling(budget.id, NAME);
       return {
-        text: `The whole crew is capped at $${a.monthly_usd} a month in Otari (budget ${NAME}, on the workspace). Each teammate's own budget still applies under it.`,
+        text: `The whole crew is capped at $${a.monthly_usd} a month${a.monthly_requests ? ` and ${Number(a.monthly_requests).toLocaleString("en-US")} AI calls` : ""} in Otari (budget ${NAME}, on the workspace). Each teammate's own budget still applies under it.`,
       };
     },
   },

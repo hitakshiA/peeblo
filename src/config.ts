@@ -120,6 +120,7 @@ export const config = {
   sessionTtlHours: num("PEEBLO_SESSION_TTL_HOURS", 24),
   slackConfigFile: process.env.PEEBLO_SLACK_CONFIG_FILE?.trim() || "",
   slackBatchMs: num("PEEBLO_SLACK_BATCH_MS", 500),
+  personDailyRequests: num("PEEBLO_PERSON_DAILY_REQUESTS", 400), // the default per-person tier's calls a day (0: no count, money only)
   progressEveryMs: Number(process.env.PEEBLO_PROGRESS_EVERY_MS ?? 20 * 60_000), // a long job is nudged to post a progress line this often (steered in, nothing interrupted)
   maxContinuations: Number(process.env.PEEBLO_MAX_CONTINUATIONS ?? 2), // how many times the Stop check or grader may send a job back
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),
