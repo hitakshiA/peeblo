@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classify, githubLimit, outOfScope } from "../src/connectors/mcp.ts";
 import { tool } from "./helpers.ts";
+import { codeModeKind, withoutEmptyOptionals } from "../src/connectors/mcp.ts";
 
 test("classify: tool names decide read, write or destructive", () => {
   assert.equal(classify(tool("linear", "list_issues"), {}), "read");
@@ -66,4 +67,32 @@ test("githubLimit: calls stay inside the install-wide repo list", () => {
   // Other servers, or no limit set: unchanged.
   assert.deepEqual(githubLimit(tool("linear", "list_issues"), { a: 1 }, ["acme/web"]), { args: { a: 1 } });
   assert.deepEqual(githubLimit(tool("github", "list_repos"), { a: 1 }, []), { args: { a: 1 } });
+});
+
+test("codeModeKind: Cloudflare's spec tools read; execute reads only with every request a GET", () => {
+  assert.equal(codeModeKind("search", "async () => spec.paths"), "read");
+  assert.equal(codeModeKind("docs", ""), "read");
+  assert.equal(
+    codeModeKind("execute", 'async () => { const z = await cloudflare.request({ method: "GET", path: "/zones" }); return z; }'),
+    "read",
+  );
+  assert.equal(
+    codeModeKind(
+      "execute",
+      'async () => { await cloudflare.request({ method: "GET", path: "/zones" }); await cloudflare.request({ method: "DELETE", path: "/zones/1" }); }',
+    ),
+    "write",
+  );
+  // A request whose method isn't written out can't be shown to read.
+  assert.equal(codeModeKind("execute", 'async () => cloudflare.request({ path: "/zones", ...opts })'), "write");
+  assert.equal(codeModeKind("execute", "async () => 1"), "write");
+});
+
+test("withoutEmptyOptionals: optional arguments written as null in words are left out", () => {
+  const schema = { required: ["query"] };
+  assert.deepEqual(withoutEmptyOptionals(schema, { query: "", folderUid: "null", folderPath: null, limit: 100, cursor: "undefined" }), {
+    query: "",
+    limit: 100,
+  });
+  assert.deepEqual(withoutEmptyOptionals(schema, { query: "null" }), { query: "null" });
 });

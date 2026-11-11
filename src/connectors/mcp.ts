@@ -316,10 +316,24 @@ function posthogExecKind(command: string): CallKind {
   return tool ? kindOfName(tool) : "write";
 }
 
+// Code-mode servers (Cloudflare's): `docs` and `search` run code against the API's own specification, never the API,
+// so they read whatever the server's hint says. `execute` runs code that calls the API with cloudflare.request():
+// it reads only when every request in the code names GET or HEAD; any other method, or a request whose method
+// can't be read from the code, makes it a write.
+export function codeModeKind(tool: string, code: string): CallKind {
+  if (tool === "docs" || tool === "search") return "read";
+  if (tool !== "execute") return "write";
+  const requests = code.match(/\.request\s*\(/g)?.length ?? 0;
+  const methods = [...code.matchAll(/method\s*:\s*["'`]([A-Za-z]+)["'`]/g)].map((m) => m[1].toUpperCase());
+  if (!requests || methods.length < requests) return "write";
+  return methods.every((m) => m === "GET" || m === "HEAD") ? "read" : "write";
+}
+
 // The kind of this exact call. A server's own readOnlyHint is untrusted, so it can only make a call look
 // riskier, never safer: a read by name that the server says is not read-only counts as a write.
 export function classify(t: ConnectorTool, args: Record<string, unknown>): CallKind {
   if (t.server === "posthog" && t.tool === "exec" && typeof args.command === "string") return posthogExecKind(args.command);
+  if (t.server === "cloudflare" && ["docs", "search", "execute"].includes(t.tool)) return codeModeKind(t.tool, String(args.code ?? ""));
   // Every tool on a read-only server is a read, whatever its name.
   if (t.serverReadOnly) return "read";
   // Generic SQL runners (Neon run_sql, Supabase execute_sql, run_query…): the statement decides.
@@ -409,6 +423,16 @@ export function needsApproval(mode: TeammateConfig["mode"], kind: CallKind): boo
 }
 
 // With auth, the call runs on that key (a teammate's own, once Otari holds its access: src/otari/mcp-access.ts).
+// Optional arguments the model left "empty" in words ("null", "undefined", or null) are left out: servers read them
+// as values (Postman's cursor "null" is an invalid cursor; Grafana sees two folder filters). Required ones and empty
+// strings stay as given.
+export function withoutEmptyOptionals(schema: { required?: string[] } | undefined, args: Record<string, unknown>): Record<string, unknown> {
+  const required = new Set(schema?.required ?? []);
+  return Object.fromEntries(
+    Object.entries(args ?? {}).filter(([k, v]) => required.has(k) || !(v === null || v === "null" || v === "undefined")),
+  );
+}
+
 export async function executeTool(
   t: ConnectorTool,
   args: Record<string, unknown>,

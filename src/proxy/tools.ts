@@ -21,6 +21,7 @@ import {
   needsApproval,
   outOfScope,
   type ConnectorTool,
+  withoutEmptyOptionals,
 } from "../connectors/mcp.ts";
 import { pool } from "../db.ts";
 import { askApproval, fingerprint } from "../durable/approvals.ts";
@@ -491,6 +492,7 @@ async function runConnector(
   finish: (r: ToolResult, source: string | null, extra: Record<string, unknown>) => Promise<void>,
   b: Binding,
 ): Promise<void> {
+  args = withoutEmptyOptionals(t.inputSchema as { required?: string[] }, args);
   const tm = ctx.teammate;
   const mode = await effectiveMode(tm);
   base.mode = mode;
