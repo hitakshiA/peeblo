@@ -21,6 +21,46 @@ async function candidates(): Promise<{ everyday: string; list: Record<string, st
   };
 }
 
+type Pick = Awaited<ReturnType<typeof import("../otari/routing.ts")["recommend"]>>;
+// The router's answer for one call, asked once: the price card (gate) and the run use the same pick.
+const picks = new Map<string, Promise<Pick>>();
+async function pickFor(ctx: Parameters<NonNullable<AgentTool["gate"]>>[0], a: { work: string; task: string }): Promise<Pick> {
+  const k = `${ctx.runId}:${ctx.toolCallId}`;
+  let p = picks.get(k);
+  if (!p) {
+    const { recommend } = await import("../otari/routing.ts");
+    const c = await candidates();
+    p = recommend({
+      sessionId: ctx.sessionId,
+      toolUseId: ctx.toolCallId,
+      agentType: "analysis",
+      description: String(a.work).slice(0, 200),
+      prompt: `${a.work}\n\n${a.task}`.slice(0, 4000),
+      parentModel: c.everyday,
+      candidates: c.list,
+      endUser: ctx.endUser ?? undefined,
+    });
+    picks.set(k, p);
+    if (picks.size > 500) picks.delete(picks.keys().next().value!);
+  }
+  return p;
+}
+
+// The pick's estimate, when the router chose something other than the everyday model.
+async function priced(ctx: Parameters<NonNullable<AgentTool["gate"]>>[0], a: { work: string; task: string }) {
+  if (!ctx.runId) return null;
+  const r = await pickFor(ctx, a).catch(() => null);
+  const c = await candidates();
+  if (!r || r.fallback || r.model === c.everyday) return null;
+  const { config } = await import("../config.ts");
+  const { countTokens, estimateCost } = await import("../otari/catalog.ts");
+  const { usd } = await import("../otari/spend.ts");
+  const { readableModel } = await import("../slack/look.ts");
+  const est = await estimateCost(r.model, 8000 + (await countTokens(r.model, String(a.task))), 2000);
+  if (est === null) return null;
+  return { name: readableModel(r.model).name, est, usd: usd(est), over: est > config.priceCardUsd };
+}
+
 export const pickModelTool: AgentTool = {
   name: "pick_model",
   description:
@@ -34,21 +74,22 @@ export const pickModelTool: AgentTool = {
     },
   }),
   kind: "local",
+  // A pick that costs more than the price-card line is priced before it runs, like any subagent: the router answers
+  // first, then a person sees the model and the estimate (tokens counted by Otari) and says yes.
+  async gate(ctx, a) {
+    const p = await priced(ctx, a);
+    return p && p.over ? { ask: `Otari's router picked ${p.name} for this part; it would cost about ${p.usd}.` } : null;
+  },
+  async describe(ctx, a) {
+    const p = await priced(ctx, a);
+    return p ? { price_usd: p.est } : {};
+  },
   async run(ctx, a) {
     if (!ctx.runId) return { text: "There's no job to route.", isError: true };
-    const { recommend } = await import("../otari/routing.ts");
     const { readableModel } = await import("../slack/look.ts");
     const c = await candidates();
-    const r = await recommend({
-      sessionId: ctx.sessionId,
-      toolUseId: ctx.toolCallId,
-      agentType: "analysis",
-      description: String(a.work).slice(0, 200),
-      prompt: `${a.work}\n\n${a.task}`.slice(0, 4000),
-      parentModel: c.everyday,
-      candidates: c.list,
-      endUser: ctx.endUser ?? undefined,
-    });
+    const r = await pickFor(ctx, a);
+    picks.delete(`${ctx.runId}:${ctx.toolCallId}`);
     if (r.fallback || r.model === c.everyday)
       return {
         text: r.fallback

@@ -460,6 +460,8 @@ async function runOwn(
         tool: t.name,
         arguments: args,
         ...(t.describe ? await t.describe(ctx, args) : {}),
+        // Why the rules ask (a price, a repo guardrail), shown on the card.
+        ...(rule?.ask ? { rule: rule.ask } : {}),
         asked_by: ctx.person?.id ?? null,
         ...(outward ? { risk: outward, per_action: NEVER_WITHOUT_ASKING.includes(outward) } : {}),
       };
