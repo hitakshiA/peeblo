@@ -77,7 +77,7 @@ export const slackTools: AgentTool[] = [
   {
     name: "slack_post",
     description:
-      "Post where this conversation lives: your thread or DM, or, for a routine, watch or trigger, the channel it was set up to post in (a new message there, which starts the thread). Your final text is not shown to anyone, so anything people should see goes through here. Posting your answer ends your turn, so post it last and on its own (not alongside other tool calls). Set more: true only for a progress note when you will keep working. Slack markdown; for a table or other layout, pass Block Kit blocks.",
+      "Post where this conversation lives: your thread or DM, or, for a routine, watch or trigger, the channel it was set up to post in (a new message there, which starts the thread). To tell another channel you're in (report an incident to #incidents, a heads-up in #eng), give channel: that's a new message there, and a person approves it first; then answer here as usual. Your final text is not shown to anyone, so anything people should see goes through here. Posting your answer ends your turn, so post it last and on its own (not alongside other tool calls). Set more: true only for a progress note when you will keep working. Slack markdown; for a table or other layout, pass Block Kit blocks.",
     input_schema: object({
       text: { type: "string", description: "What to say (Slack markdown). Also the fallback text when blocks are given." },
       blocks: {
@@ -98,8 +98,14 @@ export const slackTools: AgentTool[] = [
         type: ["string", "null"],
         description: "A short title for this conversation in the person's sidebar (under 60 characters), on your first reply.",
       },
+      channel: {
+        type: ["string", "null"],
+        description: "Another channel you're a member of, by name (#incidents) or id, for a new message there. Leave it out to post here.",
+      },
     }),
-    kind: "read", // it posts only into the conversation the person started; no approval
+    kind: "read", // into the conversation the person started: no approval. Another channel: see outward
+    // A post in another channel speaks for the team outside this conversation: a person approves it first.
+    outward: (_ctx, a) => (a.channel ? "outside_thread" : null),
     async run(ctx, a) {
       const place = await slackPlaceOf(ctx.sessionId);
       const text = String(a.text ?? "")
@@ -108,6 +114,27 @@ export const slackTools: AgentTool[] = [
         .replace(/&gt;/g, ">")
         .slice(0, 12_000);
       if (!text.trim()) return { text: "Nothing to post.", isError: true };
+      if (a.channel) {
+        if (!place) return { text: "There's no Slack workspace here to post in.", isError: true };
+        const want = String(a.channel).replace(/^#/, "").toLowerCase();
+        const list: any = await slack(place.app_id, "conversations.list", {
+          types: "public_channel,private_channel",
+          exclude_archived: true,
+          limit: 1000,
+        }).catch(() => null);
+        const ch = (list?.channels ?? []).find((c: any) => c.id.toLowerCase() === want || String(c.name).toLowerCase() === want);
+        if (!ch) return { text: `There's no channel ${a.channel} in this workspace.`, isError: true };
+        if (!ch.is_member) return { text: `You're not in #${ch.name}; ask someone there to add you.`, isError: true };
+        const r: any = await slack(place.app_id, "chat.postMessage", {
+          channel: ch.id,
+          text,
+          ...(a.blocks?.length ? { blocks: a.blocks } : {}),
+        }).catch((e) => ({ ok: false, error: (e as Error).message }));
+        if (r.ok === false) return { text: `Slack refused the post in #${ch.name} (${r.error}).`, isError: true };
+        const link: any = await slack(place.app_id, "chat.getPermalink", { channel: ch.id, message_ts: r.ts }).catch(() => null);
+        await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post.elsewhere", data: { text, channel: ch.id, ts: r.ts } });
+        return { text: `Posted in #${ch.name}${link?.permalink ? `: ${link.permalink}` : ""}. Now answer here.` };
+      }
       // Outside Slack (the API, a test) the post is the reply: recorded the same way, so nothing is retried.
       const endTurn = a.more !== true;
       // The conversation's title in the sidebar, in the agent's words.
