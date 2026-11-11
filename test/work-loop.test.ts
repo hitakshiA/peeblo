@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { countRepeat, isLoop } from "../src/proxy/tools.ts";
 import { modelsForPi } from "../src/proxy/relay.ts";
 import { bm25Index } from "../src/pi/peeblo-tools.ts";
+import { DEFAULT_HOSTS, egressRefusal } from "../src/environment/controller.ts";
 
 test("countRepeat: quick repeats are a loop, spaced ones are polling", () => {
   let r = countRepeat(undefined, 0);
@@ -55,8 +56,6 @@ test("bm25Index: plain words find the right connector tool", () => {
   assert.equal(ix.search("open a PR on github", 1)[0], 2);
   assert.deepEqual(ix.search("zzz", 3), []);
 });
-
-import { DEFAULT_HOSTS, egressRefusal } from "../src/environment/controller.ts";
 
 test("egressRefusal: large computers read anywhere but write only to allowed hosts", () => {
   assert.equal(egressRefusal("large", "GET", "example.com", DEFAULT_HOSTS), null);
