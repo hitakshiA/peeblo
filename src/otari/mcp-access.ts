@@ -104,7 +104,7 @@ export function followTeammateChanges(): void {
       // A new hire too: its first connector call should already run on its own key.
       if (e.type !== "teammate.updated" && e.type !== "teammate.hired") return;
       const { getTeammate } = await import("../store/teammates.ts");
-      const tm = await getTeammate(String((e.data as any).teammate_id));
+      const tm = await getTeammate(String((e.data as { teammate_id: string }).teammate_id));
       if (tm) await syncTeammateAccess(tm).catch((x) => console.error(`mcp access ${tm.slug}:`, (x as Error).message));
     }),
   );

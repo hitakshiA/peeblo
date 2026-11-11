@@ -5,6 +5,7 @@
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { appendEvent, onEvent } from "../store/events.ts";
+import { dataOf } from "../store/event-types.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 
 export const BOT_SCOPES = [
@@ -236,7 +237,7 @@ export async function setIcon(tm: Teammate, appId: string): Promise<boolean> {
 export function installProfileSync(): void {
   onEvent(async (e) => {
     if (e.type !== "teammate.updated") return;
-    const id = String((e.data as any).teammate_id);
+    const id = dataOf(e, "teammate.updated").teammate_id;
     void syncManifest(id).catch((err) => console.error("manifest sync:", (err as Error).message));
   });
 }

@@ -72,6 +72,12 @@ export type EventMap = {
   "plan.updated": Open & { steps: { step: string; status: string }[] };
   "job.model": Open & { model: string; by: "otari_router" | "escalation"; reason?: string | null };
   "run.merged": Open & { into: string; steered?: boolean };
+  "run.failed": Open & { error: string };
+  "slack.canvas": Open & { url: string };
+  "chain.call": Open & { callee: string; child_run: string; parent_run: string | null; depth: number };
+  "teammate.updated": Open & { teammate_id: string };
+  "teammate.hired": Open & { teammate_id: string };
+  "notify.owner": Open & { schedule_id?: string; teammate_id?: string | null; kind?: string; text?: string; key?: string };
 };
 
 export type KnownEvent = keyof EventMap;

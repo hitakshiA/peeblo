@@ -15,6 +15,7 @@ import { pool } from "../db.ts";
 import { startRun } from "../durable/runs.ts";
 import { newId } from "../ids.ts";
 import { appendEvent, onEvent } from "../store/events.ts";
+import { dataOf } from "../store/event-types.ts";
 import { openSession, submit } from "../store/sessions.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 import type { SlackPlace } from "../slack/inbound.ts";
@@ -333,7 +334,13 @@ async function watchFailed(s: Schedule, why: string): Promise<"failed"> {
 // Owner notices go to a person as a DM from Peeblo: the schedule's creator, else the teammate's owner. At most one
 // notice of a kind per thing per hour.
 // The last send is kept in the event log, so a restart doesn't send the same notice again (a reinstall ask waits a day).
-async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; kind?: string; text?: string; key?: string }): Promise<void> {
+async function deliverNotice(d: {
+  schedule_id?: string;
+  teammate_id?: string | null;
+  kind?: string;
+  text?: string;
+  key?: string;
+}): Promise<void> {
   const key = `${d.kind}:${d.key ?? d.schedule_id ?? d.teammate_id}`;
   const hours = d.kind === "reinstall" ? 24 : 1;
   if (
@@ -416,7 +423,8 @@ export function installTriggers(): void {
   ).unref();
 
   onEvent(async (e) => {
-    if (e.type === "notify.owner") await deliverNotice(e.data as any).catch((x) => console.error("notice:", (x as Error).message));
+    if (e.type === "notify.owner")
+      await deliverNotice(dataOf(e, "notify.owner")).catch((x) => console.error("notice:", (x as Error).message));
   });
 
   // Each triggered run is logged with whether it found anything; a failure tells whoever made the trigger.
@@ -444,7 +452,7 @@ export function installTriggers(): void {
         data: {
           schedule_id: id,
           kind: "schedule_failed",
-          text: `A scheduled job failed: ${String((e.data as any).error ?? "").slice(0, 200)}`,
+          text: `A scheduled job failed: ${String(dataOf(e, "run.failed").error ?? "").slice(0, 200)}`,
         },
       });
   });

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { onEvent } from "../store/events.ts";
+import { dataOf } from "../store/event-types.ts";
 import { getSession } from "../store/sessions.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { notesIn, placeOfSession, readBanks, writeNote, type Note, type Place } from "./store.ts";
@@ -40,15 +41,15 @@ async function jobEntry(runId: string): Promise<{ slug: string; place: Place; pa
       [runId],
     )
   ).rows;
-  const calls = ev.filter((e) => e.type === "tool.call").map((e) => e.data as any);
-  const posts = ev.filter((e) => e.type === "slack.post").map((e) => String((e.data as any).text ?? ""));
+  const calls = ev.filter((e) => e.type === "tool.call").map((e) => dataOf(e, "tool.call"));
+  const posts = ev.filter((e) => e.type === "slack.post").map((e) => String(dataOf(e, "slack.post").text ?? ""));
   if (!calls.length && !posts.length) return null; // nothing happened worth remembering
   const { stepTitle } = await import("../slack/look.ts");
   const steps = [
     ...new Set(
       calls
         .filter((c) => c.status === "completed")
-        .map((c) => stepTitle(c.tool, { kind: c.kind, callee: c.callee }))
+        .map((c) => stepTitle(c.tool, { kind: c.kind, callee: typeof c.callee === "string" ? c.callee : undefined }))
         .filter(Boolean),
     ),
   ];
@@ -56,13 +57,15 @@ async function jobEntry(runId: string): Promise<{ slug: string; place: Place; pa
     .filter((c) => c.status === "completed" && (c.kind === "write" || c.kind === "destructive"))
     .map((c) => `${c.tool}${c.request_id ? ` (request ${c.request_id})` : ""}`);
   const links = [
-    ...new Set(calls.flatMap((c) => c.sources ?? []).concat(ev.filter((e) => e.type === "slack.canvas").map((e) => (e.data as any).url))),
+    ...new Set(
+      calls.flatMap((c) => c.sources ?? []).concat(ev.filter((e) => e.type === "slack.canvas").map((e) => dataOf(e, "slack.canvas").url)),
+    ),
   ]
     .filter(Boolean)
     .slice(0, 6);
   const handed = ev
     .filter((e) => e.type === "chain.call")
-    .map((e) => (e.data as any).callee)
+    .map((e) => dataOf(e, "chain.call").callee)
     .filter(Boolean);
   const slack = (s.place as any)?.slack;
   const where = slack
