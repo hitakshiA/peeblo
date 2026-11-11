@@ -25,6 +25,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Type-check
         run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      # Unit tests: pure rules only, no database or network.
+      - name: Test
+        run: pnpm test
 
   console:
     runs-on: ubuntu-latest

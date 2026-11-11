@@ -22,7 +22,7 @@
 ## Checklist
 
 - [ ] I understand the code I'm submitting.
-- [ ] `pnpm typecheck` passes (and `pnpm build` in `console/` if I touched it).
+- [ ] `pnpm typecheck`, `pnpm lint` and `pnpm test` pass (and `pnpm build` in `console/` if I touched it).
 - [ ] Prompts, tool descriptions and skills I changed work for any company (nothing from my own workspace).
 - [ ] If this touches money, approvals, read-only access or the guardrail, the description says why it stays safe.
 - [ ] Docs are updated where needed.
