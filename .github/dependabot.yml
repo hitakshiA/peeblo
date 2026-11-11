@@ -49,6 +49,9 @@ updates:
     ignore:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # Vite's major moves by hand, with its React plugin.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/site"
