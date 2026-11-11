@@ -1,0 +1,862 @@
+/* "How it works": a pinned scroll scene (.zn-hiw-*) in Peeblo's paper + moss, with a flood of colour. */
+
+.section {
+  position: relative;
+  height: 500svh;
+  color: var(--ink);
+  font-family: var(--text);
+}
+.stick {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: clip;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  line-height: normal;
+}
+
+/* Background: a soft glow behind the orb and the dot field. */
+.glow {
+  position: absolute;
+  width: 120vh;
+  height: 120vh;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, oklch(0.82 0.05 145 / 0.34) 0%, oklch(0.9 0.03 120 / 0.4) 30%, oklch(0.955 0.014 78 / 0) 65%);
+  pointer-events: none;
+}
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.orb {
+  position: absolute;
+  pointer-events: none;
+}
+
+.orbCore {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 44%,
+    oklch(0.4 0.075 156) 0%,
+    oklch(0.46 0.08 154) 26%,
+    oklch(0.58 0.085 151) 44%,
+    oklch(0.7 0.075 148) 58%,
+    oklch(0.81 0.055 145) 66%,
+    oklch(0.9 0.03 130 / 0.6) 72%,
+    oklch(0.955 0.014 78 / 0) 76%
+  );
+  animation: breathe 2.6s ease-in-out infinite;
+}
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: inset 0 0 0 2px oklch(1 0 0 / 0.8);
+  pointer-events: none;
+}
+
+/* Intro title with the hand-drawn arrow pointing at Peeblo. */
+.title {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  white-space: nowrap;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: max(52px, min(7.6vw, 124px));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  pointer-events: none;
+}
+.word {
+  position: relative;
+  display: inline-block;
+}
+.arrow {
+  position: absolute;
+  bottom: 74%;
+  left: 70%;
+  overflow: visible;
+}
+.tag {
+  position: absolute;
+  bottom: calc(74% + 6px);
+  left: calc(70% + 60px);
+  display: block;
+  transform-origin: 0 100%;
+  pointer-events: auto;
+  line-height: 0;
+}
+
+/* Left column: pager + label, then the stacked h3s that slide 28px apart. */
+.left {
+  position: absolute;
+  top: 50%;
+  left: 7.5vw;
+  display: flex;
+  flex-direction: column;
+  gap: max(28px, min(5vh, 56px));
+  width: 38vw;
+  transform: translateY(-50%);
+}
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pip {
+  position: relative;
+  display: block;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 90px;
+  cursor: pointer;
+}
+.pip::before {
+  content: "";
+  position: absolute;
+  inset: -10px -3px;
+}
+.pip:focus-visible {
+  outline: 2px solid var(--ember-ink);
+  outline-offset: 3px;
+}
+.label {
+  font-size: 16px;
+  font-weight: 600;
+}
+.copy {
+  display: grid;
+}
+.copyItem {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  pointer-events: none;
+}
+.h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: max(40px, min(4.5vw, 72px));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+
+/* Beat 4: chat apps, Slack live and the rest greyed out. */
+.apps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.app {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: oklch(1 0 0 / 0.9);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.9);
+}
+.app img {
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.app:not(.appOn) {
+  opacity: 0.6;
+}
+.appOn img {
+  filter: none;
+  opacity: 1;
+}
+.appOn {
+  width: 42px;
+  height: 42px;
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.9),
+    0 0 0 4px oklch(1 0 0 / 0.16);
+}
+.appOn img {
+  width: 22px;
+  height: 22px;
+}
+.appsNote {
+  flex-basis: 100%;
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0.78;
+}
+
+/* The 640px stage everything lives on; scaled to the viewport. */
+.stage {
+  position: absolute;
+  width: 640px;
+  height: 640px;
+}
+
+.chip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 16px 0 8px;
+  white-space: nowrap;
+  border-radius: 90px;
+  background: oklch(0.985 0.008 80 / 0.88);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.9),
+    0 12px 32px oklch(0.3 0.04 60 / 0.12);
+  animation: float 7s ease-in-out infinite;
+}
+.chip:nth-child(2n) {
+  animation-delay: -3.5s;
+}
+.chipIc {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px oklch(0.27 0.02 60 / 0.08);
+}
+.chipIc img {
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
+}
+.chipDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  animation: chipPulse 2.8s ease-in-out infinite;
+}
+.chipText {
+  font-size: 15px;
+  font-weight: 600;
+}
+.chipMono {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Beat 2: the teammate inside the disc. */
+.pal {
+  position: absolute;
+  top: 206px;
+  left: 50%;
+  padding: 12px;
+  border-radius: 50%;
+  background: oklch(0.985 0.008 80 / 0.96);
+  box-shadow:
+    0 0 0 6px oklch(1 0 0 / 0.16),
+    0 14px 34px oklch(0.2 0.05 150 / 0.3);
+  line-height: 0;
+}
+.thought {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  color: var(--moss-ink);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.thoughtIc {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 4px 12px oklch(0.2 0.04 150 / 0.25);
+}
+.thoughtIc img {
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+}
+.thoughtPhoto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thoughtPi img {
+  width: 80%;
+  height: 80%;
+}
+
+/* Beat 3-4 card. */
+.card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: 460px;
+  padding: 28px;
+  border-radius: 24px;
+  background: oklch(0.985 0.008 80 / 0.94);
+  backdrop-filter: blur(24px);
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.95),
+    0 30px 80px oklch(0.22 0.04 150 / 0.22);
+  color: var(--ink);
+}
+.faces {
+  position: relative;
+  overflow: clip;
+}
+.faceA,
+.faceB {
+  display: flex;
+  flex-direction: column;
+}
+.faceB {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  gap: 14px;
+}
+.headA {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+.metaIc {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+.cardTitle {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.cardBody {
+  color: var(--ink-2);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.ctx {
+  overflow: clip;
+}
+.ctxBox {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 16px 16px;
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--paper) 55%, var(--card));
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ctxRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  font-size: 14.5px;
+  font-weight: 600;
+  box-shadow: inset 0 -1px var(--line);
+}
+.ctxKey {
+  width: 64px;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.ctxLogo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+.ctxFace {
+  border-radius: 50%;
+  object-fit: cover;
+}
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.meterBar {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 90px;
+  background: var(--line);
+}
+.meterBar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--moss);
+}
+.meterText {
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Beat 4: the Slack thread. */
+.msg {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  font-family: var(--slack);
+  font-size: 15px;
+  line-height: 1.46;
+}
+.msgAv {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--paper-2);
+  line-height: 0;
+}
+.msgName {
+  font-weight: 900;
+}
+.msgName time {
+  margin-left: 4px;
+  color: #616061;
+  font-size: 12px;
+  font-weight: 400;
+}
+.appTag {
+  margin-left: 2px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgba(29, 28, 29, 0.13);
+  color: rgba(29, 28, 29, 0.7);
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+.msgText {
+  color: #1d1c1d;
+}
+.mention {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: rgba(29, 155, 209, 0.1);
+  color: #1264a3;
+}
+.replyBox {
+  display: grid;
+}
+.replyBox > * {
+  grid-area: 1 / 1;
+}
+.dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 22px;
+}
+.dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  animation: blink 1.2s ease-in-out infinite;
+}
+.dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.rcpt {
+  display: block;
+  width: fit-content;
+  margin-top: 10px;
+}
+.rcptLive {
+  animation: none;
+}
+
+/* Phones: the copy sits on top, centred; the stage fills the rest. */
+.mobile .title {
+  font-size: min(13vw, 64px);
+}
+.mobile .arrow {
+  width: 40px;
+  height: 30px;
+}
+.mobile .tag {
+  bottom: calc(74% + 2px);
+  left: calc(70% + 36px);
+}
+.mobile .left {
+  top: calc(78px + 2vh);
+  right: 20px;
+  left: 20px;
+  align-items: center;
+  gap: 18px;
+  width: auto;
+  text-align: center;
+  transform: none;
+}
+.mobile .steps {
+  flex-direction: column;
+  gap: 10px;
+}
+.mobile .copyItem {
+  align-items: center;
+  gap: 16px;
+}
+.mobile .h3 {
+  font-size: max(30px, min(8.4vw, 46px));
+}
+.mobile .apps {
+  justify-content: center;
+  gap: 6px;
+}
+.mobile .app {
+  width: 30px;
+  height: 30px;
+}
+.mobile .app img {
+  width: 16px;
+  height: 16px;
+}
+.mobile .appOn {
+  width: 34px;
+  height: 34px;
+}
+.mobile .appsNote {
+  margin-top: 2px;
+  font-size: 14px;
+}
+
+/* Reduced motion: four still frames, stacked. */
+.stacked {
+  padding-top: 84px;
+  color: var(--ink);
+  font-family: var(--text);
+}
+.stackTitle {
+  margin: 0 0 24px;
+  text-align: center;
+  font-family: var(--display);
+  font-size: clamp(44px, 6vw, 88px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.still {
+  position: relative;
+  height: clamp(620px, 88vh, 820px);
+  overflow: clip;
+}
+.stillFlood {
+  background: var(--moss-2);
+}
+.stillScene .mobile .left,
+.stillScene.mobile .left {
+  top: 24px;
+}
+.stillScene .orbCore,
+.stillScene .chip,
+.stillScene .chipDot,
+.stillScene .dots i,
+.stillScene .rcptLive {
+  animation: none;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    translate: 0;
+  }
+  50% {
+    translate: 0 -7px;
+  }
+}
+@keyframes chipPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px oklch(0.36 0.05 155 / 0.14);
+  }
+  50% {
+    box-shadow: 0 0 0 6px oklch(0.36 0.05 155 / 0.06);
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes halo {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px oklch(0.82 0.05 145 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 8px oklch(0.82 0.05 145 / 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbCore,
+  .chip,
+  .chipDot,
+  .dots i,
+  .rcptLive {
+    animation: none;
+  }
+}
+
+/* ---------- Peeblo's layer on the scene ---------- */
+
+/* The orb's outline is a pebble (border-radius is written each frame by the scene). */
+.orbCore {
+  border-radius: 47% 53% 52% 48% / 54% 47% 53% 46%;
+}
+.ripple {
+  border-radius: 47% 53% 52% 48% / 54% 47% 53% 46%;
+}
+
+/* Peeblo, riding the pebble. Positioned by its centre in stage units. */
+.rider {
+  position: absolute;
+  z-index: 3;
+  width: 72px;
+  height: 72px;
+  line-height: 0;
+  will-change: transform, left, top;
+}
+.riderBob {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  animation: rideBob 2.4s ease-in-out infinite alternate;
+}
+.riderHop {
+  animation:
+    rideHop 0.7s cubic-bezier(0.34, 1.3, 0.64, 1) both,
+    rideBob 2.4s 0.7s ease-in-out infinite alternate;
+}
+.handsUp {
+  top: 3px;
+  left: 50%;
+  translate: -50% 0;
+}
+.handsSide {
+  top: 50%;
+  left: -5px;
+  flex-direction: column;
+  translate: 0 -50%;
+}
+.handsRight {
+  right: -5px;
+  left: auto;
+}
+/* The carried docker chip bobs in step with Peeblo instead of floating on its own. */
+.held {
+  z-index: 2;
+  animation: rideBob 2.4s ease-in-out infinite alternate;
+}
+.splash {
+  position: absolute;
+  left: 320px;
+  width: 92px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 2px oklch(1 0 0 / 0.85),
+    0 0 0 1px oklch(1 0 0 / 0.3);
+  pointer-events: none;
+}
+
+/* Beat 2: the face picker inside the disc's white ring. */
+.palFace {
+  display: block;
+  transform-origin: 50% 60%;
+}
+.palTick {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 2px dashed oklch(1 0 0 / 0.75);
+  animation: pickSpin 1.6s linear infinite;
+  transition: opacity 0.2s;
+}
+
+/* Beat 1: the server's own status line, typed in under the heading. */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  min-height: 22px;
+  margin: 0;
+  color: var(--ink-2);
+  font: 500 13px/22px var(--mono);
+  letter-spacing: -0.01em;
+}
+.statusSeg {
+  display: inline-flex;
+  align-items: center;
+  white-space: pre;
+}
+.statusSep {
+  color: var(--ink-3);
+}
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--moss);
+}
+.statusDotLive {
+  animation: chipPulse 2.8s ease-in-out infinite;
+}
+.statusCaret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 2px;
+  background: var(--ink-2);
+  animation: blink 1s steps(1) infinite;
+}
+
+/* Beat 4: the printer slot on the card's bottom edge, and the receipt it feeds out. */
+.slot {
+  position: absolute;
+  right: 22px;
+  bottom: -3px;
+  width: 250px;
+  height: 6px;
+  border-radius: 4px;
+  background: oklch(0.27 0.02 60 / 0.55);
+  box-shadow: inset 0 1px 1px oklch(0 0 0 / 0.35);
+}
+.card .slip {
+  position: absolute;
+  top: 100%;
+  right: 28px;
+  margin-top: -1px;
+}
+
+.mobile .status {
+  justify-content: center;
+  font-size: 12px;
+}
+
+.stillScene .riderBob,
+.stillScene .held,
+.stillScene .palTick,
+.stillScene .statusDotLive,
+.stillScene .statusCaret {
+  animation: none;
+}
+
+@keyframes rideBob {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -4px;
+  }
+}
+@keyframes rideHop {
+  0% {
+    transform: scale(1);
+  }
+  20% {
+    transform: scale(1.14, 0.84);
+  }
+  48% {
+    transform: translateY(-26px) scale(0.92, 1.1) rotate(-6deg);
+  }
+  72% {
+    transform: translateY(0) scale(1.08, 0.92);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes pickSpin {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .riderBob,
+  .riderHop,
+  .held,
+  .palTick,
+  .statusDotLive,
+  .statusCaret {
+    animation: none;
+  }
+}

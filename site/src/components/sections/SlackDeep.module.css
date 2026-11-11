@@ -1,0 +1,1051 @@
+/* Behaviour list + a Slack desktop window (.slack / .sl-*), with msg-in, caret, pop and blink. */
+
+.craft {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: center;
+  gap: var(--gap);
+  margin-top: 38px;
+}
+.list {
+  display: grid;
+  gap: 2px;
+}
+.item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 0 12px;
+  padding: 10px 14px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.item:hover {
+  background: var(--well);
+}
+.item.on {
+  background: var(--card);
+  box-shadow: var(--lift-card);
+}
+.item svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  color: var(--ink-3);
+}
+.item.on svg {
+  color: var(--ember-ink);
+}
+.item b {
+  display: block;
+  color: var(--ink);
+  font-size: 16.5px;
+  font-weight: 700;
+}
+/* Only the active behaviour shows its line; the rest stay one row tall. */
+.more {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.more > p {
+  overflow: hidden;
+  min-height: 0;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.item.on .more {
+  grid-template-rows: 1fr;
+}
+.item.on .more > p {
+  margin-top: 2px;
+  opacity: 1;
+}
+
+/* ---- Slack window ---- */
+.slack {
+  --sl-ink: #1d1c1d;
+  --sl-muted: #616061;
+  --sl-faint: #8d8b8e;
+  --sl-line: #1d1c1d21;
+  --sl-side: #fbf8f1;
+  --sl-side-ink: #43414a;
+  --sl-mention-bg: #e8f5fa;
+  --sl-blue: #1264a3;
+  --sl-green: #007a5a;
+  overflow: hidden;
+  color: var(--sl-ink);
+  background: #fff;
+  border-radius: 22px;
+  box-shadow:
+    0 1px 1px #1d1c1d0f,
+    0 28px 60px -28px #1d1c1d80,
+    0 0 0 1px var(--sl-line);
+  text-align: left;
+  font-family: var(--slack);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.46;
+}
+.slack svg {
+  flex: none;
+}
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 16px 0 18px;
+  background: #fdfcf8;
+  border-bottom: 1px solid var(--sl-line);
+}
+.lights {
+  display: flex;
+  gap: 8px;
+}
+.lights span {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.lights span:first-child {
+  background: #ff5f57;
+}
+.lights span:nth-child(2) {
+  background: #febc2e;
+}
+.lights span:nth-child(3) {
+  background: #28c840;
+}
+.url {
+  color: var(--sl-faint);
+  font-size: 12.5px;
+}
+.body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  height: 500px;
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--sl-side);
+  border-right: 1px solid var(--sl-line);
+  color: var(--sl-side-ink);
+}
+.ws {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 50px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--sl-line);
+}
+.ws b {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sl-ink);
+  font-size: 18px;
+  font-weight: 900;
+}
+.wsIc {
+  display: inline-flex;
+  color: #7a797c;
+}
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 8px 10px;
+  overflow: hidden;
+  font-size: 15px;
+}
+.it {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  color: var(--sl-side-ink);
+}
+.it svg {
+  width: 16px;
+  height: 16px;
+  color: #7a797c;
+}
+.itOn {
+  color: var(--sl-ink);
+  background: #fff;
+  font-weight: 700;
+  box-shadow:
+    0 1px 2px #1d1c1d17,
+    0 0 0 1px #1d1c1d0d;
+}
+.sec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 8px 4px;
+  color: #767577;
+  font-size: 13px;
+  font-weight: 500;
+}
+.sec svg {
+  width: 12px;
+  height: 12px;
+}
+.ini {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.presence {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: #2bac76;
+}
+.navAv {
+  border-radius: 5px;
+  background: #efeae0;
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: #fff;
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 50px;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid var(--sl-line);
+}
+.head b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sl-ink);
+  font-size: 18px;
+  font-weight: 900;
+}
+.back {
+  display: none;
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.members {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  color: var(--sl-muted);
+  font-size: 13px;
+}
+.stack {
+  display: inline-flex;
+}
+.stack img {
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.stack img:first-child {
+  margin-left: 0;
+}
+.members {
+  padding: 2px 8px 2px 3px !important;
+  color: var(--sl-ink) !important;
+  font-weight: 700;
+}
+.hp svg {
+  width: 15px;
+  height: 15px;
+}
+.hp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--sl-line);
+  border-radius: 6px;
+  color: var(--sl-muted);
+}
+.msgs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 0;
+  padding: 14px 20px 8px;
+  overflow: hidden;
+}
+.day {
+  align-self: center;
+  margin: 0 0 10px;
+  padding: 3px 12px;
+  border: 1px solid var(--sl-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sl-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.msg {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 0 10px;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  opacity: 0;
+  translate: 0 6px;
+  animation: msg-in 0.28s forwards;
+}
+@keyframes msg-in {
+  to {
+    opacity: 1;
+    translate: 0;
+  }
+}
+.ava {
+  display: block;
+  width: 36px;
+  height: 36px;
+  margin-top: 2px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.botAv {
+  margin-top: 2px;
+  border-radius: 8px;
+  background: #f3efe6;
+}
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.3;
+}
+.who b {
+  color: var(--sl-ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+.who time {
+  color: var(--sl-muted);
+  font-size: 12px;
+}
+.app {
+  position: relative;
+  top: -1px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #1d1c1d14;
+  color: var(--sl-muted);
+  letter-spacing: 0.02em;
+  font-size: 10px;
+  font-weight: 700;
+}
+.txt {
+  margin-top: 1px;
+  overflow-wrap: break-word;
+  font-size: 15px;
+  line-height: 1.46;
+}
+.m {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--sl-mention-bg);
+  color: var(--sl-blue);
+}
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -2px;
+  background: var(--sl-ink);
+  animation: caret 1s steps(2, end) infinite;
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.reacts {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.react {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 6px;
+  border: 1px solid #1264a340;
+  border-radius: 999px;
+  background: var(--sl-mention-bg);
+  color: var(--sl-blue);
+  font-size: 12px;
+  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+.tbl {
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--sl-line);
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+.tbl table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tbl th {
+  white-space: nowrap;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--sl-line);
+  background: #f8f8f8;
+  color: var(--sl-ink);
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.srt {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 5px;
+  vertical-align: -3px;
+  border: 4px solid transparent;
+  border-top-color: #8d8b8e;
+}
+.tbl td {
+  padding: 6px 10px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--sl-line);
+}
+.tbl tr:last-child td {
+  border-bottom: 0;
+}
+.tbl tbody tr {
+  opacity: 0;
+  animation: msg-in 0.25s forwards;
+}
+.num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+.task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14.5px;
+}
+.box {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border: 1.5px solid #1d1c1d59;
+  border-radius: 4px;
+  background: #fff;
+}
+.done .box {
+  border-color: var(--sl-green);
+  background: var(--sl-green);
+}
+.done .box::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-bottom: 2px solid #fff;
+  border-left: 2px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+.done span:last-child {
+  color: var(--sl-muted);
+  text-decoration: line-through #1d1c1d59;
+}
+
+/* Peeblo's approval block: Slack Block Kit buttons, then who approved. */
+.ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 8px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--sl-line);
+  border-left: 4px solid var(--ember);
+  border-radius: 8px;
+  background: #fcfcfb;
+  animation: msg-in 0.28s both;
+}
+.askTxt {
+  font-size: 14.5px;
+}
+.btns {
+  display: flex;
+  gap: 8px;
+}
+.btnSl {
+  padding: 8px 12px;
+  border: 1px solid #1d1c1d4d;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 3px #00000014;
+  color: var(--sl-ink);
+  font: 700 13px/1 var(--slack);
+}
+.primary {
+  border-color: var(--sl-green);
+  background: var(--sl-green);
+  color: #fff;
+}
+.approved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 6px;
+  color: var(--sl-muted);
+  font-size: 13px;
+  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.approved b {
+  color: var(--sl-ink);
+}
+.okDot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sl-green);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+}
+.ctx {
+  display: block;
+  line-height: 1.6;
+  margin-top: 8px;
+  color: var(--sl-muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  animation: msg-in 0.28s both;
+}
+.ctxAv {
+  margin-right: 6px;
+  vertical-align: -2px;
+  border-radius: 3px;
+}
+.status .ctxAv {
+  margin-right: 0;
+}
+.rcpt {
+  color: var(--sl-ink);
+  font-weight: 700;
+}
+.sep {
+  opacity: 0.6;
+}
+
+/* ---- composer ---- */
+.comp {
+  margin: 8px 20px 6px;
+  overflow: hidden;
+  border: 1px solid #1d1c1d4d;
+  border-radius: 8px;
+  background: #fff;
+}
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--sl-line);
+  background: #f8f8f8;
+  color: var(--sl-muted);
+}
+.tools i,
+.l i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border-radius: 4px;
+}
+.tools svg,
+.l svg {
+  width: 15px;
+  height: 15px;
+}
+.sp {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--sl-line);
+}
+.in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 43px;
+  padding: 10px 12px;
+  color: var(--sl-faint);
+  font-size: 15px;
+}
+.typed {
+  color: var(--sl-ink);
+}
+.typed:empty::before {
+  content: attr(data-ph);
+  color: var(--sl-faint);
+}
+.bot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 8px 10px;
+  color: var(--sl-muted);
+}
+.l {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.aa {
+  font: 700 13px var(--slack);
+  font-style: normal;
+  text-decoration: underline;
+}
+.send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--sl-green);
+  color: #fff;
+}
+.send svg {
+  width: 14px;
+  height: 14px;
+}
+.send.idle {
+  background: #eaeaea;
+  color: #8d8b8e;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  margin: 0 20px 10px;
+  color: var(--sl-muted);
+  font-size: 12.5px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.statusOn {
+  opacity: 1;
+}
+.dots span {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--sl-muted);
+  animation: blink 1.2s infinite;
+}
+.dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes blink {
+  0%,
+  80%,
+  to {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@media (width <= 980px) {
+  .craft {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .slackWrap {
+    order: -1;
+  }
+}
+@media (width <= 720px) {
+  .title,
+  .side,
+  .tools,
+  .hp {
+    display: none;
+  }
+  .slack {
+    border-radius: 18px;
+    font-size: 14px;
+  }
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    height: 520px;
+  }
+  .head {
+    height: 52px;
+    padding: 0 12px;
+  }
+  .back {
+    display: inline-flex;
+    margin-right: 2px;
+    color: var(--sl-blue);
+  }
+  .back svg {
+    width: 20px;
+    height: 20px;
+  }
+  .msgs {
+    padding: 10px 12px 6px;
+  }
+  .comp {
+    margin: 6px 10px 4px;
+  }
+  .status {
+    margin: 0 12px 8px;
+  }
+  .txt,
+  .who b {
+    font-size: 14px;
+  }
+  .tbl td,
+  .tbl th {
+    padding-inline: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg,
+  .react,
+  .tbl tbody tr,
+  .ask,
+  .ctx,
+  .approved {
+    opacity: 1;
+    translate: 0;
+    animation: none;
+  }
+  .caret,
+  .dots span {
+    animation: none;
+  }
+}
+
+/* ---------- Peeblo's layer: the mascot on the window corner, and the signed receipt ---------- */
+.slackWrap {
+  position: relative;
+}
+.mascot {
+  position: absolute;
+  z-index: 2;
+  top: -52px;
+  right: 34px;
+  display: flex;
+  align-items: flex-end;
+  width: 60px;
+  height: 60px;
+  line-height: 0;
+  pointer-events: none;
+}
+.mascotBody {
+  display: block;
+  pointer-events: auto;
+  transform-origin: 50% 90%;
+  transition: transform 0.45s var(--ease-pop);
+}
+/* reacts: a happy hop */
+.mascot[data-act="react"] .mascotBody {
+  animation: m-hop 0.9s cubic-bezier(0.34, 1.3, 0.64, 1) 2;
+}
+/* shows its work: head tilted, thinking */
+.mascot[data-act="status"] .mascotBody {
+  transform: rotate(-9deg);
+}
+/* streams: a quick typing jiggle */
+.mascot[data-act="stream"] .mascotBody {
+  animation: m-type 0.28s ease-in-out infinite alternate;
+}
+/* real tables: leans over the window edge to peer down */
+.mascot[data-act="table"] .mascotBody {
+  transform: translate(-10px, 14px) rotate(-22deg);
+}
+/* task list: nods along as boxes tick */
+.mascot[data-act="tasks"] .mascotBody {
+  animation: m-nod 0.9s ease-in-out infinite;
+}
+/* asks: leans toward the Approve button and waits */
+.mascot[data-act="approve"] .mascotBody {
+  transform: translate(-6px, 10px) rotate(-14deg) scale(0.96, 1.04);
+  animation: m-wait 1.8s ease-in-out infinite;
+}
+/* signs: holds up the receipt */
+.mascot[data-act="receipt"] .mascotBody {
+  transform: translateY(-16px) rotate(-4deg);
+}
+
+.say {
+  position: absolute;
+  right: calc(100% + 4px);
+  bottom: 36px;
+  padding: 5px 10px;
+  border-radius: 12px 12px 3px 12px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    0 6px 14px -8px oklch(0.27 0.02 60 / 0.4);
+  color: var(--ink-2);
+  font: 500 11.5px/16px var(--mono);
+  white-space: nowrap;
+  animation: m-say 0.32s var(--ease-pop) both;
+}
+.sayDots {
+  display: flex;
+  gap: 3px;
+  padding: 8px 10px;
+}
+.sayDots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  animation: blink 1s ease-in-out infinite;
+}
+.sayDots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.sayDots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.ticks {
+  position: absolute;
+  right: calc(100% + 2px);
+  bottom: 30px;
+  display: flex;
+  gap: 2px;
+}
+.ticks i {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--moss);
+  color: var(--moss-ink);
+  font: 800 10px/1 var(--text);
+  font-style: normal;
+  animation: m-say 0.3s var(--ease-pop) both;
+}
+.held {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 8px;
+  width: 54px;
+  translate: -50% 0;
+  animation: m-say 0.35s var(--ease-pop) both;
+}
+.heldSlip {
+  --tooth: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 40px;
+  margin: 0 auto;
+  padding: 7px 7px 0;
+  rotate: 4deg;
+  background: oklch(0.99 0.004 85);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.heldSlip i {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: oklch(0.27 0.02 60 / 0.3);
+}
+.heldSlip i:last-child {
+  width: 60%;
+  margin-left: auto;
+  background: var(--ember-ink);
+}
+.heldHands {
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  justify-content: space-between;
+  width: 54px;
+}
+
+/* The receipt prints on a strip of thermal paper. */
+.ctx {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+.paper {
+  --tooth: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 84px 0 8px;
+  background: linear-gradient(oklch(0.93 0.01 80) 0 2px, oklch(0.99 0.004 85) 2px);
+  filter: drop-shadow(0 1px 0 oklch(0.27 0.02 60 / 0.14));
+}
+.paper .ctxAv {
+  flex: none;
+  margin-top: 1px;
+}
+.paper :global(.pb-rc) {
+  min-width: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+.signStamp {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  margin-top: -14px;
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
+@keyframes m-hop {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: scale(1.12, 0.86);
+  }
+  45% {
+    transform: translateY(-18px) scale(0.94, 1.08) rotate(-5deg);
+  }
+  70% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+}
+@keyframes m-type {
+  from {
+    transform: translateY(0) rotate(-2deg);
+  }
+  to {
+    transform: translateY(-2px) rotate(2deg);
+  }
+}
+@keyframes m-nod {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  40% {
+    transform: rotate(8deg) translateY(2px);
+  }
+}
+@keyframes m-wait {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -3px;
+  }
+}
+@keyframes m-say {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+@media (width <= 980px) {
+  .slackWrap {
+    margin-top: 40px;
+  }
+}
+@media (width <= 720px) {
+  .mascot {
+    top: -48px;
+    right: 18px;
+  }
+
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascotBody,
+  .say,
+  .sayDots i,
+  .ticks i,
+  .held {
+    animation: none !important;
+    transition: none;
+  }
+}

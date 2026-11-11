@@ -1,0 +1,1 @@
+Portraits: faker-js/assets-person-portrait (AI-generated, CC0-1.0). https://github.com/faker-js/assets-person-portrait

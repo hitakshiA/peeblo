@@ -1,0 +1,274 @@
+/* Header pill, hairline finish and the scroll morph. */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 14px 32px 0;
+  pointer-events: none;
+}
+.row {
+  --cta-w: 136px;
+  --row-gap: 12px;
+  container: navrow / inline-size;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--row-gap);
+  max-width: 1280px;
+  height: 60px;
+  margin: 0 auto;
+  pointer-events: auto;
+  transition: max-width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.scrolled .row {
+  max-width: 1120px;
+}
+/* The pill is always the links' containing block (its blur would make it one once scrolled anyway),
+   so the links are offset by half of what sits beside it: they land on the row's center, which is
+   the page center, in both header states and all through the morph. */
+.pill {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 22px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 0.35s, border-color 0.35s, box-shadow 0.35s, backdrop-filter 0.35s;
+}
+.scrolled .pill {
+  background: color-mix(in oklch, var(--paper-2) 72%, transparent);
+  border-color: var(--line);
+  box-shadow: rgba(0, 0, 0, 0.05) 0 3px 10px 2px;
+  backdrop-filter: blur(64px) saturate(180%);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  text-decoration: none;
+  font: 800 26px/1 var(--display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.nav {
+  position: absolute;
+  left: calc(50% + (var(--cta-w) + var(--row-gap)) / 2);
+  top: 50%;
+  translate: -50% -50%;
+  width: max-content;
+  display: flex;
+  gap: 30px;
+  align-items: center;
+}
+.divider {
+  margin-left: auto;
+}
+.logo {
+  display: grid;
+  place-items: center;
+}
+
+/* Live status beside the logo: the crew runs here, and nobody else holds a key. It drops
+   "self-hosted ·" when the pill tightens on scroll and hides when the links need the room. */
+.status {
+  display: none;
+  align-items: center;
+  margin-left: -10px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: -0.01em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.status i {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: oklch(0.68 0.15 155);
+}
+.status i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: live 2.2s ease-out infinite;
+}
+.statusLong {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  vertical-align: bottom;
+  transition: max-width 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s;
+}
+@container navrow (min-width: 990px) {
+  .status {
+    display: flex;
+  }
+}
+@container navrow (min-width: 1170px) {
+  .statusLong {
+    max-width: 15ch;
+    opacity: 1;
+  }
+}
+@keyframes live {
+  0% {
+    scale: 1;
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    scale: 3.2;
+    opacity: 0;
+  }
+}
+
+.nav a {
+  font: 600 15px/20px var(--text);
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.nav a:hover {
+  color: var(--ink);
+}
+.divider {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  background: var(--line-2);
+}
+.gh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 13px/1 var(--text);
+  color: var(--ink-3);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.gh:hover {
+  color: var(--ink);
+}
+.cta {
+  width: var(--cta-w);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 26px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 600 16px/1 var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 0 oklch(0.27 0.02 60 / 0.25);
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+.cta:hover {
+  background: var(--moss-2);
+}
+.menu {
+  display: none;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  padding: 6px;
+  margin-left: auto;
+  cursor: pointer;
+}
+
+@media (max-width: 1240px) {
+  .pill,
+  .nav {
+    gap: 20px;
+  }
+  .divider {
+    display: none;
+  }
+  .gh {
+    margin-left: auto;
+  }
+}
+@media (max-width: 1050px) {
+  .header {
+    padding: 12px 20px 0;
+  }
+  .nav {
+    gap: 18px;
+  }
+  .gh,
+  .divider,
+  .status {
+    display: none;
+  }
+}
+@media (max-width: 800px) {
+  .header {
+    padding: 10px 12px 0;
+  }
+  .row {
+    --row-gap: 8px;
+    height: 52px;
+  }
+  .pill {
+    padding: 0 12px 0 14px;
+    background: color-mix(in oklch, var(--paper-2) 72%, transparent);
+    border-color: var(--line);
+    backdrop-filter: blur(64px) saturate(180%);
+  }
+  .brand {
+    font-size: 22px;
+  }
+  .nav {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    width: auto;
+    translate: none;
+    top: calc(100% + 8px);
+    z-index: 20;
+    background: var(--card);
+    border-radius: 14px;
+    padding: 8px 18px;
+    box-shadow: inset 0 0 0 1px var(--line), rgba(0, 0, 0, 0.08) 0 15px 25px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .open {
+    display: flex;
+  }
+  .nav a {
+    padding: 13px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 16px;
+  }
+  .nav a:last-child {
+    border-bottom: 0;
+  }
+  .menu {
+    display: block;
+  }
+  .cta {
+    width: auto;
+    padding: 0 16px;
+    font-size: 14px;
+    border-radius: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status i::after {
+    animation: none;
+  }
+}

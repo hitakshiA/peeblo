@@ -1,0 +1,169 @@
+/* Connector head, logo grid, linked tiles and the "more" control. */
+
+.wrap {
+  padding-top: 0;
+}
+.head {
+  text-align: center;
+}
+.head h3 {
+  font-size: clamp(23px, 2.2vw, 28px);
+}
+.head p {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 16.5px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 28px;
+}
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 86px;
+  padding: 14px 6px;
+  background: var(--card);
+  border: 1px solid oklch(0.27 0.02 60 / 0.12);
+  border-radius: 14px;
+  box-shadow:
+    var(--lift-tile),
+    inset 0 0 0 1.5px oklch(0.66 0.19 45 / 0.4);
+  transition: box-shadow 0.15s;
+}
+.tile:hover {
+  box-shadow:
+    var(--lift-tile),
+    inset 0 0 0 1.5px var(--ember);
+}
+.tile img {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.tile > span {
+  color: var(--ink);
+  text-align: center;
+  opacity: 0.8;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.late {
+  animation: tile-in 0.3s var(--ease-out) both;
+}
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+.more {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 15px;
+}
+.more button {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1.5px solid oklch(0.66 0.19 45 / 0.25);
+  color: var(--ember-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.more button:hover {
+  border-bottom-color: var(--ember-ink);
+}
+
+/* ---- Peeblo's layer: a teammate peeking from behind the tile ---- */
+.more button {
+  font-variant-numeric: tabular-nums;
+}
+.peek {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  z-index: 2;
+  width: 64px;
+  height: 52px;
+  translate: -50% 0;
+  pointer-events: none;
+}
+/* The clip's bottom edge is the tile's top edge, so the teammate rises from behind the tile. */
+.peekClip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.peekBody {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  margin-left: -23px;
+  line-height: 0;
+  animation: peek-up 0.42s cubic-bezier(0.34, 1.5, 0.64, 1) both;
+}
+.peekHands {
+  bottom: -5px;
+  left: 50%;
+  translate: -50% 0;
+  justify-content: space-between;
+  width: 44px;
+  animation: peek-hands 0.42s 0.12s var(--ease-pop) both;
+}
+@keyframes peek-up {
+  from {
+    transform: translateY(100%) rotate(-8deg);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes peek-hands {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+}
+
+@media (width <= 720px) {
+  .head + .grid {
+    margin-top: 20px;
+  }
+  .grid {
+    gap: 6px;
+  }
+  .tile {
+    aspect-ratio: 1;
+    min-height: 0;
+    padding: 0;
+  }
+  .tile > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .tile img {
+    width: 22px;
+    height: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .late,
+  .peekBody,
+  .peekHands {
+    animation: none;
+  }
+}

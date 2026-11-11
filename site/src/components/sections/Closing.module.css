@@ -1,0 +1,357 @@
+/* Closing: the final call to action with a character above it, then the footer
+   (link columns over a soft backdrop, giant wordmark cropped at the bottom). */
+.cta {
+  width: min(1200px, calc(100% - 96px));
+  margin: 96px auto 0;
+  padding: 0 20px 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.dancer {
+  display: block;
+  animation: dance 1.6s ease-in-out infinite alternate;
+}
+.cta h2 {
+  margin: 36px 0 0;
+  font: 700 52px/59.8px var(--display);
+  letter-spacing: -0.04em;
+  color: var(--ink);
+}
+.cta p {
+  margin: 12px 0 0;
+  font: 500 17px/26.35px var(--text);
+  color: var(--ink-3);
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  min-height: 54px;
+  padding: 0 24px;
+  border-radius: 8px;
+  background: var(--moss);
+  color: var(--moss-ink);
+  font: 700 15px/1 var(--text);
+  text-decoration: none;
+  transition: transform 0.2s, background-color 0.2s;
+}
+.btn:hover {
+  transform: translateY(-2px);
+  background: var(--moss-2);
+}
+.btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.footer {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper);
+}
+.backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 55% at 18% 30%, color-mix(in srgb, var(--ember) 22%, transparent), transparent 70%),
+    radial-gradient(45% 60% at 70% 40%, color-mix(in srgb, var(--moss-soft) 55%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 92% 85%, color-mix(in srgb, var(--moss) 25%, transparent), transparent 70%),
+    var(--paper-2);
+  filter: blur(24px);
+}
+.backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(var(--paper) 0%, color-mix(in srgb, var(--paper) 0%, transparent) 60%);
+}
+.inner {
+  position: relative;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 50px clamp(16px, 8.6111vw, 124px) 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 800 24px/1 var(--display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.tagline {
+  margin: 0;
+  max-width: 280px;
+  font: 700 22px/29px var(--display);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.legal {
+  margin: 20px 0 0;
+  max-width: 280px;
+  font: 500 14px/20px var(--text);
+  color: var(--ink-2);
+  grid-column: 1;
+}
+.cols {
+  grid-column: 1;
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 40px 56px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.col p {
+  margin: 0;
+  font: 700 14px/20px var(--text);
+  color: var(--ink);
+}
+.col ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.col a {
+  font: 500 16px/20px var(--text);
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.col a:hover {
+  color: var(--moss);
+}
+.word {
+  position: relative;
+  margin: 72px 0 -0.24em;
+  text-align: center;
+  font: 800 clamp(120px, 27vw, 400px) / 0.9 var(--display);
+  letter-spacing: -0.05em;
+  color: color-mix(in srgb, var(--moss) 62%, transparent);
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+}
+/* The p's bowl sits a little higher so its stem clears the crop. */
+.lift {
+  display: inline-block;
+  translate: 0 -0.16em;
+}
+
+/* ---- Peeblo's layer: the composer the button sits in, and the crew behind it ---- */
+.composer {
+  position: relative;
+  width: min(560px, 100%);
+  margin-top: 76px;
+}
+.crowd {
+  position: absolute;
+  bottom: calc(100% - 2px);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  height: 56px;
+  padding: 0 14% 0 6%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.mate {
+  display: block;
+  line-height: 0;
+  translate: 0 58%;
+  transform-origin: 50% 100%;
+  pointer-events: auto;
+  transition:
+    translate 0.5s var(--d) cubic-bezier(0.34, 1.4, 0.64, 1),
+    rotate 0.5s var(--d) cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.near .mate {
+  translate: 0 10%;
+  rotate: var(--lean);
+}
+.box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px 12px 16px;
+  border: 1px solid oklch(0.27 0.02 60 / 0.26);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow:
+    0 2px 0 oklch(0.27 0.02 60 / 0.08),
+    0 24px 48px -30px oklch(0.3 0.04 60 / 0.5);
+  text-align: left;
+  transition: border-color 0.2s;
+}
+.near .box {
+  border-color: oklch(0.27 0.02 60 / 0.5);
+}
+.field {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  font: 400 18px/1 var(--slack);
+  color: var(--ink);
+}
+.at {
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: rgba(29, 155, 209, 0.12);
+  color: #1264a3;
+}
+.caret {
+  width: 2px;
+  height: 22px;
+  margin-left: 2px;
+  background: var(--ink);
+  animation: close-caret 1.05s steps(1) infinite;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tools {
+  display: flex;
+  gap: 6px;
+  color: var(--ink-3);
+}
+.tools svg {
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  border-radius: 6px;
+}
+.btn {
+  min-height: 46px;
+  padding: 0 18px;
+}
+
+/* ---- the wordmark: letters that bob like pebbles, eyes in the "o" ---- */
+.ch {
+  position: relative;
+  display: inline-block;
+  animation: pebble-bob 3.4s calc(var(--i) * -0.57s) ease-in-out infinite alternate;
+}
+.eyes {
+  position: absolute;
+  top: 53%;
+  left: 51%;
+  translate: -50% -50%;
+  display: block;
+  font-size: 1em;
+  line-height: 0;
+}
+.look {
+  display: flex;
+  gap: 0.05em;
+  will-change: transform;
+}
+.look i {
+  display: block;
+  width: 0.036em;
+  height: 0.072em;
+  border-radius: 0.02em;
+  background: var(--moss-2);
+  animation: close-blink 5.2s infinite;
+}
+@keyframes pebble-bob {
+  from {
+    transform: translateY(0) rotate(-1deg) scale(1, 1);
+  }
+  to {
+    transform: translateY(-0.035em) rotate(1.2deg) scale(1.015, 0.985);
+  }
+}
+@keyframes close-blink {
+  0%,
+  93%,
+  100% {
+    scale: 1 1;
+  }
+  96% {
+    scale: 1 0.1;
+  }
+}
+@keyframes close-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes dance {
+  from {
+    transform: rotate(-5deg) translateY(0);
+  }
+  to {
+    transform: rotate(5deg) translateY(-6px);
+  }
+}
+
+@media (max-width: 860px) {
+  .cta {
+    width: calc(100% - 32px);
+    padding: 0 0 80px;
+  }
+  .cta h2 {
+    font-size: 38px;
+    line-height: 44px;
+  }
+  .inner {
+    grid-template-columns: 1fr;
+  }
+  .cols {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 32px 40px;
+  }
+}
+@media (max-width: 520px) {
+  .composer {
+    margin-top: 64px;
+  }
+  .crowd {
+    padding: 0 4%;
+  }
+  .tools svg:nth-child(n + 2) {
+    display: none;
+  }
+  .btn {
+    padding: 0 14px;
+    font-size: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dancer,
+  .ch,
+  .look i,
+  .caret {
+    animation: none;
+  }
+  .mate {
+    transition: none;
+  }
+}

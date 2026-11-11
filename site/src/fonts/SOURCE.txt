@@ -1,0 +1,1 @@
+Fonts from Fontsource packages (SIL Open Font License 1.1): Baloo 2, Quicksand, JetBrains Mono (variable, latin) and Lato 400/700/900.
