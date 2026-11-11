@@ -463,6 +463,26 @@ export async function publish(
         pr_url: pj.html_url,
       };
     }
+    // No push credential for this repo: the branch goes up through the GitHub connector in Otari instead.
+    if (!token) {
+      const v = await publishViaConnector(tm, m, r, w, incoming, pr);
+      hostGit(["--git-dir", m, "update-ref", "-d", `refs/peeblo/incoming/${sessionId}`]);
+      await pool.query(
+        "UPDATE session_worktrees SET published = true, pr_url = coalesce($3, pr_url) WHERE session_id = $1 AND repo = $2",
+        [sessionId, repo, v.prUrl],
+      );
+      await appendEvent({
+        sessionId,
+        runId: null,
+        type: "repo.published",
+        data: { repo, branch: w.branch, commit: incoming, pr_url: v.prUrl, via: "github_connector", files: v.files },
+      });
+      return {
+        text: `Pushed ${w.branch} through the GitHub connector (one commit, ${v.files} file${v.files === 1 ? "" : "s"})${v.prUrl ? ` and opened a draft PR: ${v.prUrl}` : ""}.${notes}`,
+        pushed: incoming,
+        pr_url: v.prUrl,
+      };
+    }
     // To the URL, not "origin": a mirror's origin pushes every ref and takes no refspec.
     hostGit(["--git-dir", m, "push", "--quiet", r.remote, `${incoming}:${ref}`], token);
     hostGit(["--git-dir", m, "update-ref", ref, incoming]);
@@ -491,6 +511,76 @@ export async function publish(
   } finally {
     rmSync(bundle, { force: true });
   }
+}
+
+// A repo with no push credential (a public repo cloned without a token) is published through the GitHub connector in
+// Otari, on the teammate's own key where Otari holds its write grant: the branch's changed files as one commit, then a
+// draft PR. Deletions and binary files need a real push, so they're refused with that reason.
+async function publishViaConnector(
+  tm: Teammate,
+  m: string,
+  r: RepoConfig,
+  w: Worktree,
+  incoming: string,
+  pr?: { title: string; body?: string } | null,
+): Promise<{ prUrl: string | null; files: number }> {
+  const gh = /github\.com[/:]([^/]+)\/([^/]+?)(\.git)?$/.exec(r.remote);
+  if (!gh) throw new Error("this repo has no push credential and isn't on GitHub, so there's no way to publish it");
+  const [owner, name] = [gh[1], gh[2]];
+  const from = hostGit(["--git-dir", m, "merge-base", `refs/heads/${w.base}`, incoming]);
+  const changes = hostGit(["--git-dir", m, "diff", "--name-status", "--no-renames", from, incoming])
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => l.split("\t"));
+  const deleted = changes.filter(([st]) => st === "D").map(([, f]) => f);
+  if (deleted.length)
+    throw new Error(`this repo has no push credential, and the GitHub connector can't delete files (${deleted.join(", ")}); keep them, or ask an admin for a repo credential`);
+  const files = changes.map(([, f]) => ({
+    path: f,
+    content: execFileSync("git", ["--git-dir", m, "show", `${incoming}:${f}`], { encoding: "utf8", maxBuffer: 20_000_000 }),
+  }));
+  const binary = files.filter((f) => f.content.includes("\u0000")).map((f) => f.path);
+  if (binary.length) throw new Error(`this repo has no push credential, and the GitHub connector can't push binary files (${binary.join(", ")})`);
+  const subjects = hostGit(["--git-dir", m, "log", "--reverse", "--format=%s", `${from}..${incoming}`]).split("\n").filter(Boolean);
+  const message =
+    subjects.length === 1 ? hostGit(["--git-dir", m, "log", "-1", "--format=%B", incoming]) : subjects.map((x) => `- ${x}`).join("\n");
+
+  const { catalogFor, executeTool } = await import("../connectors/mcp.ts");
+  const { mcpText } = await import("../proxy/results.ts");
+  const { teammateKey } = await import("../otari/spend.ts");
+  const { ownKeyServers } = await import("../otari/mcp-access.ts");
+  const key = await teammateKey(tm).catch(() => null);
+  const own = key && ownKeyServers(tm.id, key.keyId).has("github") ? key : null;
+  const cat = await catalogFor(tm.config, own ? { keyId: own.keyId, secret: own.secret, servers: new Set(["github"]) } : undefined);
+  const auth = own ? { authorization: `Bearer ${own.secret}` } : undefined;
+  const call = async (tool: string, args: Record<string, unknown>) => {
+    const t = cat.tools.find((x) => x.server === "github" && x.tool === tool);
+    if (!t) throw new Error(`this repo has no push credential, and ${tm.config.name}'s GitHub connector has no ${tool}`);
+    const out = mcpText((await executeTool(t, args, auth)).data);
+    if (out.isError) throw new Error(`GitHub ${tool}: ${out.text.slice(0, 300)}`);
+    return out.text;
+  };
+  await call("create_branch", { owner, repo: name, branch: w.branch, from_branch: w.base }).catch((e) => {
+    if (!/already exists/i.test((e as Error).message)) throw e;
+  });
+  await call("push_files", { owner, repo: name, branch: w.branch, files, message });
+  let prUrl: string | null = null;
+  if (pr?.title) {
+    const text = await call("create_pull_request", {
+      owner,
+      repo: name,
+      title: pr.title,
+      body: `${pr.body ?? ""}\n\n_Opened by ${tm.config.name}, a Peeblo teammate._`.trim(),
+      head: w.branch,
+      base: w.base,
+      draft: true,
+    }).catch((e) => {
+      if (/already exists/i.test((e as Error).message)) return `https://github.com/${owner}/${name}/pulls?q=head:${encodeURIComponent(w.branch)}`;
+      throw new Error(`pushed ${w.branch}, but the draft PR failed: ${(e as Error).message}`);
+    });
+    prUrl = /https:\/\/github\.com\/[^\s"'<>)]+\/(pull\/\d+|pulls\?[^\s"'<>)]+)/.exec(text)?.[0] ?? null;
+  }
+  return { prUrl, files: files.length };
 }
 
 // A draft PR through GitHub's REST API with the repo's credential (the same token that pushed).
