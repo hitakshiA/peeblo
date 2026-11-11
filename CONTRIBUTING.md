@@ -18,7 +18,9 @@ can install apps in; a free test workspace is fine.
 
 ```bash
 pnpm install
-pnpm typecheck                     # core
+pnpm typecheck                     # core: types
+pnpm lint                          # core: Biome
+pnpm test                          # core: unit tests (no database or network)
 (cd console && pnpm install && pnpm build)   # the console
 ./peeblo up                        # Postgres, core, the console; then open http://127.0.0.1:7340/console/
 ```
@@ -27,6 +29,8 @@ pnpm typecheck                     # core
 everything. [docs/SETUP.md](docs/SETUP.md) covers the rest, including a Linux server.
 
 ## Where things live
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) follows a message from Slack to a reply and says where each rule is enforced.
 
 | Folder | What's in it |
 |---|---|
@@ -40,12 +44,17 @@ everything. [docs/SETUP.md](docs/SETUP.md) covers the rest, including a Linux se
 | `config/` | Model roles (`model-tiers.json`) and notes about each connector |
 | `console/` | The browser console (React) |
 | `db/` | SQL migrations, applied in order at start |
+| `test/` | Unit tests (`node:test`), one file per area |
+| `docs/` | Setup, architecture, Otari, configuration |
 
 ## Making a change
 
 - Keep a pull request to one change, and write its description for someone with no context: what changes for a
   person using Peeblo, and how to see it work.
-- Run `pnpm typecheck` (and `pnpm build` in `console/` if you touched it) before you push.
+- Run `pnpm typecheck`, `pnpm lint` and `pnpm test` (and `pnpm build` in `console/` if you touched it) before you
+  push. CI runs the same.
+- A change to a rule enforced in code (approvals, risk classes, read-only, budgets, the guard) comes with a test in
+  `test/`. Tests import from `src/` and touch no database or network.
 - Test against real services: your own Otari org and Slack workspace. Say in the PR what you tried.
 - Prompts, tool descriptions and skills must work for any company. Don't put names, people or data from your own
   workspace in them.
