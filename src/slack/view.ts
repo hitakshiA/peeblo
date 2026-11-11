@@ -568,7 +568,8 @@ async function budgetCard(v: View, d: any): Promise<void> {
             style: "primary",
             text: { type: "plain_text", text: `Ask ${ownerName} for more` },
             action_id: "ask_budget",
-            value: tm.slug,
+            // The stopped job rides along, so the owner's raise runs it again.
+            value: `${tm.slug}:${v.runId ? `:${v.runId}` : ""}`,
           },
         ];
   v.budgetShown = true;

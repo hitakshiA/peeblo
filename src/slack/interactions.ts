@@ -479,7 +479,7 @@ async function budgetClick({ appId, payload, a, who }: Click): Promise<void> {
             ...(i === 0 ? { style: "primary" } : {}),
             text: { type: "plain_text", text: `Raise to $${x}` },
             action_id: `raise_budget:${i}`,
-            value: `${tm.slug}:${x}`,
+            value: `${tm.slug}:${x}${blockedRun ? `:${blockedRun}` : ""}`,
           })),
         },
         { type: "context", elements: [{ type: "mrkdwn", text: "Only the owner or an admin can raise it." }] },
