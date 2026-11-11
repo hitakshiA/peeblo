@@ -7,10 +7,9 @@ import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { guardMode } from "../guard.ts";
 import { restartSoon, saveSettings } from "../settings.ts";
-import type { Router } from "./http.ts";
+import { bad, type Router } from "./http.ts";
 
 const ASSETS = join(import.meta.dirname, "..", "..", "assets");
-const bad = (message: string) => Object.assign(new Error(message), { status: 400 });
 
 // Slow facts (Otari, Slack, the public address) are cached briefly, so polling the state stays cheap.
 const cache = new Map<string, { at: number; v: any }>();

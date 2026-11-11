@@ -21,6 +21,7 @@ import { appendEvent } from "../store/events.ts";
 import { secretsForVm } from "../store/secrets.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 import { exec as vmExec, isAwake, workspaceOf } from "./controller.ts";
+import { sh } from "./shell.ts";
 
 export type RepoConfig = { name: string; remote: string; base: string; credential?: string; protected?: string[]; worktree?: { include?: string[]; setup?: string[]; setup_inputs?: string[] } };
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
@@ -29,7 +30,6 @@ export function reposOf(tm: Teammate): RepoConfig[] {
   return list.filter((r) => r && NAME.test(String(r.name)) && typeof r.remote === "string").map((r) => ({ base: "main", ...r }));
 }
 export const branchPrefix = (tm: Teammate) => String((tm.config as any).git?.branch_prefix ?? "peeblo/{teammate}/").replace("{teammate}", tm.slug);
-const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const bare = (repo: string) => `/workspace/repos/${repo}.git`;
 const wtPath = (sessionId: string, repo: string) => `/work/${sessionId}/${repo}`;
 export const mirrorOf = (slug: string, repo: string) => join(config.dataDir, "teammates", slug, "mirror", `${repo}.git`);

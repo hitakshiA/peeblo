@@ -23,19 +23,24 @@ export class Router {
   }
 }
 
+// An error a handler throws for the client: the router answers with its status and message.
+export const httpError = (status: number, message: string) => Object.assign(new Error(message), { status });
+export const bad = (message: string) => httpError(400, message);
+export const notFound = (what: string) => httpError(404, `no ${what}`);
+
 export async function readJson(req: IncomingMessage, limit = 1_000_000): Promise<any> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > limit) throw Object.assign(new Error("body too large"), { status: 413 });
+    if (size > limit) throw httpError(413, "body too large");
     chunks.push(c as Buffer);
   }
   if (!size) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
-    throw Object.assign(new Error("body is not valid JSON"), { status: 400 });
+    throw bad("body is not valid JSON");
   }
 }
 

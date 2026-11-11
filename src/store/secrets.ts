@@ -3,8 +3,8 @@
 import { createHash } from "node:crypto";
 import { seal, unseal } from "../crypto.ts";
 import { pool } from "../db.ts";
+import { HOST } from "../environment/recipe-schema.ts";
 
-const HOST = /^(\*\.)?([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/;
 
 export async function setSecret(teammateId: string, name: string, value: string, hosts: string[]): Promise<void> {
   if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(name)) throw Object.assign(new Error("a secret name is upper-case letters, digits and _"), { status: 400 });

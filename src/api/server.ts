@@ -17,12 +17,10 @@ import { buildReceipt, receiptLine } from "../receipts.ts";
 import { personForSlack } from "../store/people.ts";
 import { changeModel, ModelChangeRefused } from "../model-change.ts";
 import { secretNames, setSecret } from "../store/secrets.ts";
-import { readJson, Router, send } from "./http.ts";
+import { bad, notFound, readJson, Router, send } from "./http.ts";
 import { addConsoleRoutes, consoleCookie, consolePerson, login, logout, serveConsole } from "./console.ts";
 import { addSetupRoutes } from "./setup.ts";
 
-const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
-const bad = (msg: string) => Object.assign(new Error(msg), { status: 400 });
 
 export const router = new Router()
   .add("GET", "/healthz", async () => ({ ok: true }))

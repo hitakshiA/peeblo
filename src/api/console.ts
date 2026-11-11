@@ -9,7 +9,8 @@ import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt, receiptLine } from "../receipts.ts";
 import { getTeammate, listTeammates } from "../store/teammates.ts";
-import type { Router } from "./http.ts";
+import { askedLabel } from "../asked.ts";
+import { bad, notFound, type Router } from "./http.ts";
 
 const COOKIE = "peeblo_console";
 const DAY = 24 * 3600_000;
@@ -48,7 +49,6 @@ export function logout(req: IncomingMessage, res: ServerResponse): void {
 // Where a session lives, in words: a DM, or a thread in a channel.
 const whereLabel = (kind: string, placeKey: string) => /^D/.test(placeKey) || kind === "dm" ? "Direct message" : /^[CG]/.test(placeKey) ? "Channel thread" : kind;
 
-import { askedLabel } from "../asked.ts";
 const DIST = join(import.meta.dirname, "..", "..", "console", "dist");
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".json": "application/json" };
 export function serveConsole(path: string, res: ServerResponse): boolean {
@@ -63,8 +63,6 @@ export function serveConsole(path: string, res: ServerResponse): boolean {
   return true;
 }
 
-const notFound = (what: string) => Object.assign(new Error(`no ${what}`), { status: 404 });
-const bad = (why: string) => Object.assign(new Error(why), { status: 400 });
 
 export function addConsoleRoutes(router: Router): void {
   router

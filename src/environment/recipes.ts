@@ -21,6 +21,7 @@ import { placeholderOf, secretsForVm } from "../store/secrets.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { BARE_ENV, imagePath, PERSIST_HOME, TIERS } from "./controller.ts";
 import { currentBuild, distroOf, type Tier } from "./image.ts";
+import { sh } from "./shell.ts";
 
 export const RUNNER_VERSION = "2"; // 2: /root and /var/cache on the disk
 const STEP_MS = 10 * 60_000;
@@ -111,7 +112,6 @@ export async function waitForBuild(id: string, timeoutMs = BUILD_MS + 60_000): P
 }
 
 const REGISTRY_HOSTS = { apk: ["dl-cdn.alpinelinux.org"], apt: ["deb.debian.org"], npm: ["registry.npmjs.org"], pip: ["pypi.org", "files.pythonhosted.org"] };
-const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 async function runBuild(id: string): Promise<void> {
   const b = (await pool.query("SELECT * FROM recipe_builds WHERE id = $1", [id])).rows[0];

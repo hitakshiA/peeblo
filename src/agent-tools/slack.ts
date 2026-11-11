@@ -2,15 +2,11 @@
 // conversation the session belongs to (its own thread or DM): there is no channel argument to point elsewhere.
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
-import { getSession } from "../store/sessions.ts";
+import { getSession, slackPlaceOf } from "../store/sessions.ts";
 import { react, slack } from "../slack/api.ts";
-import type { SlackPlace } from "../slack/inbound.ts";
 import { object } from "./schema.ts";
-import type { AgentTool, ToolContext } from "./types.ts";
+import type { AgentTool } from "./types.ts";
 
-async function placeOf(ctx: ToolContext): Promise<SlackPlace | null> {
-  return ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
-}
 const EMOJI = /^[a-z0-9_+-]{1,40}$/;
 const UNPROMPTED_PER_HOUR = Number(process.env.PEEBLO_UNPROMPTED_PER_HOUR ?? 3);
 
@@ -25,7 +21,7 @@ export const slackTools: AgentTool[] = [
     kind: "local",
     async authorize(ctx) { return ctx.teammate.slug === "peeblo" ? null : "Only Peeblo watches channels; teammates answer when tagged."; },
     async run(ctx, a) {
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       if (!place) return { text: "This conversation isn't in Slack, so there's no channel to watch.", isError: true };
       let channel = place.channel;
       const want = String(a.channel ?? "").trim().replace(/^#/, "");
@@ -64,7 +60,7 @@ export const slackTools: AgentTool[] = [
     }),
     kind: "read", // it posts only into the conversation the person started; no approval
     async run(ctx, a) {
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       const text = String(a.text ?? "").replace(/&amp;/g, "&").replace(/&lt;(?![@#!])/g, "<").replace(/&gt;/g, ">").slice(0, 12_000);
       if (!text.trim()) return { text: "Nothing to post.", isError: true };
       // Outside Slack (the API, a test) the post is the reply: recorded the same way, so nothing is retried.
@@ -111,7 +107,7 @@ export const slackTools: AgentTool[] = [
     input_schema: object({ link: { type: ["string", "null"], description: "A Slack message link, for another thread; leave out for this one." }, limit: { type: ["integer", "null"], minimum: 1, maximum: 100 } }),
     kind: "read",
     async run(ctx, a) {
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       if (!place) return { text: "This conversation isn't in Slack.", isError: true };
       let channel = place.channel, ts = place.thread_ts ?? place.trigger_ts;
       const m = /archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})(?:.*thread_ts=(\d+\.\d+))?/.exec(String(a.link ?? ""));
@@ -140,7 +136,7 @@ export const slackTools: AgentTool[] = [
     }),
     kind: "read",
     async run(ctx, a) {
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       if (!place) return { text: "This conversation isn't in Slack.", isError: true };
       const want = String(a.channel ?? "").trim().replace(/^#/, "");
       let channel = place.channel;
@@ -188,7 +184,7 @@ export const slackTools: AgentTool[] = [
     input_schema: object({ emoji: { type: "string" } }),
     kind: "read",
     async run(ctx, a) {
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       if (!place) return { text: "This conversation isn't in Slack.", isError: true };
       const name = String(a.emoji ?? "").replace(/:/g, "");
       if (!EMOJI.test(name)) return { text: "That isn't an emoji name.", isError: true };

@@ -11,7 +11,7 @@ import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt } from "../receipts.ts";
 import { appendEvent, onEvent, type EventRow } from "../store/events.ts";
-import { getSession } from "../store/sessions.ts";
+import { getSession, slackPlaceOf } from "../store/sessions.ts";
 import { getTeammate } from "../store/teammates.ts";
 import { react, slack, unreact } from "./api.ts";
 import type { SlackPlace } from "./inbound.ts";
@@ -48,11 +48,6 @@ async function sessionStatus(v: View, status: "processing" | "active" | "suspend
 const views = new Map<string, View>();
 const HANDOVER_MS = 9 * 60_000;
 
-async function placeOf(sessionId: string | null): Promise<SlackPlace | null> {
-  if (!sessionId) return null;
-  const s = await getSession(sessionId);
-  return ((s?.place as any)?.slack as SlackPlace) ?? null;
-}
 
 const enqueue = (v: View, f: () => Promise<unknown>) => { v.queue = v.queue.then(f).catch((e) => console.error("slack view:", (e as Error).message)); return v.queue; };
 const newView = (place: SlackPlace, name: string, slug: string, failedStream: boolean): View =>
@@ -393,7 +388,7 @@ async function adoptStream(v: View, runId: string): Promise<void> {
 async function revive(runId: string, sessionId: string | null): Promise<View | undefined> {
   const cards = (await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'approval.card' AND (data->>'inline')::boolean ORDER BY id", [runId])).rows.map((r) => r.data);
   if (!cards.length) return undefined;
-  const place = await placeOf(sessionId);
+  const place = await slackPlaceOf(sessionId);
   if (!place) return undefined;
   const s = await getSession(sessionId!);
   const tm = await getTeammate(s!.teammate_id);
@@ -427,7 +422,7 @@ export function installSlackView(): void {
     let v = views.get(e.run_id);
     if (v?.ready) await v.ready;
     if (e.type === "run.started") {
-      const place = await placeOf(e.session_id);
+      const place = await slackPlaceOf(e.session_id);
       if (!place) return;
       const s = await getSession(e.session_id!);
       await start(e.run_id, place, s!.teammate_id);
@@ -435,7 +430,7 @@ export function installSlackView(): void {
     }
     // Every working slot is taken (PEEBLO_MAX_RUNNING): the person who asked hears it privately; it starts by itself.
     if (e.type === "run.queued") {
-      const place = await placeOf(e.session_id);
+      const place = await slackPlaceOf(e.session_id);
       if (!place?.user) return;
       const s = await getSession(e.session_id!);
       const tm = s ? await getTeammate(s.teammate_id) : null;
@@ -445,7 +440,7 @@ export function installSlackView(): void {
     }
     // A paused teammate doesn't work; the person who asked hears it privately, with who can resume it.
     if (e.type === "run.refused" && (e.data as any).reason === "paused") {
-      const place = await placeOf(e.session_id);
+      const place = await slackPlaceOf(e.session_id);
       const tm = await getTeammate(String((e.data as any).teammate_id));
       if (!place || !tm) return;
       const owner = tm.owner_person ? (await pool.query("SELECT slack_user FROM people WHERE id = $1", [tm.owner_person])).rows[0]?.slack_user : null;
@@ -457,14 +452,14 @@ export function installSlackView(): void {
     if (!v && e.type === "approval.resolved") return void approvalResolved(undefined, e);
     // A run that began before a restart and now needs an approval: the card goes out as its own message.
     if (!v && e.type === "approval.requested") {
-      const place = await placeOf(e.session_id);
+      const place = await slackPlaceOf(e.session_id);
       const s = place ? await getSession(e.session_id!) : null;
       const tm = s ? await getTeammate(s.teammate_id) : null;
       if (place) { v = newView(place, tm?.config.name ?? "teammate", tm?.slug ?? "", true); views.set(e.run_id, v); v.runId = e.run_id; v.sessionId = e.session_id; }
     }
     if (!v && (e.type === "run.finished" || e.type === "run.failed")) {
       // Core restarted mid-run: the stream is gone, so the reply and receipt go out as a plain message.
-      const place = await placeOf(e.session_id);
+      const place = await slackPlaceOf(e.session_id);
       if (!place) return;
       const s = await getSession(e.session_id!);
       const tm = await getTeammate(s!.teammate_id);
@@ -479,7 +474,7 @@ export function installSlackView(): void {
     // No view yet when the run posts (a trigger or schedule run whose place was bound after it started, or a run
     // checked after a restart): make one now, so the post shows when it's made.
     if (!v && e.type === "slack.post" && !(e.data as any)?.private) {
-      const place = await placeOf(e.session_id);
+      const place = await slackPlaceOf(e.session_id);
       if (place) {
         const s = await getSession(e.session_id!);
         const tm = s ? await getTeammate(s.teammate_id) : null;

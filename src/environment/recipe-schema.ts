@@ -11,7 +11,8 @@ export type Recipe = {
 };
 export const EMPTY: Recipe = { packages: { apk: [], apt: [], npm: [], pip: [] }, run: [], files: [], env: {}, secrets: [], network: { hosts: [] }, verify: [], start: [] };
 
-const HOST = /^(\*\.)?([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/;
+// A host name, or a wildcard over a domain's subdomains (*.example.com).
+export const HOST = /^(\*\.)?([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/;
 const PKG = /^[A-Za-z0-9@._\/=<>~^+-]{1,200}$/;
 // Validates a recipe; a v1 recipe (a list of commands) becomes run steps. Returns the recipe or the problems.
 export function normalizeRecipe(raw: unknown): { recipe: Recipe; problems: string[] } {

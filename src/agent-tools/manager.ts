@@ -6,18 +6,17 @@ import { callTeammate } from "../chains.ts";
 import { mayManageTeammate } from "../authority.ts";
 import { teammateSpend, usd } from "../otari/spend.ts";
 import { appendEvent } from "../store/events.ts";
-import { submit, getSession } from "../store/sessions.ts";
+import { submit, slackPlaceOf } from "../store/sessions.ts";
 import { createTeammate, getTeammate, listTeammates, updateTeammate, validateConfig, type Teammate, type TeammateConfig } from "../store/teammates.ts";
-import { getApp } from "../ingress/apps.ts";
+import { ownApp } from "../ingress/apps.ts";
 import { createTeammateApp } from "../slack/admin.ts";
 import { offerOnCard } from "../slack/install.ts";
 import { configProblems } from "../hire-rules.ts";
 import { changeModel } from "../model-change.ts";
 import { ROLES } from "../otari/routing.ts";
 import { COLORS, facePng, idCardHeroPng, idCardPng, pickFace, publishCard, SHAPES } from "../slack/idcard.ts";
-import type { SlackPlace } from "../slack/inbound.ts";
 import { object } from "./schema.ts";
-import type { AgentTool, ToolContext } from "./types.ts";
+import type { AgentTool } from "./types.ts";
 
 const MODES = ["ask", "auto", "trusted", "yolo"] as const;
 // A teammate by slug or by name (people and models say "Moss", not "moss").
@@ -29,14 +28,7 @@ export async function findTeammate(nameOrSlug: string): Promise<Teammate | null>
   const all = (await listTeammates()).filter((t) => t.config.name.toLowerCase() === nameOrSlug.toLowerCase().trim());
   return all.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0] ?? null;
 }
-// The teammate's own Slack app, if it is installed in this workspace.
-async function ownApp(teammateId: string, team?: string): Promise<string | null> {
-  const ids = (await pool.query("SELECT app_id FROM slack_apps WHERE teammate_id = $1", [teammateId])).rows.map((r) => r.app_id);
-  for (const id of ids) { const a = await getApp(id); if (a?.secrets.bot_token && (!team || a.team_id === team)) return id; }
-  return null;
-}
 const slugOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 31) || "teammate";
-const placeOf = async (ctx: ToolContext): Promise<SlackPlace | null> => ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
 const hireSpec = {
   name: { type: "string", description: "A short first name after its job, not one already on the crew." },
   role: { type: "string", description: "What it does, for whom, e.g. 'Watches Stripe refunds for the finance lead'." },
@@ -157,7 +149,7 @@ export const managerTools: AgentTool[] = [
     },
     async describe(ctx, a) {
       // The approval card is the finished ID card.
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       const fake = { id: "tm_preview", slug: slugOf(a.name), owner_person: ctx.person?.id ?? null, version: 1, config: validateConfig(configFrom(a)), created_at: new Date() } as Teammate;
       const face = pickFace(fake.slug, a.face, a.color);
       const png = await idCardPng(fake, face, ctx.person?.display_name ?? "you");
@@ -187,7 +179,7 @@ export const managerTools: AgentTool[] = [
         await setSecret(tm.id, "GH_TOKEN", process.env.PEEBLO_GITHUB_TOKEN, ["github.com", "api.github.com"]);
       }
       const face = pickFace(slug, a.face, a.color);
-      const place = await placeOf(ctx);
+      const place = await slackPlaceOf(ctx.sessionId);
       await pool.query("INSERT INTO hires (teammate_id, hired_by, place, avatar) VALUES ($1, $2, $3, $4)", [tm.id, ctx.person?.id ?? null, place ? { slack: place } : {}, face]);
       let install: string | null = null;
       let appNote = "";

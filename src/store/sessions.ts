@@ -2,6 +2,7 @@
 // Slack event or a retried API call never makes a second run.
 import { pool } from "../db.ts";
 import { newId } from "../ids.ts";
+import type { SlackPlace } from "../slack/inbound.ts";
 import { appendEvent } from "./events.ts";
 
 export type SessionKind = "desk" | "channel" | "thread" | "dm" | "api";
@@ -21,6 +22,12 @@ export async function openSession(teammateId: string, kind: SessionKind, placeKe
 export async function getSession(id: string): Promise<Session | null> {
   const { rows } = await pool.query<Session>("SELECT id, teammate_id, kind, place_key, place, status FROM sessions WHERE id = $1", [id]);
   return rows[0] ?? null;
+}
+
+// Where a session lives in Slack (its channel, thread or DM), or null for a session outside Slack.
+export async function slackPlaceOf(sessionId: string | null): Promise<SlackPlace | null> {
+  if (!sessionId) return null;
+  return ((await getSession(sessionId))?.place.slack as SlackPlace | undefined) ?? null;
 }
 
 // Records the submission and its run in one transaction. A repeated request_id returns the first run.

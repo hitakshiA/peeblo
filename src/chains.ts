@@ -8,7 +8,7 @@ import { appendEvent } from "./store/events.ts";
 import { getSession, openSession, submit } from "./store/sessions.ts";
 import type { Teammate } from "./store/teammates.ts";
 import type { SlackPlace } from "./slack/inbound.ts";
-import { getApp } from "./ingress/apps.ts";
+import { ownApp } from "./ingress/apps.ts";
 import { getPerson } from "./store/people.ts";
 
 export const MAX_DEPTH = Number(process.env.PEEBLO_CHAIN_DEPTH ?? 3);
@@ -31,12 +31,6 @@ async function chainSpend(root: string): Promise<number> {
   const runs = await chainRuns(root);
   const { rows } = await pool.query("SELECT coalesce(sum((data->>'cost_usd')::numeric), 0) AS c FROM events WHERE type = 'model.call' AND run_id = ANY($1)", [runs]);
   return Number(rows[0].c);
-}
-
-async function ownApp(teammateId: string, team: string): Promise<string | null> {
-  const ids = (await pool.query("SELECT app_id FROM slack_apps WHERE teammate_id = $1", [teammateId])).rows.map((r) => r.app_id);
-  for (const id of ids) { const a = await getApp(id); if (a?.secrets.bot_token && a.team_id === team) return id; }
-  return null;
 }
 
 // Calls a teammate from a run. Returns the callee's run, or a refusal sentence when a guard says no.

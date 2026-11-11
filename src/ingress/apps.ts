@@ -29,6 +29,13 @@ export async function saveApp(a: { app_id: string; teammate_id?: string | null; 
   cache.delete(a.app_id);
 }
 
+// A teammate's own Slack app with a bot token, in the given workspace (any workspace when none is given).
+export async function ownApp(teammateId: string, team?: string): Promise<string | null> {
+  const ids = (await pool.query("SELECT app_id FROM slack_apps WHERE teammate_id = $1", [teammateId])).rows.map((r) => r.app_id);
+  for (const id of ids) { const a = await getApp(id); if (a?.secrets.bot_token && (team === undefined || a.team_id === team)) return id; }
+  return null;
+}
+
 export async function listApps(): Promise<Omit<SlackApp, "secrets">[]> {
   const { rows } = await pool.query("SELECT app_id, teammate_id, team_id, bot_user_id, created_at FROM slack_apps ORDER BY created_at");
   return rows;
