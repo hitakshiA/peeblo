@@ -34,6 +34,7 @@ const OPEN_WEIGHT: RegExp[] = [
   /^openbmb\//,
   /^mistralai\/(mistral-small|ministral|devstral|magistral-small|mistral-7b|mixtral|pixtral-12b|mistral-large-[34](-0)?$)/,
   /^reflection\/beam/,
+  /^flux-1-schnell$/, // Apache-2.0 weights; FLUX.1 dev's licence isn't open
   /^(all-minilm|bge-|e5-|granite-)/,
 ];
 // Hosted-only members of open families (no released weights). Inkling's weights are still pending, and it

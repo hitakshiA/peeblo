@@ -4,7 +4,7 @@ import type { Teammate } from "../store/teammates.ts";
 import { otariTools } from "./otari.ts";
 import type { AgentTool } from "./types.ts";
 import { runCodeTool, webFetch, webSearchTool } from "./web.ts";
-import { checkTextTool, shareFileTool, understandFileTool } from "./media.ts";
+import { checkTextTool, makeImageTool, shareFileTool, understandFileTool } from "./media.ts";
 import { config } from "../config.ts";
 import { computerTools } from "./computer.ts";
 import { TIERS } from "../environment/controller.ts";
@@ -42,7 +42,7 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
     ...otariTools,
     ...(tm.config.tools.includes("web") ? [webSearchTool, ...(config.webFetch ? [webFetch] : [])] : []),
     ...(config.otariCode && tm.config.tools.includes("code") ? [runCodeTool] : []),
-    ...(tm.config.tools.includes("computer") ? [understandFileTool, shareFileTool] : []),
+    ...(tm.config.tools.includes("computer") ? [understandFileTool, shareFileTool, makeImageTool] : []),
     checkTextTool,
     ...(tm.config.tools.includes("computer")
       ? [

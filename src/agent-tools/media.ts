@@ -271,3 +271,72 @@ export const shareFileTool: AgentTool = {
     }
   },
 };
+
+// An image made from a description, by an open-weight image model through Otari (FLUX.1 schnell, Apache-2.0; FLUX.1
+// dev's licence isn't open, so it's never used). The picture lands in the session's folder on the teammate's computer,
+// where share_file attaches it and computer tools can work on it.
+export const IMAGE_MODEL = "flux-1-schnell";
+const SIZES: Record<string, string> = { square: "1024x1024", landscape: "1344x768", portrait: "768x1344", small: "512x512" };
+export const makeImageTool: AgentTool = {
+  name: "make_image",
+  description:
+    "Make a picture from a description: an illustration, a header, a mock-up, a diagram-style sketch, an icon. Describe what's in it, the style and the colours. It's saved on your computer; attach it with share_file. It can't edit a photo or draw exact text or data (make a chart with code for that).",
+  input_schema: object({
+    prompt: { type: "string", description: "What the picture shows, its style and colours." },
+    shape: { type: ["string", "null"], enum: ["square", "landscape", "portrait", "small", null], description: "Default square." },
+    name: { type: ["string", "null"], description: "A file name, e.g. launch-header (no extension)." },
+  }),
+  kind: "read",
+  async run(ctx, a) {
+    const { estimateCost } = await import("../otari/catalog.ts");
+    // No price, no call: Otari prices this model by the image (the deployment's own price), and says so.
+    if ((await estimateCost(IMAGE_MODEL, 0, 0)) === null)
+      return { text: `${IMAGE_MODEL} has no price in Otari's catalog, so it can't run.`, isError: true };
+    const auth = ctx.otariKey ? { auth: { authorization: `Bearer ${ctx.otariKey.secret}` } } : {};
+    let r: Awaited<ReturnType<typeof otari<any>>>;
+    try {
+      r = await otari<any>(
+        "POST",
+        "/images/generations",
+        {
+          model: IMAGE_MODEL,
+          prompt: String(a.prompt).slice(0, 2000),
+          n: 1,
+          size: SIZES[a.shape ?? "square"] ?? SIZES.square,
+          response_format: "b64_json",
+          ...(ctx.endUser ? { user: ctx.endUser } : {}),
+        },
+        { ...auth, timeoutMs: 120_000, retries: 0 },
+      );
+    } catch (e) {
+      return {
+        text: `Otari didn't make it: ${(e as Error).message.slice(0, 200)}`,
+        isError: true,
+        data: { request_id: (e as OtariError).requestId },
+      };
+    }
+    const b64 = r.data?.data?.[0]?.b64_json;
+    if (!b64)
+      return {
+        text: "The image model answered without a picture; try a simpler description.",
+        isError: true,
+        data: { request_id: r.requestId },
+      };
+    const { workspaceOf } = await import("../environment/controller.ts");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const file = `${
+      String(a.name || "image")
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60) || "image"
+    }-${Date.now().toString(36)}.png`;
+    const rel = join("sessions", ctx.sessionId, "images", file);
+    await mkdir(join(workspaceOf(ctx.teammate.slug), "sessions", ctx.sessionId, "images"), { recursive: true });
+    await writeFile(join(workspaceOf(ctx.teammate.slug), rel), Buffer.from(b64, "base64"));
+    return {
+      text: `Made it (${IMAGE_MODEL} through Otari). Saved at /workspace/${rel}; attach it with share_file.`,
+      data: { path: `/workspace/${rel}`, model: IMAGE_MODEL, request_id: r.requestId, cost_usd: r.data?.usage?.cost_usd ?? null },
+    };
+  },
+};
