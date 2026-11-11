@@ -1,6 +1,7 @@
 // Links into the Otari dashboard (hash routes), for receipts and for every admin task Peeblo can't do
 // without a dashboard session. A link opens in whatever org and workspace the person last used.
-const DASH = (process.env.OTARI_DASHBOARD_URL ?? "https://otari.ai/dashboard").replace(/\/+$/, "");
+import { config } from "../config.ts";
+const DASH = config.otariDashboardUrl;
 const q = (p: Record<string, string | undefined>) => {
   const s = new URLSearchParams(Object.entries(p).filter(([, v]) => v) as [string, string][]).toString();
   return s ? `?${s}` : "";

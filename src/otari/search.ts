@@ -2,14 +2,15 @@
 // store, so callers keep their own vectors; this module only turns text into vectors and orders
 // candidates. Measured on real notes, keyword candidates + rerank came within a hair of embeddings +
 // rerank at half the latency, so rerank is the part that matters and embeddings are optional.
+import { config } from "../config.ts";
 import { otari } from "./client.ts";
 
 // No `user` on these calls: with a service key, Otari answers 403 "'user' field does not match the authenticated
 // API key's user" on /embeddings and /rerank (chat accepts it). endUser stays in the signatures for when it does.
 
-export const EMBED_MODEL = process.env.PEEBLO_EMBED_MODEL ?? "alibaba/qwen3-embedding-0.6b";
-export const RERANK_MODEL = process.env.PEEBLO_RERANK_MODEL ?? "alibaba/qwen3-reranker-8b";
-export const EMBED_DIMS = Number(process.env.PEEBLO_EMBED_DIMS ?? 256);
+export const EMBED_MODEL = config.embedModel;
+export const RERANK_MODEL = config.rerankModel;
+export const EMBED_DIMS = config.embedDims;
 // Qwen3 embeddings expect an instruction on queries (not on documents).
 const QUERY_INSTRUCTION = "Instruct: Given a question from a teammate, find the notes that answer it\nQuery: ";
 

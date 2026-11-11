@@ -75,7 +75,7 @@ export function containerRuntime(): "docker" | "podman" | null {
   for (const rt of ["docker", "podman"] as const) if (spawnSync(rt, ["info", "--format", "{{.ServerVersion}}"], { stdio: "ignore", timeout: 15_000 }).status === 0) return rt;
   return null;
 }
-export const distroFor = (size: Tier): "debian" | "alpine" => (size === "large" && process.env.PEEBLO_LARGE_DISTRO !== "alpine" && containerRuntime() ? "debian" : "alpine");
+export const distroFor = (size: Tier): "debian" | "alpine" => (size === "large" && config.largeDistro !== "alpine" && containerRuntime() ? "debian" : "alpine");
 const DEBIAN = join(REPO, "images", "large-debian");
 const DEBIAN_REPO = "peeblo-large-debian";
 

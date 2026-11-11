@@ -39,11 +39,11 @@ export const PERSIST_HOME = "umount /root 2>/dev/null; umount /var/cache 2>/dev/
 export const BARE_ENV = { PATH: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/root", LANG: "C.UTF-8", TERM: "dumb" };
 // memory is a ceiling (QEMU allocates guest RAM lazily); footprint is what an awake one costs the host.
 export const TIERS = {
-  small: { memory: process.env.PEEBLO_SMALL_MEMORY ?? "2G", cpus: 2, disk: "4G", footprintMb: 300 },
+  small: { memory: config.smallMemory, cpus: 2, disk: "4G", footprintMb: 300 },
   large: { memory: "4G", cpus: 4, disk: "8G", footprintMb: 1500 },
 } as const;
-export const awakeCap = (size: Tier) => Number(process.env[`PEEBLO_AWAKE_CAP_${size.toUpperCase()}`] ?? (size === "small" ? 8 : 2));
-const RESERVE_MB = Number(process.env.PEEBLO_HOST_RESERVE_MB ?? 1024);
+export const awakeCap = (size: Tier) => (size === "small" ? config.awakeCapSmall : config.awakeCapLarge);
+const RESERVE_MB = config.hostReserveMb;
 // Package registries and code hosts every build needs: Codex's "Common dependencies" preset
 // (learn.chatgpt.com/docs/cloud/internet-access), each domain with its subdomains.
 const COMMON_DEPENDENCIES = ["alpinelinux.org", "anaconda.com", "apache.org", "apt.llvm.org", "archlinux.org", "azure.com", "bitbucket.org", "bower.io", "centos.org", "cocoapods.org", "continuum.io", "cpan.org", "crates.io", "debian.org", "docker.com", "docker.io", "dot.net", "dotnet.microsoft.com", "eclipse.org", "fedoraproject.org", "gcr.io", "ghcr.io", "github.com", "githubusercontent.com", "gitlab.com", "golang.org", "google.com", "goproxy.io", "gradle.org", "hashicorp.com", "haskell.org", "hex.pm", "java.com", "java.net", "jcenter.bintray.com", "json-schema.org", "json.schemastore.org", "k8s.io", "launchpad.net", "maven.org", "mcr.microsoft.com", "metacpan.org", "microsoft.com", "nodejs.org", "npmjs.com", "npmjs.org", "nuget.org", "oracle.com", "packagecloud.io", "packages.microsoft.com", "packagist.org", "pkg.go.dev", "ppa.launchpad.net", "pub.dev", "pypa.io", "pypi.org", "pypi.python.org", "pythonhosted.org", "quay.io", "ruby-lang.org", "rubyforge.org", "rubygems.org", "rubyonrails.org", "rustup.rs", "rvm.io", "sourceforge.net", "spring.io", "swift.org", "ubuntu.com", "visualstudio.com", "yarnpkg.com"];

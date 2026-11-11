@@ -2,6 +2,7 @@
 // (so every person there sees the hand-off and each teammate's own receipt), billed to the person who started the chain. Code owns the
 // guards: at most 3 deep, at most 6 calls per chain, and a spend cap per chain; "stop" in the thread stops the chain.
 // A busy callee gets a new session for the call, so a call never waits behind another conversation.
+import { config } from "./config.ts";
 import { pool } from "./db.ts";
 import { startRun } from "./durable/runs.ts";
 import { appendEvent } from "./store/events.ts";
@@ -11,9 +12,9 @@ import type { SlackPlace } from "./slack/inbound.ts";
 import { ownApp } from "./ingress/apps.ts";
 import { getPerson } from "./store/people.ts";
 
-export const MAX_DEPTH = Number(process.env.PEEBLO_CHAIN_DEPTH ?? 3);
-export const MAX_CALLS = Number(process.env.PEEBLO_CHAIN_CALLS ?? 6);
-export const CHAIN_CAP_USD = Number(process.env.PEEBLO_CHAIN_CAP_USD ?? 5);
+export const MAX_DEPTH = config.chainDepth;
+export const MAX_CALLS = config.chainCalls;
+export const CHAIN_CAP_USD = config.chainCapUsd;
 
 // The chain a run belongs to: its root run and its depth (0 for a person's own ask).
 export async function chainOf(runId: string | null): Promise<{ root: string | null; depth: number }> {

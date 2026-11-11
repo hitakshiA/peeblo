@@ -46,7 +46,7 @@ async function peebloApp(): Promise<{ app_id: string; team_id: string | null; bo
 export async function setupState(): Promise<any> {
   const { links } = await import("../otari/links.ts");
   const { session } = await import("../otari/admin.ts");
-  const region = process.env.OTARI_REGION === "eu" || config.otariBaseUrl.includes("eu.api") ? "eu" : "us";
+  const region = config.otariRegion === "eu" || config.otariBaseUrl.includes("eu.api") ? "eu" : "us";
   const otariKey = config.otariKey ? await cached("key", 20_000, () => keyBudget(config.otariKey, region)) : null;
   const s = config.otariKey ? await session().catch(() => null) : null;
   const pub = config.publicUrl ? await cached("pub", 20_000, () => reachable(config.publicUrl)) : null;

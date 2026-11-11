@@ -2,6 +2,7 @@
 // session (the thread is the conversation); later messages in that thread go to the same session without a
 // mention. Attention plumbing only: edits never trigger, bots are context only, and a person's quick follow-ups
 // are batched into one submission. "stop" in a thread stops the run in progress.
+import { config } from "../config.ts";
 import { onSlackMessage } from "../ingress/slack.ts";
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
@@ -12,7 +13,7 @@ import { displayName, isBotUser } from "./api.ts";
 
 export type SlackPlace = { app_id: string; team: string; channel: string; channel_type: string; thread_ts: string; trigger_ts: string; user: string; direct: boolean };
 // Quick follow-ups from the same person are batched; short, so a single message isn't kept waiting.
-const BATCH_MS = Number(process.env.PEEBLO_SLACK_BATCH_MS ?? 500);
+const BATCH_MS = config.slackBatchMs;
 const pending = new Map<string, { timer: NodeJS.Timeout; parts: { text: string; ts: string }[]; ctx: any }>();
 // Slack splits a message over 4,000 characters into several, a few milliseconds apart. In a DM each would start its
 // own conversation, so a new message from the same person within this window joins the one before it.

@@ -1,5 +1,6 @@
 // Speaking in Slack is a deliberate tool call; a turn's final text is private. Both tools act only on the
 // conversation the session belongs to (its own thread or DM): there is no channel argument to point elsewhere.
+import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
 import { getSession, slackPlaceOf } from "../store/sessions.ts";
@@ -8,7 +9,7 @@ import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";
 
 const EMOJI = /^[a-z0-9_+-]{1,40}$/;
-const UNPROMPTED_PER_HOUR = Number(process.env.PEEBLO_UNPROMPTED_PER_HOUR ?? 3);
+const UNPROMPTED_PER_HOUR = config.unpromptedPerHour;
 
 export const slackTools: AgentTool[] = [
   {

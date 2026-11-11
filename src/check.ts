@@ -24,7 +24,7 @@ export async function runChecks(): Promise<Result[]> {
     // check runs on its own; this asks the running core.
     // On Linux, check runs in its own container next to core's: core is the "peeblo" service there.
     const { existsSync } = await import("node:fs");
-    const base = process.env.PEEBLO_CORE_URL ?? (existsSync("/.dockerenv") ? "http://peeblo:7340" : `http://127.0.0.1:${config.apiPort}`);
+    const base = (config.coreUrl || null) ?? (existsSync("/.dockerenv") ? "http://peeblo:7340" : `http://127.0.0.1:${config.apiPort}`);
     const r = await fetch(`${base}/healthz`).catch(() => null);
     if (!r?.ok) throw new Error("not running: start it with ./peeblo up (logs: ./peeblo logs)");
     return "running";
@@ -86,7 +86,7 @@ export async function runChecks(): Promise<Result[]> {
     const d = distroOf("large", id);
     const rt = containerRuntime();
     const note = d === "debian" ? "Debian 13 (built with " + (rt ?? "a container runtime, not found now") + ")"
-      : rt && process.env.PEEBLO_LARGE_DISTRO !== "alpine" ? "Alpine; Docker/Podman is here now, so ./peeblo image large would build Debian"
+      : rt && config.largeDistro !== "alpine" ? "Alpine; Docker/Podman is here now, so ./peeblo image large would build Debian"
       : "Alpine (no Docker or Podman, so the Debian image can't be built here)";
     return `${note}, build ${id}`;
   });

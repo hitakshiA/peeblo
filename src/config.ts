@@ -6,7 +6,12 @@ import { loadSettingsIntoEnv } from "./settings.ts";
 // What the console's setup saved (settings.json in the data directory) fills in what the environment leaves empty.
 loadSettingsIntoEnv();
 
-const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY", "OTARI_API_KEY", "OTARI_SERVICE_KEY", "PEEBLO_CONSOLE_PASSWORD"];
+const SECRET_VARS = ["DATABASE_URL", "POSTGRES_PASSWORD", "PEEBLO_ADMIN_TOKEN", "PEEBLO_SECRET_KEY", "OTARI_API_KEY", "OTARI_SERVICE_KEY", "PEEBLO_CONSOLE_PASSWORD", "PEEBLO_GITHUB_TOKEN"];
+// Webhook signing secrets, one per source (PEEBLO_HOOK_SECRET_GITHUB, …): read once, then removed like the others.
+const HOOK_SECRETS: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => k.startsWith("PEEBLO_HOOK_SECRET_") && v?.trim()).map(([k, v]) => [k.slice("PEEBLO_HOOK_SECRET_".length).toLowerCase(), String(v).trim()]));
+for (const k of Object.keys(process.env)) if (k.startsWith("PEEBLO_HOOK_SECRET_")) delete process.env[k];
+export const hookSecret = (source: string): string | undefined => HOOK_SECRETS[source.toLowerCase()];
+const num = (name: string, fallback: number) => Number(process.env[name] ?? fallback);
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -68,6 +73,31 @@ export const config = {
   jobRouting: (process.env.PEEBLO_JOB_ROUTING ?? "on").trim() !== "off",               // pick the model per job with Otari's router; move up when a job is sent back
   routineBudgetUsd: Number(process.env.PEEBLO_ROUTINE_BUDGET_USD ?? 0.25),             // a scheduled or triggered run's budget when none is given
   routineMaxUsd: Number(process.env.PEEBLO_ROUTINE_MAX_USD ?? 5),                      // the most one scheduled or triggered run may be given
+  // Settings read in one place (each is in docs/CONFIGURATION.md).
+  githubToken: process.env.PEEBLO_GITHUB_TOKEN?.trim() || "",
+  coreUrl: process.env.PEEBLO_CORE_URL?.trim() || "",
+  largeDistro: process.env.PEEBLO_LARGE_DISTRO?.trim() || "",
+  triggerRunsPerHour: num("PEEBLO_TRIGGER_RUNS_PER_HOUR", 6),
+  chainDepth: num("PEEBLO_CHAIN_DEPTH", 3),
+  chainCalls: num("PEEBLO_CHAIN_CALLS", 6),
+  chainCapUsd: num("PEEBLO_CHAIN_CAP_USD", 5),
+  readonlyServers: (process.env.PEEBLO_READONLY_SERVERS ?? "").split(",").map((x) => x.trim()).filter(Boolean),
+  unpromptedPerHour: num("PEEBLO_UNPROMPTED_PER_HOUR", 3),
+  browserDriver: process.env.PEEBLO_BROWSER_DRIVER?.trim() || "agent-browser",
+  otariWorkspaceId: process.env.OTARI_WORKSPACE_ID?.trim() || "",
+  otariRegion: process.env.OTARI_REGION?.trim() || "",
+  otariDashboardUrl: (process.env.OTARI_DASHBOARD_URL ?? "https://otari.ai/dashboard").replace(/\/+$/, ""),
+  embedModel: process.env.PEEBLO_EMBED_MODEL?.trim() || "alibaba/qwen3-embedding-0.6b",
+  rerankModel: process.env.PEEBLO_RERANK_MODEL?.trim() || "alibaba/qwen3-reranker-8b",
+  embedDims: num("PEEBLO_EMBED_DIMS", 256),
+  policyFile: process.env.PEEBLO_POLICY_FILE?.trim() || "",
+  smallMemory: process.env.PEEBLO_SMALL_MEMORY?.trim() || "2G",
+  awakeCapSmall: num("PEEBLO_AWAKE_CAP_SMALL", 8),
+  awakeCapLarge: num("PEEBLO_AWAKE_CAP_LARGE", 2),
+  hostReserveMb: num("PEEBLO_HOST_RESERVE_MB", 1024),
+  sessionTtlHours: num("PEEBLO_SESSION_TTL_HOURS", 24),
+  slackConfigFile: process.env.PEEBLO_SLACK_CONFIG_FILE?.trim() || "",
+  slackBatchMs: num("PEEBLO_SLACK_BATCH_MS", 500),
   progressEveryMs: Number(process.env.PEEBLO_PROGRESS_EVERY_MS ?? 20 * 60_000),       // a long job is nudged to post a progress line this often (steered in, nothing interrupted)
   maxContinuations: Number(process.env.PEEBLO_MAX_CONTINUATIONS ?? 2),                // how many times the Stop check or grader may send a job back
   publicUrl: (process.env.PEEBLO_PUBLIC_URL?.trim() || "").replace(/\/+$/, ""),

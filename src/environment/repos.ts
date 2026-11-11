@@ -334,7 +334,7 @@ export async function endWorktrees(teammateId: string, sessionId: string): Promi
 
 // The periodic sweep (when the teammate has no live run): end worktrees of closed or long-idle sessions, drop WIP
 // refs older than 14 days, and run git maintenance.
-export async function sweep(teammateId: string, idleHours = Number(process.env.PEEBLO_SESSION_TTL_HOURS ?? 24)): Promise<number> {
+export async function sweep(teammateId: string, idleHours = config.sessionTtlHours): Promise<number> {
   const live = (await pool.query(`SELECT count(*)::int AS n FROM runs r JOIN sessions s ON s.id = r.session_id WHERE s.teammate_id = $1 AND r.status IN ('running', 'waiting')`, [teammateId])).rows[0].n;
   if (live > 0 || !isAwake(teammateId)) return 0;
   const { rows } = await pool.query(

@@ -21,7 +21,7 @@ async function call(method: string, body: URLSearchParams | FormData, token?: st
 async function loadToken(): Promise<ConfigToken | null> {
   const { rows } = await pool.query("SELECT token FROM slack_config WHERE id = 1");
   const stored = rows[0] ? unseal<ConfigToken>(rows[0].token) : null;
-  const f = process.env.PEEBLO_SLACK_CONFIG_FILE;
+  const f = config.slackConfigFile || undefined;
   let file: ConfigToken | null = null;
   try { if (f && existsSync(f)) file = JSON.parse(readFileSync(f, "utf8")) as ConfigToken; } catch { /* a broken file is ignored while a stored token exists */ }
   if (file?.access_token && (!stored || (file.access_token !== stored.access_token && Number(file.exp) > Number(stored.exp)))) { await storeToken(file); return file; }

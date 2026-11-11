@@ -10,7 +10,7 @@
 // - each run is logged with findings none | some; a failure tells the creator.
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { seal, unseal } from "./crypto.ts";
-import { config } from "./config.ts";
+import { config, hookSecret } from "./config.ts";
 import { pool } from "./db.ts";
 import { startRun } from "./durable/runs.ts";
 import { newId } from "./ids.ts";
@@ -19,7 +19,7 @@ import { openSession, submit } from "./store/sessions.ts";
 import { getTeammate, type Teammate } from "./store/teammates.ts";
 import type { SlackPlace } from "./slack/inbound.ts";
 
-const RUNS_PER_HOUR = Number(process.env.PEEBLO_TRIGGER_RUNS_PER_HOUR ?? 6);
+const RUNS_PER_HOUR = config.triggerRunsPerHour;
 export type Kind = "cron" | "once" | "webhook" | "watch";
 export type Schedule = { id: string; teammate_id: string; session_id: string; kind: Kind; name: string | null; cron: string | null; run_at: Date | null; prompt: string; output_to: any; budget_usd: string; filter: any; watch: any; state_hash: string | null; created_by: string | null; enabled: boolean; last_run_at: Date | null };
 
@@ -117,7 +117,7 @@ const sourceEvent = (source: string, payload: any) => (source === "pagerduty" ? 
 
 export async function handleSourceHook(source: string, headers: Record<string, string | string[] | undefined>, body: string): Promise<[number, string]> {
   const check = SOURCES[source];
-  const secret = process.env[`PEEBLO_HOOK_SECRET_${source.toUpperCase()}`];
+  const secret = hookSecret(source);
   if (!check || !secret) return [404, "not found"];
   if (!check(secret, headers, body)) return [401, "bad signature"];
   let payload: any = {};

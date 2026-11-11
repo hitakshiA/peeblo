@@ -105,7 +105,7 @@ const READ_WORDS = new Set(["get", "list", "search", "read", "fetch", "query", "
   "chart", "charts", "render", "metrics", "stats", "logs", "availability", "insights", "report", "reports", "analytics", "inspect", "whoami", "ping", "discover", "analyze", "history", "timeline", "status"]);
 // Words that make a call a write even when the server calls it read-only (a server's hint never makes a call safer
 // on its own; it can only confirm a name that says nothing about writing).
-const READONLY_SERVERS = new Set((process.env.PEEBLO_READONLY_SERVERS ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+const READONLY_SERVERS = new Set(config.readonlyServers);
 const NEVER_READ = /(submit|invoke|feedback|trigger|run_|execute(?!read)|send|pay|charge)/i;
 // Word lists, matched against whole words of the tool's name (snake, kebab or camel case), never substrings:
 // "list_postgres_roles" is a read, not a "post".

@@ -1,6 +1,7 @@
 // Peeblo's own tools as the crew's manager. The asker, payer, thread and owner come from the
 // session; authority is checked in code. Hiring is the hiring-a-teammate skill plus these tools: the agent
 // talks and drafts, and the ID card is the one approval, on the finished result.
+import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { callTeammate } from "../chains.ts";
 import { mayManageTeammate } from "../authority.ts";
@@ -174,9 +175,9 @@ export const managerTools: AgentTool[] = [
       let slug = slugOf(a.name);
       while ((await pool.query("SELECT 1 FROM teammates WHERE slug = $1", [slug])).rows.length) slug = `${slugOf(a.name)}-${Math.random().toString(36).slice(2, 5)}`;
       const tm = await createTeammate(slug, configFrom(a), { personId: ctx.person?.id ?? null, label: `hired by ${ctx.person?.display_name ?? "a person"} through Peeblo` });
-      if (a.github_repos?.length && process.env.PEEBLO_GITHUB_TOKEN) {
+      if (a.github_repos?.length && config.githubToken) {
         const { setSecret } = await import("../store/secrets.ts");
-        await setSecret(tm.id, "GH_TOKEN", process.env.PEEBLO_GITHUB_TOKEN, ["github.com", "api.github.com"]);
+        await setSecret(tm.id, "GH_TOKEN", config.githubToken, ["github.com", "api.github.com"]);
       }
       const face = pickFace(slug, a.face, a.color);
       const place = await slackPlaceOf(ctx.sessionId);
@@ -284,9 +285,9 @@ export const managerTools: AgentTool[] = [
           connector_scopes: { ...((t.config as any).connector_scopes ?? {}), github: repos },
           computer: { ...(t.config.computer as any), repos: repos.map(entry) },
         } as any, { label: `${ctx.person?.display_name ?? "a person"} via Peeblo` }, a.reason);
-        if (process.env.PEEBLO_GITHUB_TOKEN) {
+        if (config.githubToken) {
           const { setSecret } = await import("../store/secrets.ts");
-          await setSecret(t.id, "GH_TOKEN", process.env.PEEBLO_GITHUB_TOKEN, ["github.com", "api.github.com"]);
+          await setSecret(t.id, "GH_TOKEN", config.githubToken, ["github.com", "api.github.com"]);
         }
         return { text: `${t.config.name} is now at version ${next.version}: GitHub repos = ${repos.join(", ")} (scoped access and its own checkout of each). Its running conversations pick this up on their next message; say "${t.config.name} can work in it from its next step".` };
       }

@@ -74,7 +74,7 @@ const agentBrowser: Driver = {
 };
 const stripLifecycle = (d: any) => { const { lifecycle: _l, ...rest } = d ?? {}; return rest; };
 const DRIVERS: Record<string, Driver> = { "agent-browser": agentBrowser };
-const driver = () => DRIVERS[process.env.PEEBLO_BROWSER_DRIVER ?? "agent-browser"] ?? agentBrowser;
+const driver = () => DRIVERS[config.browserDriver] ?? agentBrowser;
 
 // Browser sessions opened per teammate (cookies are injected once per session and collected before sleep).
 const opened = new Map<string, Set<string>>();

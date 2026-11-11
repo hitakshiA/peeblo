@@ -40,7 +40,7 @@ export async function signIn(email: string, password: string): Promise<{ orgId: 
   // Admin work happens in the workspace of the key Peeblo calls with (keys show only a prefix and suffix).
   const keys = (await otari("GET", "/organizations/me/keys", undefined, { auth })).data;
   const ours = ((keys.data ?? keys) as any[]).find((k) => k.key_prefix && k.key_suffix && config.otariKey.startsWith(k.key_prefix) && config.otariKey.endsWith(k.key_suffix));
-  const workspaceId = process.env.OTARI_WORKSPACE_ID || ours?.workspace_id;
+  const workspaceId = config.otariWorkspaceId || ours?.workspace_id;
   if (!workspaceId) throw new Error("could not find the workspace of Peeblo's Otari key in this organization; set OTARI_WORKSPACE_ID");
   await pool.query(
     `INSERT INTO otari_session (id, cookie, signed_in_as, org_id, workspace_id, expires_at) VALUES (1, $1, $2, $3, $4, $5)

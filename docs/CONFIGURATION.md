@@ -104,6 +104,8 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 | `PEEBLO_AWAKE_CAP_LARGE` | `2` | Large computers awake at once. |
 | `PEEBLO_HOST_RESERVE_MB` | `1024` | Memory kept free for the host. |
 | `PEEBLO_VM_IDLE_MS` | `300000` | A computer sleeps after this long idle. |
+| `PEEBLO_BACKGROUND_MAX_MS` | `7200000` (2 h) | How long a background command keeps its computer awake. |
+| `PEEBLO_SMALL_MEMORY` | `2G` | The memory ceiling of a small computer (allocated as used). |
 | `PEEBLO_VM_ARCH` | the host's | `aarch64` or `x86_64`. |
 | `PEEBLO_VM_IMAGE` | built image | A custom image for small computers. |
 | `PEEBLO_LARGE_DISTRO` | Debian when Docker or Podman is present | Set to `alpine` to build the large computer on Alpine. |
