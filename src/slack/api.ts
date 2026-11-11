@@ -1,7 +1,7 @@
 // Slack's Web API for one app (each teammate has its own app, so each speaks with its own name and face).
 import { getApp } from "../ingress/apps.ts";
 
-export class SlackError extends Error {
+class SlackError extends Error {
   method: string;
   code: string;
   detail?: unknown;

@@ -1,30 +1,66 @@
 version: 2
 updates:
   # The workflow actions are pinned by commit; this moves the pins (and their version comments) as releases ship.
+  # Every update waits 14 days after its release first (cooldown), the same rule the project uses for dependencies.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
 
-  # The images are pinned by digest, which goes stale the same way.
+  # The images are pinned by digest, which goes stale the same way. Node stays on the major the project runs (24).
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
 
-  # Core and the console have their own lockfiles. Minor and patch bumps come as one weekly pull request each.
+  # Core, the console and the site have their own lockfiles. Minor and patch bumps come as one weekly pull request
+  # each. Node's types follow the runtime's major, and TypeScript moves to a new major in all three at once, by hand.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
     groups:
       core:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/console"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
     groups:
       console:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/site"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 14
+    groups:
+      site:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
