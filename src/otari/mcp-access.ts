@@ -106,6 +106,10 @@ export function followTeammateChanges(): void {
       const { getTeammate } = await import("../store/teammates.ts");
       const tm = await getTeammate(String((e.data as { teammate_id: string }).teammate_id));
       if (tm) await syncTeammateAccess(tm).catch((x) => console.error(`mcp access ${tm.slug}:`, (x as Error).message));
+      if (tm) {
+        const { syncKeyAllowList } = await import("./allowlists.ts");
+        await syncKeyAllowList(tm).catch((x) => console.error(`allow-list ${tm.slug}:`, (x as Error).message));
+      }
     }),
   );
 }

@@ -66,7 +66,11 @@ const readGuard = () =>
     .catch(() => null);
 await readGuard();
 // Peeblo's role routing policies in Otari, made or updated from config/model-tiers.json when an admin session exists.
-void import("./otari/routing.ts").then((r) => r.syncRolePolicies()).catch(() => null);
+void import("./otari/routing.ts")
+  .then((r) => r.syncRolePolicies())
+  .then(() => import("./otari/allowlists.ts"))
+  .then((a) => a.syncAllKeyAllowLists())
+  .catch((e) => console.error("allow-lists:", (e as Error).message));
 setInterval(readGuard, 10 * 60_000).unref();
 const proxy = await startProxy();
 await launchDurable();

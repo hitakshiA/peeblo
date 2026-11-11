@@ -81,10 +81,12 @@ async function teammateKeyOnce(tm: Teammate): Promise<{ keyId: string; secret: s
     tm.id,
     { key_id: key.id, budget_id: budget.id, ceiling_id: ceiling.id, monthly_usd: want },
   ]);
+  // Open-weight models only, and no web tools unless the teammate has them: held by Otari from its first call.
+  const { syncKeyAllowList } = await import("./allowlists.ts");
+  await syncKeyAllowList(tm).catch((e) => console.error(`allow-list ${tm.slug}:`, (e as Error).message));
   return { keyId: key.id, secret: key.key };
 }
 
-// Removes the teammate's key, ceiling and budget from Otari (on fire, or when switching modes).
 // A paused teammate's key is switched off in Otari, so nothing can spend on it (not only nothing Peeblo starts); its
 // grants, ceiling and history stay, and resuming switches it back on. Returns false when there's no key or no session.
 export async function setTeammateKeyActive(teammateId: string, active: boolean): Promise<boolean> {
@@ -116,6 +118,7 @@ export async function rotateTeammateKey(teammateId: string): Promise<boolean> {
   return true;
 }
 
+// Removes the teammate's key, ceiling and budget from Otari (on fire, or when switching modes).
 export async function retireTeammateKey(teammateId: string): Promise<void> {
   const { rows } = await pool.query<KeyRow>(
     "SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL",

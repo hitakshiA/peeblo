@@ -275,6 +275,16 @@ const CHECKS: Check[] = [
     },
   },
   {
+    name: "Otari key allow-lists",
+    run: async () => {
+      const { session } = await import("./otari/admin.ts");
+      if (!(await session())) return "not checked without a dashboard session";
+      const { syncAllKeyAllowLists } = await import("./otari/allowlists.ts");
+      const r = await syncAllKeyAllowLists();
+      return `${r.same + r.set} teammate key${r.same + r.set === 1 ? "" : "s"} limited to open-weight models in Otari${r.set ? ` (${r.set} updated now)` : ""}; teammates without web get no search or fetch tools`;
+    },
+  },
+  {
     name: "Otari balance",
     run: async () => {
       // Hosted Otari is prepaid: when the org's balance reaches $0, every key stops, whatever its budget says.
