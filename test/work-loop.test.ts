@@ -55,3 +55,19 @@ test("bm25Index: plain words find the right connector tool", () => {
   assert.equal(ix.search("open a PR on github", 1)[0], 2);
   assert.deepEqual(ix.search("zzz", 3), []);
 });
+
+import { DEFAULT_HOSTS, egressRefusal } from "../src/environment/controller.ts";
+
+test("egressRefusal: large computers read anywhere but write only to allowed hosts", () => {
+  assert.equal(egressRefusal("large", "GET", "example.com", DEFAULT_HOSTS), null);
+  assert.equal(egressRefusal("large", "HEAD", "evil.example", DEFAULT_HOSTS), null);
+  assert.match(egressRefusal("large", "POST", "evil.example", DEFAULT_HOSTS) ?? "", /sends data \(POST\) only to its allowed hosts; evil\.example/);
+  assert.equal(egressRefusal("large", "POST", "registry.npmjs.org", DEFAULT_HOSTS), null);
+  assert.equal(egressRefusal("large", "PUT", "api.github.com", DEFAULT_HOSTS), null);
+  // Small computers are limited by the allowlist itself.
+  assert.equal(egressRefusal("small", "POST", "evil.example", DEFAULT_HOSTS), null);
+});
+
+test("DEFAULT_HOSTS covers the common package registries with their subdomains", () => {
+  for (const h of ["crates.io", "*.crates.io", "*.golang.org", "rubygems.org", "*.maven.org", "nodejs.org", "*.docker.io", "pypi.org", "*.pythonhosted.org"]) assert.ok(DEFAULT_HOSTS.includes(h), h);
+});
