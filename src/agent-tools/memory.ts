@@ -183,7 +183,7 @@ export const workMemoryTools: AgentTool[] = [
       const n = await writeNote(ctx.teammate.slug, place, { path: id, title: String(a.what).slice(0, 100), body: `Promised: ${a.what}\nFor: ${a.for_person ?? ctx.person?.display_name ?? "the team"}\nDue: ${due ?? "no date"}\nStatus: open`, source: `${ctx.teammate.config.name}'s promise`, runId: ctx.runId, tainted: false });
       let follow = "";
       if (due) {
-        const { createSchedule } = await import("../triggers.ts");
+        const { createSchedule } = await import("../runs/triggers.ts");
         const slack = ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
         const sc = await createSchedule(ctx.teammate, ctx.person?.id ?? null, { kind: "once", name: `Promise: ${String(a.what).slice(0, 60)}`, prompt: `You promised ${a.for_person ?? "them"}: ${a.what}. Do it now, or tell them plainly where it stands. Then mark the promise done (promise action done, id ${n.path}).`, runAt: due, place: slack ? { slack } : {}, budgetUsd: 0.05, originRequest: null });
         follow = ` I'll be woken at ${due} to follow up (${sc.id}).`;

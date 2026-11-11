@@ -1,8 +1,8 @@
 // Peeblo itself: a teammate record (slug "peeblo") on its own Slack app, with the manager's tools and skills. It is
 // made on first start and linked to PEEBLO_SLACK_APP_ID; its owner can change its instructions like any teammate's.
-import { config } from "./config.ts";
-import { pool } from "./db.ts";
-import { createTeammate, getTeammate } from "./store/teammates.ts";
+import { config } from "../config.ts";
+import { pool } from "../db.ts";
+import { createTeammate, getTeammate } from "../store/teammates.ts";
 
 export const MANAGER = "peeblo";
 const ROLE = "Chief of staff for the team and its AI crew";
@@ -32,7 +32,7 @@ export async function ensureManager(): Promise<void> {
 
 // Once a hired teammate's own app is installed, it posts as itself at once and says so where it was hired.
 export function installHireWelcome(): void {
-  void import("./store/events.ts").then(({ onEvent }) => onEvent(async (e) => {
+  void import("../store/events.ts").then(({ onEvent }) => onEvent(async (e) => {
     if (e.type !== "slack.installed") return;
     const d = e.data as { app_id: string; team_id?: string; installed_by?: string };
     // Peeblo's own app: it greets the person who installed it, in its DM.
@@ -41,15 +41,15 @@ export function installHireWelcome(): void {
     if (tm && own && d.installed_by) {
       // The person who adds Peeblo to Slack is its first admin, when no admin is set yet.
       if (!config.admins.length) {
-        const { saveSettings } = await import("./settings.ts");
+        const { saveSettings } = await import("../settings.ts");
         saveSettings({ PEEBLO_ADMINS: d.installed_by });
         config.admins.push(d.installed_by);
       }
-      const { welcomeOnce } = await import("./slack/welcome.ts");
+      const { welcomeOnce } = await import("../slack/welcome.ts");
       await welcomeOnce(d.app_id, tm.id, d.team_id ?? "", d.installed_by, "installed").catch((err) => console.error("peeblo welcome:", err));
       return;
     }
-    const { switchToOwnApp } = await import("./slack/install.ts");
+    const { switchToOwnApp } = await import("../slack/install.ts");
     await switchToOwnApp(String(d.app_id)).catch((err) => console.error("install switch:", err));
   }));
 }
@@ -57,7 +57,7 @@ export function installHireWelcome(): void {
 // `peeblo slack-app`: on a fresh install, makes Peeblo's own Slack app from the manifest (with its face), linked to
 // the manager, and prints the one-click install link. Needs PEEBLO_SLACK_CONFIG_FILE and PEEBLO_PUBLIC_URL.
 export async function createManagerApp(): Promise<void> {
-  const { migrate } = await import("./db.ts");
+  const { migrate } = await import("../db.ts");
   await migrate();
   await ensureManager();
   const tm = (await getTeammate(MANAGER))!;
@@ -66,15 +66,15 @@ export async function createManagerApp(): Promise<void> {
     // Run again until it's installed: the install link is printed each time (it's safe to open twice).
     if (existing.bot_user_id) console.log(`Peeblo's Slack app (${existing.app_id}) is installed.`);
     else {
-      const { getApp } = await import("./ingress/apps.ts");
-      const { installUrl } = await import("./slack/admin.ts");
+      const { getApp } = await import("../ingress/apps.ts");
+      const { installUrl } = await import("../slack/admin.ts");
       const app: any = await getApp(existing.app_id);
       console.log(`Peeblo's Slack app ${existing.app_id} isn't installed yet. Install it (one click):\n${installUrl(existing.app_id, app?.secrets?.client_id ?? app?.client_id)}`);
     }
     await pool.end(); return;
   }
-  const { createTeammateApp } = await import("./slack/admin.ts");
-  const { facePng } = await import("./slack/idcard.ts");
+  const { createTeammateApp } = await import("../slack/admin.ts");
+  const { facePng } = await import("../slack/idcard.ts");
   const face = { shape: "peeblo", color: "#2E7D5B" };
   const app = await createTeammateApp(tm, face.color, await facePng(face));
   console.log(`Made Peeblo's Slack app ${app.appId}. Install it (one click):\n${app.installUrl}`);

@@ -97,14 +97,14 @@ export function installSlackInbound(): void {
     if (kindNow !== "channel" && wantsStop) {
       // Only the person who asked for the running job, the teammate's owner or an admin can stop it (the stop
       // tool's rule); anyone else is told whose job it is, privately.
-      const { threadSessions } = await import("../chains.ts");
+      const { threadSessions } = await import("../crew/chains.ts");
       const sids = await threadSessions(session.id).catch(() => [session.id]);
       const active = (await pool.query(`SELECT r.id, sub.person_id, p.display_name, p.slack_user, s.teammate_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id
         JOIN sessions s ON s.id = r.session_id LEFT JOIN people p ON p.id = sub.person_id WHERE r.session_id = ANY($1) AND r.status IN ('queued', 'running', 'waiting')`, [sids])).rows;
       if (active.length) {
         const me = (await pool.query("SELECT * FROM people WHERE slack_user = $1", [ev.user])).rows[0];
         const { getTeammate } = await import("../store/teammates.ts");
-        const { mayManageTeammate } = await import("../authority.ts");
+        const { mayManageTeammate } = await import("../rules/authority.ts");
         const allowed = [] as boolean[];
         for (const r of active) { const tm = await getTeammate(r.teammate_id); allowed.push(Boolean(me && (me.id === r.person_id || (tm && mayManageTeammate(tm, me))))); }
         if (!allowed.some(Boolean)) {

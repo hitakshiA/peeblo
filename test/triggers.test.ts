@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filterMiss } from "../src/triggers.ts";
+import { filterMiss } from "../src/runs/triggers.ts";
 
 test("filterMiss: null when every field matches, by event name or dotted path", () => {
   const filter = { event: "deployment_status", "deployment_status.state": "success" };

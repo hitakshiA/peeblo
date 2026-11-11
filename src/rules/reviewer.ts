@@ -10,10 +10,10 @@
 //    or ask (a card). It sees the person's own messages, the action, earlier outward actions by name and the names
 //    of untrusted sources read in this job (taint), never tool results or the agent's text. No valid answer
 //    means a card. Three reviewer blocks in one job drop the rest of it to Ask.
-import { pool } from "./db.ts";
-import { decide } from "./otari/decisions.ts";
-import type { ConnectorTool } from "./connectors/mcp.ts";
-import type { TeammateConfig } from "./store/teammates.ts";
+import { pool } from "../db.ts";
+import { decide } from "../otari/decisions.ts";
+import type { ConnectorTool } from "../connectors/mcp.ts";
+import type { TeammateConfig } from "../store/teammates.ts";
 
 export type Risk = "read" | "write" | "money" | "destructive" | "shipping" | "outside_thread";
 export const NEVER_WITHOUT_ASKING: Risk[] = ["money", "destructive", "shipping", "outside_thread"];
@@ -59,7 +59,7 @@ export function modeRule(mode: TeammateConfig["mode"], risk: Risk): "allow" | "c
 type ReviewInput = { teammate: string; asks: string[]; agentWritten?: string | null; action: { server: string; tool: string; arguments: Record<string, unknown> }; done: string[]; taint: string[] };
 
 export async function review(runId: string, sessionId: string, action: { teammate: string; server: string; tool: string; arguments: Record<string, unknown> }, endUser?: string): Promise<GateDecision> {
-  // Only what a person wrote counts as intent (src/approvers.ts); a schedule's stored prompt is labelled as the agent's.
+  // Only what a person wrote counts as intent (src/rules/approvers.ts); a schedule's stored prompt is labelled as the agent's.
   const { personWords } = await import("./approvers.ts");
   const { asks, agentWritten } = await personWords(runId);
   void sessionId;

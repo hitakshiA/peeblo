@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { verdict } from "../src/guard.ts";
+import { verdict } from "../src/rules/guard.ts";
 
 test("Qwen3Guard: Safe passes and Unsafe blocks", () => {
   assert.deepEqual(verdict("Safety: Safe\nCategories: None"), { safe: true, categories: [] });

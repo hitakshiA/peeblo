@@ -1,5 +1,5 @@
-// read_skill: opens one of this teammate's skills (src/skills.ts). Reading changes nothing, so it never asks.
-import { installSkill, readSkill, removeSkill, saveSkill, saveSkillFiles, SKILL_NAME } from "../skills.ts";
+// read_skill: opens one of this teammate's skills (src/crew/skills.ts). Reading changes nothing, so it never asks.
+import { installSkill, readSkill, removeSkill, saveSkill, saveSkillFiles, SKILL_NAME } from "../crew/skills.ts";
 import { appendEvent } from "../store/events.ts";
 import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";
@@ -16,7 +16,7 @@ export const readSkillTool: AgentTool = {
       let where: string | null = null;
       if (!a.file && ctx.teammate.config.tools.includes("computer")) {
         const { workspaceOf } = await import("../environment/controller.ts");
-        const { copySkillTo } = await import("../skills.ts");
+        const { copySkillTo } = await import("../crew/skills.ts");
         const { join } = await import("node:path");
         where = (() => { try { return copySkillTo(ctx.teammate, a.skill, join(workspaceOf(ctx.teammate.slug), "sessions", ctx.sessionId, "skills"), `/workspace/sessions/${ctx.sessionId}/skills`); } catch { return null; } })();
       }
@@ -74,7 +74,7 @@ export const installSkillTool: AgentTool = {
       const fm = /^---\n([\s\S]*?)\n---/.exec(md)?.[1] ?? "";
       const name = (/^name:\s*(.+)$/m.exec(fm)?.[1] ?? "").trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 41);
       if (!name || !/^description:/m.test(fm)) return { text: "That SKILL.md has no name and description at the top, so it isn't a skill Peeblo can use.", isError: true };
-      const { screen } = await import("../guard.ts");
+      const { screen } = await import("../rules/guard.ts");
       const s = await screen(files.map((f) => f.content).join("\n\n").slice(0, 20_000), ctx.endUser).catch(() => null);
       if (s?.flagged) return { text: `Not installed: ${s.checked_by} flagged this skill as carrying instructions aimed at an AI. Tell the person; don't try to install it another way.`, isError: true, data: s };
       installSkill(ctx.teammate, name, files);

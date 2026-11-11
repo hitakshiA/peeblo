@@ -8,12 +8,12 @@
 // Every verdict is an event, and the receipt names the guard that checked.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { config } from "./config.ts";
-import { seal, unseal } from "./crypto.ts";
-import { otari } from "./otari/client.ts";
-import { links } from "./otari/links.ts";
-import { pool } from "./db.ts";
-import { appendEvent } from "./store/events.ts";
+import { config } from "../config.ts";
+import { seal, unseal } from "../crypto.ts";
+import { otari } from "../otari/client.ts";
+import { links } from "../otari/links.ts";
+import { pool } from "../db.ts";
+import { appendEvent } from "../store/events.ts";
 
 export type GuardMode = "lakera" | "open" | "off";
 export const guardMode = (): GuardMode => (["lakera", "open", "off"].includes(config.guard) ? config.guard : "lakera") as GuardMode;
@@ -76,12 +76,12 @@ export async function freshLakeraState(maxAgeMs = 30_000): Promise<boolean | nul
 
 // Lakera's org mandate, switched through the dashboard session (Peeblo's guard setting stays "lakera").
 export async function lakeraMandate(): Promise<{ id: string; enabled: boolean; definitionId: string | null; workspaceIds: string[]; allWorkspaces: boolean } | null> {
-  const { guardrailMandates } = await import("./otari/admin.ts");
+  const { guardrailMandates } = await import("../otari/admin.ts");
   const g = await guardrailMandates();
   const m = ((g.data ?? g) as any[]).find((x) => x.profile === config.guardProfile);
   // "On" means Otari screens Peeblo's own agent calls: the mandate is enabled for its main workspace (or all of
   // them). Covering only the screening workspace is how outside text is checked, and leaves agent calls alone.
-  const { session } = await import("./otari/admin.ts");
+  const { session } = await import("../otari/admin.ts");
   const main = (await session())?.workspaceId ?? null;
   const covers = Boolean(m?.enabled) && (Boolean(m?.applies_to_all_workspaces) || (main !== null && (m?.workspace_ids ?? []).includes(main)));
   lakeraOn = m ? covers : false;
@@ -94,8 +94,8 @@ export async function lakeraMandate(): Promise<{ id: string; enabled: boolean; d
 // stricter-to-flag policy fixes that. Set PEEBLO_LAKERA_PROJECT; Peeblo writes it into Otari's guardrail
 // definition, keeping the stored Lakera key (sent back as ***, Otari's "keep" marker).
 export async function lakeraProject(): Promise<{ definitionId: string; projectId: string | null } | null> {
-  const { admin } = await import("./otari/admin.ts");
-  const { links } = await import("./otari/links.ts");
+  const { admin } = await import("../otari/admin.ts");
+  const { links } = await import("../otari/links.ts");
   const m = await lakeraMandate();
   if (!m?.definitionId) return null;
   const d = await admin<any>("GET", "/organizations/me/guardrail-definitions", undefined, "reading the guardrail definition", links.guardrails());
@@ -103,8 +103,8 @@ export async function lakeraProject(): Promise<{ definitionId: string; projectId
   return def ? { definitionId: def.id, projectId: def.create_kwargs?.project_id ?? null } : null;
 }
 export async function setLakeraProject(projectId: string | null): Promise<void> {
-  const { admin } = await import("./otari/admin.ts");
-  const { links } = await import("./otari/links.ts");
+  const { admin } = await import("../otari/admin.ts");
+  const { links } = await import("../otari/links.ts");
   const m = await lakeraMandate();
   if (!m?.definitionId) throw new Error(`no org guardrail with profile ${config.guardProfile}`);
   const d = await admin<any>("GET", "/organizations/me/guardrail-definitions", undefined, "reading the guardrail definition", links.guardrails());
@@ -117,7 +117,7 @@ export async function setLakeraProject(projectId: string | null): Promise<void> 
 // Org-wide on or off for Peeblo's own calls: adds or removes Peeblo's main workspace from the mandate. The screening
 // workspace stays covered either way.
 export async function setLakera(enabled: boolean): Promise<void> {
-  const { admin, session } = await import("./otari/admin.ts");
+  const { admin, session } = await import("../otari/admin.ts");
   const m = await lakeraMandate();
   if (!m) throw new Error(`no org guardrail with profile ${config.guardProfile}; add Lakera in the dashboard first`);
   const main = (await session())?.workspaceId;
@@ -137,7 +137,7 @@ const SCREEN_WS = "peeblo-screen";
 // worker role uses.
 async function probeModel(): Promise<string> {
   if (config.guardProbeModel) return config.guardProbeModel;
-  const { ROLES } = await import("./otari/routing.ts");
+  const { ROLES } = await import("../otari/routing.ts");
   return ROLES["peeblo-worker"].step_down?.model ?? ROLES["peeblo-worker"].default;
 }
 type ScreenKey = { id: string; key: string; workspace: string };
@@ -146,7 +146,7 @@ export function readScreenKey(): ScreenKey | null {
   try { return existsSync(screenFile()) ? unseal<ScreenKey>(readFileSync(screenFile())) : null; } catch { return null; }
 }
 export async function ensureScreening(): Promise<string> {
-  const { admin, session } = await import("./otari/admin.ts");
+  const { admin, session } = await import("../otari/admin.ts");
   const main = (await session())?.workspaceId;
   if (!main) return "needs the dashboard session";
   const m = await lakeraMandate();
@@ -227,7 +227,7 @@ async function screenPart(text: string, endUser: string | null): Promise<Screene
     try {
       const m = await lakeraMandate();
       if (m?.definitionId) {
-        const { admin } = await import("./otari/admin.ts");
+        const { admin } = await import("../otari/admin.ts");
         const r = await admin<{ valid: boolean; score: number | null }>("POST", `/organizations/me/guardrail-definitions/${m.definitionId}/test`, { text }, "screening outside text", "");
         return { checked_by: "Lakera Guard in Otari", flagged: r.valid === false, score: typeof r.score === "number" ? r.score : null, categories: r.valid === false ? ["prompt_injection"] : [], requestId: null };
       }

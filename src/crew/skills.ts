@@ -4,11 +4,11 @@
 // in a VM; the manager has no computer). So Peeblo writes the same <available_skills> list into the system prompt,
 // and read_skill opens a skill's files, never anything outside skills/.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { config } from "./config.ts";
+import { config } from "../config.ts";
 import { join, normalize, sep } from "node:path";
-import type { Teammate } from "./store/teammates.ts";
+import type { Teammate } from "../store/teammates.ts";
 
-const DIR = join(import.meta.dirname, "..", "skills");
+const DIR = join(import.meta.dirname, "..", "..", "skills");
 // Skills a teammate learned on the job (skill_save, approved by a person), one folder each, beside its memory.
 const learnedDir = (slug: string) => join(config.dataDir, "teammates", slug, "skills");
 const learned = (slug: string) => (existsSync(learnedDir(slug)) ? readdirSync(learnedDir(slug)).filter((n) => existsSync(join(learnedDir(slug), n, "SKILL.md"))) : []);

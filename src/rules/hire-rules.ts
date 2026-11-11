@@ -5,10 +5,10 @@
 // - a teammate's monthly budget can't exceed what its hirer may spend in a month on their own Otari tier (admins: $500);
 // - tools come from the fixed list, and connectors must be MCP servers that exist in Otari.
 import { isOtariAdmin } from "./authority.ts";
-import { serverList } from "./connectors/mcp.ts";
-import { checkModel } from "./model-change.ts";
-import { endUser, tiers } from "./otari/people.ts";
-import type { Person } from "./store/people.ts";
+import { serverList } from "../connectors/mcp.ts";
+import { checkModel } from "../crew/model-change.ts";
+import { endUser, tiers } from "../otari/people.ts";
+import type { Person } from "../store/people.ts";
 
 const TOOLS = ["web", "code", "computer"];
 const ADMIN_CEILING = 500;

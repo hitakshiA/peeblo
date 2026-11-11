@@ -75,7 +75,7 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
 export async function faceOf(tm: Teammate): Promise<{ shape: string; color: string }> {
   const h = (await pool.query("SELECT avatar FROM hires WHERE teammate_id = $1", [tm.id])).rows[0];
   if (h?.avatar?.shape && h?.avatar?.color) return h.avatar;
-  // Peeblo has its own face (the one its app is made with, src/manager.ts).
+  // Peeblo has its own face (the one its app is made with, src/crew/manager.ts).
   if (tm.slug === "peeblo") return { shape: "peeblo", color: "#2E7D5B" };
   const { pickFace } = await import("./idcard.ts");
   return pickFace(tm.slug);

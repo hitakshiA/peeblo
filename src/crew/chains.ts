@@ -2,15 +2,15 @@
 // (so every person there sees the hand-off and each teammate's own receipt), billed to the person who started the chain. Code owns the
 // guards: at most 3 deep, at most 6 calls per chain, and a spend cap per chain; "stop" in the thread stops the chain.
 // A busy callee gets a new session for the call, so a call never waits behind another conversation.
-import { config } from "./config.ts";
-import { pool } from "./db.ts";
-import { startRun } from "./durable/runs.ts";
-import { appendEvent } from "./store/events.ts";
-import { getSession, openSession, submit } from "./store/sessions.ts";
-import type { Teammate } from "./store/teammates.ts";
-import type { SlackPlace } from "./slack/inbound.ts";
-import { ownApp } from "./ingress/apps.ts";
-import { getPerson } from "./store/people.ts";
+import { config } from "../config.ts";
+import { pool } from "../db.ts";
+import { startRun } from "../durable/runs.ts";
+import { appendEvent } from "../store/events.ts";
+import { getSession, openSession, submit } from "../store/sessions.ts";
+import type { Teammate } from "../store/teammates.ts";
+import type { SlackPlace } from "../slack/inbound.ts";
+import { ownApp } from "../ingress/apps.ts";
+import { getPerson } from "../store/people.ts";
 
 const MAX_DEPTH = config.chainDepth;
 const MAX_CALLS = config.chainCalls;
@@ -48,7 +48,7 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
   const here = ((await getSession(from.sessionId))?.place as any)?.slack as SlackPlace | undefined;
   // A teammate works only through its own Slack app. Not installed: it doesn't run, and nobody works for it; the
   // person gets its install button again.
-  const { installState, offerAgain } = await import("./slack/install.ts");
+  const { installState, offerAgain } = await import("../slack/install.ts");
   if ((await installState(callee.id)).waiting) {
     const who = from.personId ? await getPerson(from.personId) : null;
     const offered = here ? await offerAgain(here, callee, who?.slack_user ?? null) : false;
@@ -61,7 +61,7 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
   if (here) {
     const own = await ownApp(callee.id, here.team);
     if (!own) return { refused: `${callee.config.name} isn't in this Slack workspace.` };
-    const { slack } = await import("./slack/api.ts");
+    const { slack } = await import("../slack/api.ts");
     if (!["im", "mpim"].includes(here.channel_type)) {
       const joined: any = await slack(own, "conversations.join", { channel: here.channel }).catch(() => null);
       // A private channel can't be joined; the caller's app (a member, since the work came from here) invites it.
@@ -76,13 +76,13 @@ export async function callTeammate(from: { runId: string | null; sessionId: stri
       const who = from.personId ? await getPerson(from.personId) : null;
       const dm: any = who?.slack_user ? await slack(own, "conversations.open", { users: who.slack_user }).catch(() => null) : null;
       if (!dm?.channel?.id) return { refused: `${callee.config.name} can't reach the person from its own app here.` };
-      const top: any = await slack(own, "chat.postMessage", { channel: dm.channel.id, text: `${from.caller.config.name} handed me this: ${(await import("./asked.ts")).cutWords((await import("./asked.ts")).askedLabel(text.split("\n").find((l) => l.startsWith("Objective:") || (l.length > 20 && !/ asks \(for .*\):$/.test(l))) ?? "a job"), 400)}` });
+      const top: any = await slack(own, "chat.postMessage", { channel: dm.channel.id, text: `${from.caller.config.name} handed me this: ${(await import("../runs/asked.ts")).cutWords((await import("../runs/asked.ts")).askedLabel(text.split("\n").find((l) => l.startsWith("Objective:") || (l.length > 20 && !/ asks \(for .*\):$/.test(l))) ?? "a job"), 400)}` });
       place = { app_id: own, team: here.team, channel: dm.channel.id, channel_type: "im", thread_ts: top.ts, trigger_ts: top.ts, user: who!.slack_user!, direct: true };
     }
   }
   // The hand-off is visible: the caller's line in its thread, with a real mention of the callee.
   if (here && place) {
-    const { slack } = await import("./slack/api.ts");
+    const { slack } = await import("../slack/api.ts");
     const bot = (await pool.query("SELECT bot_user_id FROM slack_apps WHERE app_id = $1", [place.app_id])).rows[0]?.bot_user_id;
     const mention = bot ? `<@${bot}>` : callee.config.name;
     let line = String(announce ?? "").trim() || `Asked ${callee.config.name} to help.`;

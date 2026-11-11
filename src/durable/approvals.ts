@@ -36,8 +36,8 @@ async function approvalWorkflowFn(approvalId: string, runId: string, sessionId: 
 const approvalWorkflow = DBOS.registerWorkflow(approvalWorkflowFn, { name: "approval" });
 
 async function record(runId: string, sessionId: string, raw: Record<string, unknown>, ttlSeconds: number): Promise<string> {
-  // Every approval names who may answer it (src/approvers.ts).
-  const { withApprovers } = await import("../approvers.ts");
+  // Every approval names who may answer it (src/rules/approvers.ts).
+  const { withApprovers } = await import("../rules/approvers.ts");
   const action = await withApprovers(runId, raw);
   // An estimate for the card: the next model call of this run, at its current prompt size, at catalog prices.
   if (action.price_usd == null) {
@@ -112,7 +112,7 @@ export async function answerApproval(approvalId: string, d: Decision): Promise<{
   // The named approvers answer; a workspace admin (the owner) can always answer too.
   if (!d.personId) return { ok: false, status: "not_allowed" };
   if (!only.includes(d.personId)) {
-    const { adminIds } = await import("../approvers.ts");
+    const { adminIds } = await import("../rules/approvers.ts");
     if (!(await adminIds()).includes(d.personId)) return { ok: false, status: "not_allowed" };
   }
   await DBOS.send(approvalId, d, "approval", `answer:${approvalId}`);

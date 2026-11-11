@@ -2,7 +2,7 @@
 // attempts, any fallback, the guard that checked it, cost, the asker's budget), the steps, and one link, "Open full
 // trace", into Otari. Built from the event log; the model never writes any of it.
 import { pool } from "../db.ts";
-import { buildReceipt } from "../receipts.ts";
+import { buildReceipt } from "../runs/receipts.ts";
 import { money, readableModel, readableProvider, stepOutput, stepTitle } from "./look.ts";
 
 // "Maya · $3.10 of $40 this month": the asker's spend against their own Otari limit.

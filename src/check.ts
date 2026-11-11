@@ -148,7 +148,7 @@ export async function runChecks(): Promise<Result[]> {
   });
   await check("Otari guardrail", async () => {
     // A live check: a known attack must be refused by Otari's gateway, and an ordinary sentence must pass.
-    const { guardMode, readScreenKey, ensureScreening, screen } = await import("./guard.ts");
+    const { guardMode, readScreenKey, ensureScreening, screen } = await import("./rules/guard.ts");
     const { session } = await import("./otari/admin.ts");
     const mode = guardMode();
     if (mode === "off") return "off (PEEBLO_GUARD=off): text from outside the company is not screened";

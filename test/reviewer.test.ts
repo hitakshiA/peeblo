@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { argClass, modeRule, NEVER_WITHOUT_ASKING, riskOf, type Risk } from "../src/reviewer.ts";
+import { argClass, modeRule, NEVER_WITHOUT_ASKING, riskOf, type Risk } from "../src/rules/reviewer.ts";
 import { tool } from "./helpers.ts";
 
 test("riskOf: the connector's own kind wins for reads and destructive calls", () => {

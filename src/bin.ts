@@ -4,7 +4,7 @@ const command = process.argv[2] ?? "daemon";
 if (command === "daemon") await import("./main.ts");
 else if (command === "check") await (await import("./check.ts")).cli();
 else if (command === "image") await (await import("./environment/image.ts")).buildImage(process.argv[3]);
-else if (command === "slack-app") await (await import("./manager.ts")).createManagerApp();
+else if (command === "slack-app") await (await import("./crew/manager.ts")).createManagerApp();
 else {
   console.error(`unknown command: ${command}`);
   process.exit(2);

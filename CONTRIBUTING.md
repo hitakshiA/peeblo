@@ -40,6 +40,7 @@ everything. [docs/SETUP.md](docs/SETUP.md) covers the rest, including a Linux se
 | `src/slack/` | Slack: inbound events, the live reply, cards, App Home, slash commands |
 | `src/pi/`, `src/durable/` | Running a teammate's turn (Pi) and keeping runs and schedules durable (DBOS) |
 | `src/environment/` | Each teammate's computer (Gondolin micro-VMs) |
+| `src/rules/`, `src/crew/`, `src/runs/` | Who may do what and the guard; the crew (Peeblo, hiring, teammates calling teammates); schedules, triggers and receipts |
 | `skills/` | How teammates do recurring kinds of work, in plain words |
 | `config/` | Model roles (`model-tiers.json`) and notes about each connector |
 | `console/` | The browser console (React) |

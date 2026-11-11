@@ -6,7 +6,7 @@
 // card threshold waits for a person first.
 import { config } from "../config.ts";
 import { startRun } from "../durable/runs.ts";
-import { checkModel } from "../model-change.ts";
+import { checkModel } from "../crew/model-change.ts";
 import { countTokens, estimateCost } from "../otari/catalog.ts";
 import { ROLES } from "../otari/routing.ts";
 import { usd } from "../otari/spend.ts";

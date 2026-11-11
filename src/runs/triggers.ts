@@ -9,15 +9,15 @@
 //   12 h for the owner, then counts as no;
 // - each run is logged with findings none | some; a failure tells the creator.
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { seal, unseal } from "./crypto.ts";
-import { config, hookSecret } from "./config.ts";
-import { pool } from "./db.ts";
-import { startRun } from "./durable/runs.ts";
-import { newId } from "./ids.ts";
-import { appendEvent, onEvent } from "./store/events.ts";
-import { openSession, submit } from "./store/sessions.ts";
-import { getTeammate, type Teammate } from "./store/teammates.ts";
-import type { SlackPlace } from "./slack/inbound.ts";
+import { seal, unseal } from "../crypto.ts";
+import { config, hookSecret } from "../config.ts";
+import { pool } from "../db.ts";
+import { startRun } from "../durable/runs.ts";
+import { newId } from "../ids.ts";
+import { appendEvent, onEvent } from "../store/events.ts";
+import { openSession, submit } from "../store/sessions.ts";
+import { getTeammate, type Teammate } from "../store/teammates.ts";
+import type { SlackPlace } from "../slack/inbound.ts";
 
 const RUNS_PER_HOUR = config.triggerRunsPerHour;
 export type Kind = "cron" | "once" | "webhook" | "watch";
@@ -37,7 +37,7 @@ export async function outputPlace(tm: Teammate, origin: SlackPlace | null, chann
     if (!origin) return { place: {} };
     return { place: { slack: { ...origin, thread_ts: undefined, trigger_ts: undefined, direct: false } } };
   }
-  const { slack } = await import("./slack/api.ts");
+  const { slack } = await import("../slack/api.ts");
   if (!origin) return { problem: "a schedule made outside Slack can't post to a channel" };
   const info = await slack(origin.app_id, "conversations.info", { channel }).catch(() => null);
   if (!info?.channel || info.channel.is_private || info.channel.is_im) return { problem: "results can go to this conversation or to a public channel only" };
@@ -55,7 +55,7 @@ export async function createSchedule(tm: Teammate, by: string | null, s: { kind:
     [id, tm.id, session.id, s.kind, s.name, s.cron ?? null, s.runAt ?? null, s.prompt, s.place, Math.min(config.routineMaxUsd, s.budgetUsd ?? config.routineBudgetUsd), s.filter ?? {}, s.watch ?? null, by, secret ? seal(secret) : null]);
   if (s.originRequest) await pool.query("UPDATE schedules SET origin_request = $2 WHERE id = $1", [id, s.originRequest.slice(0, 4000)]);
   if (s.tz) await pool.query("UPDATE schedules SET tz = $2 WHERE id = $1", [id, s.tz]);
-  if (s.kind === "cron") { const { syncSchedules } = await import("./durable/schedules.ts"); await syncSchedules(); }
+  if (s.kind === "cron") { const { syncSchedules } = await import("../durable/schedules.ts"); await syncSchedules(); }
   await appendEvent({ type: "schedule.created", data: { schedule_id: id, teammate_id: tm.id, kind: s.kind, name: s.name, by } });
   return { id, ...(secret ? { secret } : {}) };
 }
@@ -151,7 +151,7 @@ export function filterMiss(filter: Record<string, unknown>, event: string, paylo
 export async function pollWatch(s: Schedule): Promise<"baseline" | "unchanged" | "changed" | "failed"> {
   const tm = await getTeammate(s.teammate_id);
   if (!tm || !s.watch) return "failed";
-  const { catalogFor, classify, executeTool } = await import("./connectors/mcp.ts");
+  const { catalogFor, classify, executeTool } = await import("../connectors/mcp.ts");
   const t = (await catalogFor(tm.config)).tools.find((x) => x.server === s.watch.server && x.tool === s.watch.tool);
   if (!t || classify(t, s.watch.arguments ?? {}) !== "read") return watchFailed(s, `${s.watch.server}.${s.watch.tool} isn't a read tool this teammate has any more`);
   let err = "";
@@ -193,11 +193,11 @@ async function deliverNotice(d: { schedule_id?: string; teammate_id?: string; ki
   const admin = config.admins[0] ? (await pool.query("SELECT id FROM people WHERE slack_user = $1 LIMIT 1", [config.admins[0]])).rows[0]?.id : null;
   const personId = row?.created_by ?? row?.owner_person ?? admin;
   if (!personId || !d.text) return;
-  const { getPerson } = await import("./store/people.ts");
+  const { getPerson } = await import("../store/people.ts");
   const who = await getPerson(personId);
   const app = config.managerAppId || (await pool.query("SELECT a.app_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' AND a.bot_user_id IS NOT NULL LIMIT 1")).rows[0]?.app_id;
   if (!who?.slack_user || !app) return;
-  const { slack } = await import("./slack/api.ts");
+  const { slack } = await import("../slack/api.ts");
   const dm: any = await slack(app, "conversations.open", { users: who.slack_user }).catch(() => null);
   if (!dm?.channel?.id) return;
   await appendEvent({ type: "notice.sent", data: { key, kind: d.kind ?? null, person_id: personId } });
@@ -220,7 +220,7 @@ export function installTriggers(): void {
   })().catch((e) => console.error("triggers:", (e as Error).message)), 60_000).unref();
 
   // Apps that predate a scope this version needs: ask once at start (and Slack's own answers stay in check).
-  setTimeout(() => void import("./slack/profile.ts").then((p) => p.askForReinstalls()).catch((e) => console.error("reinstall check:", (e as Error).message)), 60_000).unref();
+  setTimeout(() => void import("../slack/profile.ts").then((p) => p.askForReinstalls()).catch((e) => console.error("reinstall check:", (e as Error).message)), 60_000).unref();
 
   onEvent(async (e) => {
     if (e.type === "notify.owner") await deliverNotice(e.data as any).catch((x) => console.error("notice:", (x as Error).message));
@@ -241,7 +241,7 @@ export function installTriggers(): void {
 // A webhook payload or a watched result is outside text: screened like any tool result before it reaches a model,
 // held back when the guardrail flags it, and marked when the guardrail couldn't check it.
 async function screenedBlock(text: string, source: string): Promise<string> {
-  const { screen, wrapUntrusted, unchecked } = await import("./guard.ts");
+  const { screen, wrapUntrusted, unchecked } = await import("../rules/guard.ts");
   const s = await screen(text, null).catch(() => unchecked());
   return wrapUntrusted(text, source, s);
 }

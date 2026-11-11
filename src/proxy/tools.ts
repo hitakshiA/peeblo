@@ -13,14 +13,14 @@ import { config } from "../config.ts";
 import { ALWAYS_REFUSES, catalogFor, classify, executeTool, forgetServer, githubLimit, markUnavailable, needsApproval, outOfScope, type ConnectorTool } from "../connectors/mcp.ts";
 import { pool } from "../db.ts";
 import { askApproval, fingerprint } from "../durable/approvals.ts";
-import { argClass, modeRule, NEVER_WITHOUT_ASKING, review, riskOf } from "../reviewer.ts";
-import { screen, wrapUntrusted } from "../guard.ts";
+import { argClass, modeRule, NEVER_WITHOUT_ASKING, review, riskOf } from "../rules/reviewer.ts";
+import { screen, wrapUntrusted } from "../rules/guard.ts";
 import { newId } from "../ids.ts";
 import { appendEvent } from "../store/events.ts";
 import { getPerson } from "../store/people.ts";
 import { getSession } from "../store/sessions.ts";
 import { getTeammate, teammateAt, type Teammate } from "../store/teammates.ts";
-import { isOtariAdmin } from "../authority.ts";
+import { isOtariAdmin } from "../rules/authority.ts";
 import { countRepeat, forgetOld, identical, isLoop, LOOP_NUDGE, POLL_GAP_MS, POLL_STOP, readCache } from "./loops.ts";
 import { capResult, firewallHint, githubVisible, hintFor, mcpText, OUTSIDE, summarize, urlsIn } from "./results.ts";
 
@@ -40,7 +40,7 @@ const json = (res: ServerResponse, status: number, body: unknown) => void res.wr
 // An approval waits 30 minutes while someone is in the conversation, 12 hours for an unattended run (a schedule,
 // a trigger, or a teammate it called).
 async function approvalTtl(runId: string): Promise<number> {
-  const { isUnattended } = await import("../approvers.ts");
+  const { isUnattended } = await import("../rules/approvers.ts");
   return (await isUnattended(runId)) ? 12 * 3600 : config.approvalTtlSeconds;
 }
 
@@ -184,7 +184,7 @@ export async function handleTools(req: IncomingMessage, res: ServerResponse, b: 
     if (source && !r.isError) {
       // Only text from outside the company is screened (customer tickets and chats, web pages and scrapers, other
       // people's files, other bots): internal tools stay labelled as untrusted but cost no guard call.
-      screened = OUTSIDE.test(source) ? await screen(text, b.endUser).catch(async () => (await import("../guard.ts")).unchecked()) : null;
+      screened = OUTSIDE.test(source) ? await screen(text, b.endUser).catch(async () => (await import("../rules/guard.ts")).unchecked()) : null;
       // On the receipt: which guard checked this outside text, and what it said.
       if (screened?.checked_by) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "guard.checked", data: { checked_by: screened.checked_by, safe: !screened.flagged, source, score: screened.score, request_id: screened.requestId ?? null, ...(screened.disputed ? { disputed: screened.disputed } : {}) } }).catch(() => {});
       text = wrapUntrusted(text, source, screened);
@@ -249,7 +249,7 @@ async function runOwn(t: AgentTool, ctx: ToolContext, args: any, base: Record<st
       if (rule?.ask) base.rule = rule.ask;
       await event({ status: "waiting_approval" });
       const action = { kind: "peeblo_tool", teammate: ctx.teammate.slug, tool: t.name, arguments: args, ...(t.describe ? await t.describe(ctx, args) : {}), asked_by: ctx.person?.id ?? null, ...(outward ? { risk: outward, per_action: NEVER_WITHOUT_ASKING.includes(outward) } : {}) };
-      // Own tools ask like connector calls: unattended runs wait 12 h for the owner (approvers: src/approvers.ts).
+      // Own tools ask like connector calls: unattended runs wait 12 h for the owner (approvers: src/rules/approvers.ts).
       const a = await askApproval(ctx.runId, ctx.sessionId, action, await approvalTtl(ctx.runId));
       if (a.status !== "approved") {
         await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });
@@ -309,7 +309,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     return reply({ text: `Not allowed: ${t.server} is read-only for ${tm.config.name}. Don't try another way; write up what should change for a person (or a teammate with write access) to do.`, isError: true });
   }
   const run = async () => {
-    // The gate (src/reviewer.ts): risk class → mode rule → grant → the reviewer in Auto → a card.
+    // The gate (src/rules/reviewer.ts): risk class → mode rule → grant → the reviewer in Auto → a card.
     const risk = riskOf(t, args, kind);
     base.risk = risk;
     const blocks = Number((await pool.query("SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'review.decided' AND data->>'decision' <> 'allow'", [b.runId])).rows[0]?.n ?? 0);
@@ -323,7 +323,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
     // The approvals map (company memory): some writes are a named person's to approve, whatever the reviewer thinks.
     let mapped: { who: string[]; why: string } | null = null;
     if (kind !== "read" && b.runId && !base.plan) {
-      const { policyApprovers } = await import("../approvers.ts");
+      const { policyApprovers } = await import("../rules/approvers.ts");
       mapped = await policyApprovers(b.runId, { server: t.server, tool: t.tool, risk, arguments: args }).catch(() => null);
       if (mapped) { rule = "card"; base.rule = `${mapped.why}`; }
     }
@@ -358,7 +358,7 @@ async function runConnector(t: ConnectorTool, ctx: ToolContext, args: any, base:
         const action = { kind: "connector_call", teammate: tm.slug, server: t.server, tool: t.tool, arguments: args, server_revision: t.revision, end_user: b.endUser, risk, per_action: perAction, grant_fp: perAction ? null : toolFp, ...(base.reviewer ? { rule: `The reviewer wants a person to decide: ${base.reviewer}` } : {}), ...(mapped ? { approvers: mapped.who, rule: `Why I'm asking: ${mapped.why}` } : {}) };
         // Unattended (a schedule or trigger): only the teammate's owner can answer, and silence means no.
         const ttl = await approvalTtl(b.runId);
-        // Who may answer: src/approvers.ts (the owner when unattended, else the person who asked).
+        // Who may answer: src/rules/approvers.ts (the owner when unattended, else the person who asked).
         const a = await askApproval(b.runId, b.sessionId, action, ttl);
         if (a.status !== "approved") {
           await event({ status: a.status === "expired" ? "expired" : "denied", approval_id: a.approvalId });

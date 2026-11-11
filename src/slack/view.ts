@@ -9,7 +9,7 @@
 // Approval cards come from the harness, never from the model's prose. The server checks who clicked.
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
-import { buildReceipt } from "../receipts.ts";
+import { buildReceipt } from "../runs/receipts.ts";
 import { appendEvent, onEvent, type EventRow } from "../store/events.ts";
 import { getSession, slackPlaceOf } from "../store/sessions.ts";
 import { getTeammate } from "../store/teammates.ts";
@@ -282,7 +282,7 @@ async function budgetCard(v: View, d: any): Promise<void> {
   const ownerName = first === "the" ? "the owner" : first.charAt(0).toUpperCase() + first.slice(1);
   // The owner or an admin raises it right here; anyone else asks the owner.
   const asker = (await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [v.place.user])).rows[0];
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   const buttons = asker && mayManageTeammate(tm, asker)
     ? raiseOptions(tm.config.budget.monthly_usd, spent).map((x, i) => ({ type: "button", ...(i === 0 ? { style: "primary" } : {}), text: { type: "plain_text", text: `Raise to $${x}` }, action_id: `raise_budget:${i}`, value: `${tm.slug}:${x}${v.runId ? `:${v.runId}` : ""}` }))
     : [{ type: "button", style: "primary", text: { type: "plain_text", text: `Ask ${ownerName} for more` }, action_id: "ask_budget", value: tm.slug }];
@@ -347,7 +347,7 @@ async function outcomeBlocks(d: any, runId: string | null): Promise<any[]> {
     const phrase = row ? alwaysPhrase(row.action) : null;
     const tm = row ? await getTeammate(row.action.teammate) : null;
     const person = d.by ? (await pool.query("SELECT * FROM people WHERE id = $1", [d.by])).rows[0] : null;
-    const { mayManageTeammate } = await import("../authority.ts");
+    const { mayManageTeammate } = await import("../rules/authority.ts");
     if (!phrase || !tm || !person || !mayManageTeammate(tm, person)) return [approved];
     return [approved, { type: "actions", block_id: `always:${d.approval_id}`, elements: [{ type: "button", text: { type: "plain_text", text: phrase.replace(/\?$/, "") }, action_id: "always_allow", value: d.approval_id }] }];
   }

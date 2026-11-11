@@ -91,7 +91,7 @@ async function teammateFor(nameOrUser: string): Promise<Teammate | null> {
 }
 
 async function mayEdit(tm: Teammate, who: Person): Promise<string | null> {
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   return mayManageTeammate(tm, who) ? null : `Only ${tm.config.name}'s owner or an admin can change its settings.`;
 }
 
@@ -144,11 +144,11 @@ async function saveSettings(team: string, user: string, slug: string, values: an
     connectors: v("connectors") ? (v("connectors").selected_options ?? []).map((o: any) => o.value) : tm.config.connectors,
     size: v("size")?.selected_option?.value ?? tm.config.computer?.size ?? "small",
   };
-  const { configProblems } = await import("../hire-rules.ts");
+  const { configProblems } = await import("../rules/hire-rules.ts");
   const bad = await configProblems(who, { mode: next.mode, model: next.model !== tm.config.model.default ? next.model : null, budget_usd: next.budget !== tm.config.budget.monthly_usd ? next.budget : null, tools: next.tools, connectors: next.connectors });
   if (bad) return { [/model/i.test(bad) ? "model" : /budget/i.test(bad) ? "budget" : /YOLO/i.test(bad) ? "mode" : /tool/i.test(bad) ? "tools" : "connectors"]: bad.slice(0, 150) };
   if (next.model !== tm.config.model.default) {
-    const { changeModel } = await import("../model-change.ts");
+    const { changeModel } = await import("../crew/model-change.ts");
     try { await changeModel(tm.slug, { model: next.model, fallback: tm.config.model.fallback ?? null, personId: who.id, why: "settings modal" }); }
     catch (e) { return { model: (e as Error).message.slice(0, 150) }; }
   }

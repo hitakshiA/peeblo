@@ -12,7 +12,7 @@ import { issueToken, proxyBaseUrl, revokeToken, toolsBaseUrl } from "../proxy/re
 import { getSession } from "../store/sessions.ts";
 import { secretNames } from "../store/secrets.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
-import { skillsPrompt } from "../skills.ts";
+import { skillsPrompt } from "../crew/skills.ts";
 import { PiRpc } from "./rpc.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -96,7 +96,7 @@ async function spawnPi(sessionId: string, tm: Teammate): Promise<Live> {
   const child = spawn(process.execPath, [PI_CLI, "--mode", "rpc",
     "--no-extensions", "-e", PI_OTARI, "-e", PEEBLO_TOOLS,
     "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
-    // Skills are listed in the system prompt and opened with read_skill (src/skills.ts); they live on the host and
+    // Skills are listed in the system prompt and opened with read_skill (src/crew/skills.ts); they live on the host and
     // the teammate can read them, never edit them.
     "--session-dir", join(dir, "sessions"), "--session-id", await piSessionId(sessionId),
     "--system-prompt", promptFile,

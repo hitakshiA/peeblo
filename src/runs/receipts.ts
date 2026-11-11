@@ -1,8 +1,8 @@
 // A receipt is a fold over a run's model.call events: what it cost, which models and providers answered,
 // how many calls and attempts, and whether anything fell back. Nothing here is stored separately.
-import { requestUsage } from "./otari/client.ts";
-import { runEvents } from "./store/events.ts";
-import { receiptLinks } from "./otari/traces.ts";
+import { requestUsage } from "../otari/client.ts";
+import { runEvents } from "../store/events.ts";
+import { receiptLinks } from "../otari/traces.ts";
 
 export type Receipt = {
   run_id: string; calls: number; cost_usd: number; prompt_tokens: number; cached_tokens: number; completion_tokens: number;

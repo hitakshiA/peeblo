@@ -3,8 +3,8 @@
 // talks and drafts, and the ID card is the one approval, on the finished result.
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
-import { callTeammate } from "../chains.ts";
-import { mayManageTeammate } from "../authority.ts";
+import { callTeammate } from "../crew/chains.ts";
+import { mayManageTeammate } from "../rules/authority.ts";
 import { teammateSpend, usd } from "../otari/spend.ts";
 import { appendEvent } from "../store/events.ts";
 import { submit, slackPlaceOf } from "../store/sessions.ts";
@@ -12,8 +12,8 @@ import { createTeammate, getTeammate, listTeammates, updateTeammate, validateCon
 import { ownApp } from "../ingress/apps.ts";
 import { createTeammateApp } from "../slack/admin.ts";
 import { offerOnCard } from "../slack/install.ts";
-import { configProblems } from "../hire-rules.ts";
-import { changeModel } from "../model-change.ts";
+import { configProblems } from "../rules/hire-rules.ts";
+import { changeModel } from "../crew/model-change.ts";
 import { ROLES } from "../otari/routing.ts";
 import { COLORS, facePng, idCardHeroPng, idCardPng, pickFace, publishCard, SHAPES } from "../slack/idcard.ts";
 import { object } from "./schema.ts";
@@ -50,7 +50,7 @@ const hireSpec = {
 // fallback (and, for the heavy role, the step-down to a cheaper model as its budget runs down).
 async function keepModelIfNamed(runId: string | null, a: any): Promise<void> {
   if (!a.model || !runId) return;
-  const { personWords } = await import("../approvers.ts");
+  const { personWords } = await import("../rules/approvers.ts");
   const said = (await personWords(runId)).asks.join(" ").toLowerCase();
   const parts = String(a.model).toLowerCase().split(/[/:_\s-]+/).filter((p) => p.length >= 3 && !/^\d/.test(p));
   if (!parts.some((p) => said.includes(p))) a.model = null;
@@ -97,7 +97,7 @@ export const managerTools: AgentTool[] = [
     describe: async (_ctx, a) => ({ summary: `Retire ${a.teammate}: ${String(a.reason).slice(0, 160)}`, risk: "destructive", per_action: true }),
     async run(ctx, a) {
       const t = (await findTeammate(a.teammate))!;
-      const { retireTeammate } = await import("../retire.ts");
+      const { retireTeammate } = await import("../crew/retire.ts");
       const r = await retireTeammate(t.id, { personId: ctx.person?.id ?? null, label: `${ctx.person?.display_name ?? "someone"}: ${a.reason}` });
       return r.ok ? { text: `Retired ${t.config.name}: ${r.steps.join("; ")}.` } : { text: r.steps.join("; "), isError: true };
     },
@@ -130,11 +130,11 @@ export const managerTools: AgentTool[] = [
       if (!ctx.person) return "Hiring needs a person to own the teammate.";
       await keepModelIfNamed(ctx.runId, a);
       try { validateConfig(configFrom(a)); } catch (e) { return `The spec isn't valid: ${(e as Error).message}`; }
-      // The authority rules (src/hire-rules.ts): YOLO for admins, an allowed model, a budget within the hirer's tier.
+      // The authority rules (src/rules/hire-rules.ts): YOLO for admins, an allowed model, a budget within the hirer's tier.
       const bad = await configProblems(ctx.person, { mode: a.mode, model: a.model || null, budget_usd: a.budget_usd, tools: a.tools ?? [], connectors: a.connectors ?? [] });
       if (bad) return bad;
       const { config } = await import("../config.ts");
-      const { isOtariAdmin } = await import("../authority.ts");
+      const { isOtariAdmin } = await import("../rules/authority.ts");
       if (config.memberHires > 0 && !isOtariAdmin(ctx.person)) {
         const mine = (await pool.query("SELECT count(*)::int AS n FROM teammates WHERE owner_person = $1 AND archived_at IS NULL", [ctx.person.id])).rows[0].n;
         if (mine >= config.memberHires) return `You already have ${mine} teammate${mine === 1 ? "" : "s"}, the most one person can keep here (${config.memberHires}). Retire one first (ask me to retire it), then hire the new one.`;
@@ -230,7 +230,7 @@ export const managerTools: AgentTool[] = [
       if (!t) return `There's no teammate called ${a.teammate}; crew_status lists them.`;
       if (!mayManageTeammate(t, ctx.person)) return `Only ${t.config.name}'s owner or an admin can change it.`;
       const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
-      // The same authority rules as a hire (src/hire-rules.ts).
+      // The same authority rules as a hire (src/rules/hire-rules.ts).
       return configProblems(ctx.person, {
         mode: a.field === "mode" ? a.value : null, model: a.field === "model" ? a.value : null,
         budget_usd: a.field === "budget_usd" ? Number(a.value) : null,

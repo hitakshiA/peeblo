@@ -10,7 +10,7 @@ import { onEvent } from "../store/events.ts";
 import { personForSlack } from "../store/people.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 import { slack } from "./api.ts";
-import { askedLabel, cutWords } from "../asked.ts";
+import { askedLabel, cutWords } from "../runs/asked.ts";
 
 const viewers = new Map<string, { appId: string; teammateId: string; user: string; at: number; last: number; timer?: NodeJS.Timeout }>();
 
@@ -24,7 +24,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   const c = tm.config;
   const team = String((await getApp(appId))?.team_id ?? "");
   const viewer = await personForSlack(team, user);
-  const { mayManageTeammate, isOtariAdmin } = await import("../authority.ts");
+  const { mayManageTeammate, isOtariAdmin } = await import("../rules/authority.ts");
   const manager = mayManageTeammate(tm, viewer);
   const paused = Boolean((await pool.query("SELECT paused_at FROM teammates WHERE id = $1", [tm.id])).rows[0]?.paused_at);
   const running = (await pool.query(
@@ -76,7 +76,7 @@ export async function homeBlocks(appId: string, tm: Teammate, user: string): Pro
   blocks.push({ type: "header", text: { type: "plain_text", text: "Recent" } });
   const lines: string[] = [];
   for (const r of recent) {
-    const { buildReceipt } = await import("../receipts.ts");
+    const { buildReceipt } = await import("../runs/receipts.ts");
     // The receipt's own total (model calls plus code execution), so Home and the reply's footer agree.
     const rec = await buildReceipt(r.id).catch(() => null);
     const link = rec?.links?.session ?? null;

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
-import { guardMode } from "../guard.ts";
+import { guardMode } from "../rules/guard.ts";
 import { restartSoon, saveSettings } from "../settings.ts";
 import { bad, type Router } from "./http.ts";
 
@@ -163,7 +163,7 @@ export function addSetupRoutes(router: Router): void {
     })
     .add("POST", "/v1/setup/slack-app", async () => {
       if (!config.publicUrl) throw bad("Set the public address first: Slack sends Peeblo's events there.");
-      const { ensureManager, MANAGER } = await import("../manager.ts");
+      const { ensureManager, MANAGER } = await import("../crew/manager.ts");
       await ensureManager();
       const existing = await peebloApp();
       if (existing) { const st = await setupState(); return { install_url: st.slack.install_url, installed: st.slack.installed }; }

@@ -10,7 +10,7 @@ async function tickFn(scheduledAt: Date, scheduleId: string): Promise<void> {
     const { rows } = await pool.query<ScheduleRow>("SELECT id, session_id, cron, prompt, created_by FROM schedules WHERE id = $1 AND enabled", [scheduleId]);
     if (!rows[0]) return;
     // Through the triggers module: the hourly cap, the "anything to report?" framing, findings logged.
-    const { fire } = await import("../triggers.ts");
+    const { fire } = await import("../runs/triggers.ts");
     const full = (await pool.query("SELECT * FROM schedules WHERE id = $1", [scheduleId])).rows[0];
     await fire(full, "", "schedule", scheduledAt.toISOString());
   }, { name: "post" });

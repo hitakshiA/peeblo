@@ -4,8 +4,8 @@
 // - Unattended work (a schedule or trigger, or a teammate it called): the teammate's owner (silence means no).
 // - Everything else: the person who asked, else the owner.
 // An approval with no one able to answer it falls back to the admins, never to "anyone".
-import { config } from "./config.ts";
-import { pool } from "./db.ts";
+import { config } from "../config.ts";
+import { pool } from "../db.ts";
 
 const UNATTENDED = new Set(["schedule", "webhook"]);
 

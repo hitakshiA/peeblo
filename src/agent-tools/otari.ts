@@ -1,8 +1,8 @@
 // The Otari features a teammate chooses to use. Reads run at once; otari_set_* are admin-only,
 // always wait for a person's yes, and are read back from Otari before the tool reports success.
-import { isOtariAdmin } from "../authority.ts";
+import { isOtariAdmin } from "../rules/authority.ts";
 import { config } from "../config.ts";
-import { guardMode, lakeraMandate, lakeraProject, setLakera } from "../guard.ts";
+import { guardMode, lakeraMandate, lakeraProject, setLakera } from "../rules/guard.ts";
 import { routingPolicies, session, setWebSearch, upsertRoutingPolicy, webSearch, mcpServers } from "../otari/admin.ts";
 import { estimateCost, isOpenWeight, modelFacts, models, openWeightModels, tierFile, tierOf } from "../otari/catalog.ts";
 import { otari } from "../otari/client.ts";
@@ -96,7 +96,7 @@ export const otariTools: AgentTool[] = [
       const { pool: db } = await import("../db.ts");
       const keyNames = new Map((await db.query<{ key_id: string; slug: string }>("SELECT k.key_id, t.slug FROM teammate_keys k JOIN teammates t ON t.id = k.teammate_id")).rows.map((r) => [r.key_id, names.get(r.slug) ?? r.slug]));
       const { config } = await import("../config.ts");
-      const { readScreenKey } = await import("../guard.ts");
+      const { readScreenKey } = await import("../rules/guard.ts");
       const screenKey = readScreenKey()?.id;
       const isCore = (g: { label: string | null }) => Boolean(coreLabel && g.label === coreLabel);
       const coreLabel = await (async () => { try { const { admin } = await import("../otari/admin.ts"); const r: any = await admin("GET", "/organizations/me/keys", undefined, "listing keys", ""); return ((r.data ?? r) as any[]).find((k) => k.key_prefix && config.otariKey.startsWith(k.key_prefix) && config.otariKey.endsWith(k.key_suffix ?? ""))?.key_name ?? null; } catch { return null; } })();

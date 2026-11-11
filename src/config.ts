@@ -53,7 +53,7 @@ export const config = {
   traceContent: (process.env.PEEBLO_TRACE_CONTENT ?? "off").trim() === "keep",
   webFetch: (process.env.PEEBLO_WEB_FETCH ?? "on") !== "off",
   vision: (process.env.PEEBLO_VISION ?? "on") !== "off",
-  guard: process.env.PEEBLO_GUARD ?? "lakera",                       // lakera | open | off (see src/guard.ts)
+  guard: process.env.PEEBLO_GUARD ?? "lakera",                       // lakera | open | off (see src/rules/guard.ts)
   decisionModel: process.env.PEEBLO_DECISION_MODEL ?? "typesafe:jev-latest",   // used when Otari has a decision provider
   judgeModel: process.env.PEEBLO_JUDGE_MODEL ?? "peeblo-judge",                 // the judge-role routing policy
   guardProfile: process.env.PEEBLO_GUARD_PROFILE ?? "peeblo-lakera",  // the org guardrail's profile in Otari

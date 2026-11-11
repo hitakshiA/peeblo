@@ -1,7 +1,7 @@
 // The approval card, drawn by code, never by the model, shaped like the landing page:
 // the service's icon, "Okay to write to Linear?", one quiet line ("Writes 1 comment · GRO-323 · ≈ $0.0002"), and
 // Approve / Not now. "Not now" opens a small form: a reason (optional), or approve with edits, or for the whole job.
-import { approverNames } from "../approvers.ts";
+import { approverNames } from "../rules/approvers.ts";
 import { atlassianName, money, serviceIcon, serviceName } from "./look.ts";
 
 const DOMAINS: Record<string, string> = { linear: "linear.app", github: "github.com", posthog: "posthog.com", stripe: "stripe.com", hubspot: "hubspot.com", notion: "notion.so", sheets: "google.com", intercom: "intercom.com", freshdesk: "freshdesk.com", supabase: "supabase.com", airtable: "airtable.com" };

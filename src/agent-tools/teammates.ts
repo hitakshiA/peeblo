@@ -1,7 +1,7 @@
 // Asking another teammate: what you need and in what shape, never how. The asker and payer come from this
-// conversation; depth, call count and spend caps are code (src/chains.ts). Teammates ask each other for
+// conversation; depth, call count and spend caps are code (src/crew/chains.ts). Teammates ask each other for
 // intelligence; writes stay with the teammate whose job they are.
-import { answerOf, callTeammate } from "../chains.ts";
+import { answerOf, callTeammate } from "../crew/chains.ts";
 import { findTeammate } from "./manager.ts";
 import { object } from "./schema.ts";
 import type { AgentTool } from "./types.ts";

@@ -51,7 +51,7 @@ export async function signIn(email: string, password: string): Promise<{ orgId: 
   // With a session, Peeblo's role routing policies can be made (or brought up to date) in Otari.
   void import("./routing.ts").then((r) => r.syncRolePolicies()).catch(() => null);
   void import("./mcp-access.ts").then((m) => m.syncAllAccess()).catch(() => null);
-  void import("../guard.ts").then((g) => g.ensureScreening()).catch((e) => console.error("screening setup:", (e as Error).message));
+  void import("../rules/guard.ts").then((g) => g.ensureScreening()).catch((e) => console.error("screening setup:", (e as Error).message));
   return { orgId: org.organization.id, workspaceId, expiresAt };
 }
 

@@ -42,7 +42,7 @@ async function updateCard(approvalId: string, text: string | null): Promise<void
 
 // Who may answer an approval, for the "only X can answer" reply.
 async function namesFor(approvalId: string): Promise<string> {
-  const { approverNames } = await import("../approvers.ts");
+  const { approverNames } = await import("../rules/approvers.ts");
   const ids = (await pool.query("SELECT action->'approvers' AS a FROM approvals WHERE id = $1", [approvalId])).rows[0]?.a ?? [];
   return approverNames(ids);
 }
@@ -104,7 +104,7 @@ async function editForm(_appId: string, payload: any): Promise<void> {
 // Settings (App Home, the hire card): the settings modal, for the owner or an admin.
 async function openSettings({ appId, payload, a, who }: Click): Promise<void> {
   const tm = await getTeammate(String(a.value));
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   if (!tm || !mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${tm?.config.name ?? "its"} owner or an admin can change its settings.` }).catch(() => {}));
   const { settingsModal } = await import("./commands.ts");
   await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: await settingsModal(tm) });
@@ -114,7 +114,7 @@ async function openSettings({ appId, payload, a, who }: Click): Promise<void> {
 async function openNotNow({ appId, payload, a, who }: Click): Promise<void> {
   const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
   if (row?.status !== "pending") return;
-  if (!(row.action.approvers ?? []).includes(who.id) && !(await (await import("../approvers.ts")).adminIds()).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
+  if (!(row.action.approvers ?? []).includes(who.id) && !(await (await import("../rules/approvers.ts")).adminIds()).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
   const tm = await getTeammate(row.action.teammate);
   const { notNowModal } = await import("./approval-card.ts");
   await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: notNowModal(row.action, String(a.value), tm?.config.name ?? "the teammate") });
@@ -124,7 +124,7 @@ async function openNotNow({ appId, payload, a, who }: Click): Promise<void> {
 async function alwaysAllow({ appId, payload, a, who }: Click): Promise<void> {
   const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [a.value])).rows[0];
   const tm = row ? await getTeammate(row.action.teammate) : null;
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   if (!row?.action?.grant_fp || !tm) return;
   if (!mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${tm.config.name}'s owner can allow this for good.` }));
   const exists = (await pool.query("SELECT 1 FROM grants WHERE teammate_id = $1 AND fingerprint = $2 AND scope = 'always' LIMIT 1", [tm.id, row.action.grant_fp])).rows.length;
@@ -146,7 +146,7 @@ async function openReceipt({ appId, payload, a }: Click): Promise<void> {
 async function openEdit({ appId, payload, a, who }: Click): Promise<void> {
   const row = (await pool.query("SELECT action, status FROM approvals WHERE id = $1", [a.value])).rows[0];
   if (row?.status !== "pending") return;
-  if (!(row.action.approvers ?? []).includes(who.id) && !(await (await import("../approvers.ts")).adminIds()).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
+  if (!(row.action.approvers ?? []).includes(who.id) && !(await (await import("../rules/approvers.ts")).adminIds()).includes(who.id)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${await namesFor(String(a.value))} can answer this one.` }));
   const tm = await getTeammate(row.action.teammate);
   const { editModal } = await import("./approval-card.ts");
   await slack(appId, "views.open", { trigger_id: payload.trigger_id, view: editModal(row.action, String(a.value), tm?.config.name ?? "the teammate") });
@@ -166,7 +166,7 @@ async function answerCard({ payload, a, who }: Click): Promise<void> {
 
 // App Home controls. Stop: anyone who may see the job. Schedules and pausing: the owner or an admin.
 async function homeControl({ appId, payload, a, who }: Click): Promise<void> {
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   let tmId: string | null = null;
   if (a.action_id === "stop_run") {
     const r = (await pool.query("SELECT r.session_id, s.teammate_id, sub.person_id FROM runs r JOIN sessions s ON s.id = r.session_id JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [a.value])).rows[0];
@@ -234,10 +234,10 @@ async function budgetClick({ appId, payload, a, who }: Click): Promise<void> {
   const [slug, amount, blockedRun] = String(a.value).split(":");
   const tm = await getTeammate(slug);
   if (!tm) return;
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   if (a.action_id === "raise_budget") {
     if (!mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: `Only ${tm.config.name}'s owner or an admin can raise its budget.` }).catch(() => {}));
-    const { configProblems } = await import("../hire-rules.ts");
+    const { configProblems } = await import("../rules/hire-rules.ts");
     const bad = await configProblems(who, { budget_usd: Number(amount) });
     if (bad) return void (await respond(payload.response_url, { response_type: "ephemeral", replace_original: false, text: bad }).catch(() => {}));
     const { updateTeammate } = await import("../store/teammates.ts");
@@ -273,7 +273,7 @@ async function budgetClick({ appId, payload, a, who }: Click): Promise<void> {
 async function verifyClick({ payload, a, who }: Click): Promise<void> {
   const [slug, bank, ...rest] = String(a.value).split("|");
   const tm = await getTeammate(slug);
-  const { mayManageTeammate } = await import("../authority.ts");
+  const { mayManageTeammate } = await import("../rules/authority.ts");
   if (!tm || !mayManageTeammate(tm, who)) return void (await respond(payload.response_url, { response_type: "ephemeral", text: "Only this teammate's owner or an admin can verify its memory." }));
   const { verifyNote } = await import("../memory/store.ts");
   verifyNote(slug, bank, rest.join("|"));
@@ -334,7 +334,7 @@ export function installSlackInteractions(): void {
       const asker = s ? (await pool.query("SELECT sub.person_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.session_id = $1 AND r.status IN ('queued', 'running', 'waiting') ORDER BY r.created_at DESC LIMIT 1", [s.id])).rows[0] : null;
       const who = event.user ? (await pool.query("SELECT * FROM people WHERE slack_user = $1", [event.user])).rows[0] : null;
       const tm = await getTeammate(teammateId);
-      const { mayManageTeammate } = await import("../authority.ts");
+      const { mayManageTeammate } = await import("../rules/authority.ts");
       const allowed = !asker || (who && (asker.person_id === who.id || (tm && mayManageTeammate(tm, who))));
       if (s && allowed) {
         const { stopSession } = await import("../pi/sessions.ts");
@@ -379,7 +379,7 @@ async function homeExtra(appId: string, teammateId: string, user: string): Promi
   const tm = await getTeammate(teammateId);
   if (tm?.slug !== "peeblo") return [];
   const viewer = await personForSlack(String((await getApp(appId))?.team_id ?? ""), user);
-  const { isOtariAdmin } = await import("../authority.ts");
+  const { isOtariAdmin } = await import("../rules/authority.ts");
   const { waitingInstalls } = await import("./install.ts");
   const w = await waitingInstalls(viewer.id, isOtariAdmin(viewer)).catch(() => []);
   return w.length ? [...w, { type: "divider" }] : [];

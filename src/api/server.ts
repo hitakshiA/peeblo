@@ -13,9 +13,9 @@ import { getRun, getSession, openSession, submit, type SessionKind } from "../st
 import { createTeammate, getTeammate, listTeammates, teammateVersions, updateTeammate } from "../store/teammates.ts";
 import { listApps, saveApp } from "../ingress/apps.ts";
 import { exec as vmExec, sleep as vmSleep } from "../environment/controller.ts";
-import { buildReceipt, receiptLine } from "../receipts.ts";
+import { buildReceipt, receiptLine } from "../runs/receipts.ts";
 import { personForSlack } from "../store/people.ts";
-import { changeModel, ModelChangeRefused } from "../model-change.ts";
+import { changeModel, ModelChangeRefused } from "../crew/model-change.ts";
 import { secretNames, setSecret } from "../store/secrets.ts";
 import { bad, notFound, readJson, Router, send } from "./http.ts";
 import { addConsoleRoutes, consoleCookie, consolePerson, login, logout, serveConsole } from "./console.ts";
@@ -42,7 +42,7 @@ const router = new Router()
     const { note, ...patch } = body ?? {};
     // The same checks as a change by talking (the console acts as the first admin); a model goes through /model.
     if ((patch as any).model) throw bad("change the model with POST /v1/teammates/:slug/model (it checks the model and who asks)");
-    const { configProblems } = await import("../hire-rules.ts");
+    const { configProblems } = await import("../rules/hire-rules.ts");
     const admin = config.admins[0] ? (await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [config.admins[0]])).rows[0] ?? { slack_user: config.admins[0] } : null;
     const problem = await configProblems(admin, { mode: (patch as any).mode, budget_usd: (patch as any).budget?.monthly_usd, tools: (patch as any).tools, connectors: (patch as any).connectors });
     if (problem) throw bad(problem);
@@ -105,7 +105,7 @@ const router = new Router()
     const { pool } = await import("../db.ts");
     const s = (await pool.query("SELECT * FROM schedules WHERE id = $1", [params.id])).rows[0];
     if (!s) throw notFound("schedule");
-    const T = await import("../triggers.ts");
+    const T = await import("../runs/triggers.ts");
     if (s.kind === "watch") return { result: await T.pollWatch(s) };
     return { run_id: await T.fire(s, "", "schedule", `now-${Date.now()}`) };
   })

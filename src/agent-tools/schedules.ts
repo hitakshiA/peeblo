@@ -1,16 +1,16 @@
 // Schedules, webhook triggers and watches: the teammate writes the prompt each run follows, including how to
-// decide whether anything is worth reporting. Code holds the rails (src/triggers.ts).
+// decide whether anything is worth reporting. Code holds the rails (src/runs/triggers.ts).
 import { config, hookSecret } from "../config.ts";
 import { pool } from "../db.ts";
 import { getSession } from "../store/sessions.ts";
-import { createSchedule, cronProblem, hookUrl, outputPlace } from "../triggers.ts";
+import { createSchedule, cronProblem, hookUrl, outputPlace } from "../runs/triggers.ts";
 import { object } from "./schema.ts";
 import type { AgentTool, ToolContext } from "./types.ts";
 
 // The person's own words behind this schedule (what the reviewer counts as intent for its runs).
 const originRequest = async (ctx: ToolContext) => {
   if (!ctx.runId) return null;
-  const { personWords } = await import("../approvers.ts");
+  const { personWords } = await import("../rules/approvers.ts");
   return (await personWords(ctx.runId)).asks.join("\n") || null;
 };
 const origin = async (ctx: ToolContext) => ((await getSession(ctx.sessionId))?.place as any)?.slack ?? null;
@@ -23,7 +23,7 @@ async function setEnabled(ctx: ToolContext, id: string, on: boolean | null): Pro
   // Only the person who set it up, the teammate's owner or an admin may pause, resume or remove a schedule.
   const sc = (await pool.query("SELECT created_by FROM schedules WHERE id = $1 AND teammate_id = $2", [id, ctx.teammate.id])).rows[0];
   if (!sc) return `No schedule ${id}.`;
-  const { isOtariAdmin } = await import("../authority.ts");
+  const { isOtariAdmin } = await import("../rules/authority.ts");
   const p = ctx.person?.id ?? null;
   if (!p || !(p === sc.created_by || p === ctx.teammate.owner_person || isOtariAdmin(ctx.person))) return `Only the person who set up ${id}, ${ctx.teammate.config.name}'s owner or an admin can change it.`;
   const r = on === null

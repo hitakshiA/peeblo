@@ -9,7 +9,7 @@ import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { appendEvent } from "../store/events.ts";
 import { handleTools } from "./tools.ts";
-import { freshLakeraState, guardrailRefusal } from "../guard.ts";
+import { freshLakeraState, guardrailRefusal } from "../rules/guard.ts";
 import { budgetRefusal } from "../otari/people.ts";
 import { estimateCost, roughTokens } from "../otari/catalog.ts";
 import { modelFor, ROLES } from "../otari/routing.ts";

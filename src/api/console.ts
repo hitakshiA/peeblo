@@ -7,9 +7,9 @@ import { extname, join, normalize } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
-import { buildReceipt, receiptLine } from "../receipts.ts";
+import { buildReceipt, receiptLine } from "../runs/receipts.ts";
 import { getTeammate, listTeammates } from "../store/teammates.ts";
-import { askedLabel } from "../asked.ts";
+import { askedLabel } from "../runs/asked.ts";
 import { bad, notFound, type Router } from "./http.ts";
 
 const COOKIE = "peeblo_console";
@@ -136,7 +136,7 @@ export function addConsoleRoutes(router: Router): void {
     .add("GET", "/v1/otari", async () => {
       // A mirror of Otari for this Peeblo: what is set, what is missing, and where to change it in Otari's dashboard.
       const { links } = await import("../otari/links.ts");
-      const { lakeraMandate } = await import("../guard.ts");
+      const { lakeraMandate } = await import("../rules/guard.ts");
       const { rolePoliciesInOtari, ROLES, rolePoliciesReady } = await import("../otari/routing.ts");
       const { webSearch, session } = await import("../otari/admin.ts");
       const s = await session();

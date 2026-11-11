@@ -2,13 +2,13 @@
 // or because a person asked. Code checks the open-weight allowlist, the requester's authority and the budget,
 // writes a new config version (new sessions pick it up), and, if the person wants it now, moves one running
 // session onto it; that session's next turn starts with a note, and its system prompt is never edited.
-import { mayManageTeammate } from "./authority.ts";
-import { estimateCost, isOpenWeight, models } from "./otari/catalog.ts";
-import { ROLES } from "./otari/routing.ts";
-import { teammateSpend, usd } from "./otari/spend.ts";
-import { appendEvent } from "./store/events.ts";
-import { getPerson } from "./store/people.ts";
-import { getTeammate, updateTeammate, type Teammate } from "./store/teammates.ts";
+import { mayManageTeammate } from "../rules/authority.ts";
+import { estimateCost, isOpenWeight, models } from "../otari/catalog.ts";
+import { ROLES } from "../otari/routing.ts";
+import { teammateSpend, usd } from "../otari/spend.ts";
+import { appendEvent } from "../store/events.ts";
+import { getPerson } from "../store/people.ts";
+import { getTeammate, updateTeammate, type Teammate } from "../store/teammates.ts";
 
 export class ModelChangeRefused extends Error {
   status = 403;

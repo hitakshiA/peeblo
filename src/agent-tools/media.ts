@@ -128,7 +128,7 @@ export const checkTextTool: AgentTool = {
   input_schema: object({ text: { type: "string", description: "The pasted text, as it was given." } }),
   kind: "read",
   async run(ctx, a) {
-    const { screen } = await import("../guard.ts");
+    const { screen } = await import("../rules/guard.ts");
     const s = await screen(String(a.text), ctx.endUser).catch((e) => { throw new Error(`the guardrail couldn't check it: ${(e as Error).message}`); });
     if (s.checked_by) {
       const { appendEvent } = await import("../store/events.ts");

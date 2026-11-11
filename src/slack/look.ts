@@ -3,7 +3,7 @@
 // a one-line summary when done ("Read Linear, searched GitHub"), and the receipt chip (model logo, readable model
 // name, provider, calls, cost). Code draws all of it; the model never writes a receipt.
 import { config } from "../config.ts";
-import type { Receipt } from "../receipts.ts";
+import type { Receipt } from "../runs/receipts.ts";
 
 const SERVICES: Record<string, string> = {
   linear: "Linear", github: "GitHub", posthog: "PostHog", stripe: "Stripe", supabase: "Supabase", intercom: "Intercom",

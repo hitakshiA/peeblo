@@ -16,7 +16,7 @@ import { TurnTimeout } from "./rpc.ts";
 import { live, personSteers, piFor, touch, type Live } from "./sessions.ts";
 import { feedbackNote, liveThreadsNote, otariToolNote, personNote, rosterNote } from "./notes.ts";
 import { stopCheck } from "./stop-check.ts";
-import { blockedReply, freshLakeraState, guardMode, screenOpen } from "../guard.ts";
+import { blockedReply, freshLakeraState, guardMode, screenOpen } from "../rules/guard.ts";
 
 // A session keeps the config version it started with: instructions, model and tools don't change under a
 // running conversation. A person can move a session onto a newer version now (a takeover); the next turn
