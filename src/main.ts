@@ -35,9 +35,19 @@ installPiExecutor();
   (await import("./memory/work.ts")).installWorkMemory();
   // Stop in a thread stops every teammate working there (the whole chain).
   const { threadSessions } = await import("./crew/chains.ts");
+  // A job waiting on an approval card isn't running a model call, so its pending cards are expired too.
   setStopHandler(async (sid) => {
     let any = false;
-    for (const s of await threadSessions(sid)) any = (await stopSession(s)) || any;
+    const { pool } = await import("./db.ts");
+    const { expireApproval } = await import("./durable/approvals.ts");
+    for (const s of await threadSessions(sid)) {
+      any = (await stopSession(s)) || any;
+      const { rows } = await pool.query<{ id: string }>(
+        "SELECT a.id FROM approvals a JOIN runs r ON r.id = a.run_id WHERE r.session_id = $1 AND a.status = 'pending'",
+        [s],
+      );
+      for (const a of rows) any = (await expireApproval(a.id)).ok || any;
+    }
     return any;
   });
   const { ensureManager, installHireWelcome } = await import("./crew/manager.ts");

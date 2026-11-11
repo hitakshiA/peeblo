@@ -147,14 +147,28 @@ export function installSlackInbound(): void {
       // Only the person who asked for the running job, the teammate's owner or an admin can stop it (the stop
       // tool's rule); anyone else is told whose job it is, privately.
       const { threadSessions } = await import("../crew/chains.ts");
-      const sids = await threadSessions(session.id).catch(() => [session.id]);
-      const active = (
-        await pool.query(
-          `SELECT r.id, sub.person_id, p.display_name, p.slack_user, s.teammate_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id
+      let sids = await threadSessions(session.id).catch(() => [session.id]);
+      const activeIn = async (ids: string[]) =>
+        (
+          await pool.query(
+            `SELECT r.id, r.session_id, sub.person_id, p.display_name, p.slack_user, s.teammate_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id
         JOIN sessions s ON s.id = r.session_id LEFT JOIN people p ON p.id = sub.person_id WHERE r.session_id = ANY($1) AND r.status IN ('queued', 'running', 'waiting')`,
-          [sids],
-        )
-      ).rows;
+            [ids],
+          )
+        ).rows;
+      let active = await activeIn(sids);
+      // "stop" sent as a new DM message, not in the job's thread: it means the jobs running in this DM.
+      if (!active.length && dm && !ev.thread_ts) {
+        const others = (
+          await pool.query("SELECT id FROM sessions WHERE teammate_id = $1 AND place_key LIKE $2 AND id <> $3", [
+            teammateId,
+            `${ev.channel}:%`,
+            session.id,
+          ])
+        ).rows.map((r) => r.id as string);
+        active = others.length ? await activeIn(others) : [];
+        if (active.length) sids = [...new Set(active.map((r) => r.session_id as string))];
+      }
       if (active.length) {
         const me = (await pool.query("SELECT * FROM people WHERE slack_user = $1", [ev.user])).rows[0];
         const { getTeammate } = await import("../store/teammates.ts");
@@ -177,7 +191,9 @@ export function installSlackInbound(): void {
           return;
         }
       }
-      const stopped = stopHandler ? await stopHandler(session.id) : false;
+      let stopped = false;
+      for (const sid of sids.includes(session.id) ? [session.id] : sids)
+        stopped = (stopHandler ? await stopHandler(sid) : false) || stopped;
       await appendEvent({ sessionId: session.id, type: "slack.stop", data: { user: ev.user, stopped } });
       return;
     }
