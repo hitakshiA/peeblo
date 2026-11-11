@@ -11,7 +11,8 @@ import { startApi } from "./api/server.ts";
 import { startIngress } from "./ingress/slack.ts";
 import { sleepAll } from "./environment/controller.ts";
 import { startProxy } from "./proxy/relay.ts";
-import { installPiExecutor, stopAllPi } from "./pi/supervisor.ts";
+import { installPiExecutor } from "./pi/supervisor.ts";
+import { stopAllPi } from "./pi/sessions.ts";
 
 await mkdir(join(config.dataDir, "workspace"), { recursive: true });
 const applied = await migrate();
@@ -27,7 +28,7 @@ installPiExecutor();
   const { installSlackInbound, setStopHandler } = await import("./slack/inbound.ts");
   const { installSlackView } = await import("./slack/view.ts");
   const { installSlackInteractions } = await import("./slack/interactions.ts");
-  const { stopSession } = await import("./pi/supervisor.ts");
+  const { stopSession } = await import("./pi/sessions.ts");
   installSlackInbound(); installSlackView(); installSlackInteractions();
   (await import("./memory/work.ts")).installWorkMemory();
   // Stop in a thread stops every teammate working there (the whole chain).

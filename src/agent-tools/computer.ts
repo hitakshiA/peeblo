@@ -124,7 +124,7 @@ function watchJob(ctx: ToolContext, id: string, command: string): void {
     releaseAwake(ctx.teammate.id, id);
     const { appendEvent } = await import("../store/events.ts");
     await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "computer.job.finished", data: { id, exit, command: command.slice(0, 300) } }).catch(() => {});
-    const { notifySession } = await import("../pi/supervisor.ts");
+    const { notifySession } = await import("../pi/sessions.ts");
     await notifySession(ctx.sessionId, `<peeblo_event kind="job_finished">Your background command ${id} (${command.replace(/\s+/g, " ").slice(0, 120)}) ${exit === null ? "ran out of time and may have been stopped" : `finished with exit ${exit}`}. computer_job shows its output.</peeblo_event>`).catch(() => {});
   }, 15_000);
 }
@@ -203,7 +203,7 @@ export const computerTools: AgentTool[] = [
         watching.delete(id);
       } else if (a.action === "wait") {
         const secs = a.seconds ?? 300;
-        const { steeredSince } = await import("../pi/supervisor.ts");
+        const { steeredSince } = await import("../pi/sessions.ts");
         const t0 = Date.now();
         // In slices, each with its own limit inside the VM (nothing is left looping there); a person's message
         // ends the wait so it's answered now.

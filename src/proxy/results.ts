@@ -5,10 +5,9 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { computerTools } from "../agent-tools/computer.ts";
 import type { ToolContext, ToolResult } from "../agent-tools/types.ts";
-import { executeTool, type ConnectorTool } from "../connectors/mcp.ts";
+import { catalogFor, executeTool, type ConnectorTool } from "../connectors/mcp.ts";
 import { companyDir } from "../memory/store.ts";
 import { getTeammate } from "../store/teammates.ts";
-import { catalogFor } from "../connectors/mcp.ts";
 
 // What a task card shows under a finished tool: a short result, from the tool's own output.
 export function summarize(text: string): string {

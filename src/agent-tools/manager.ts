@@ -335,7 +335,7 @@ export const managerTools: AgentTool[] = [
         await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "job.detail_forwarded", data: { job: a.job, to_session: r.session_id, run: run.id } });
         return { text: `Passed it on to ${owner?.config.name ?? "the teammate"}'s job; it picks it up in that thread.`, data: { run: run.id } };
       }
-      const { stopSession } = await import("../pi/supervisor.ts");
+      const { stopSession } = await import("../pi/sessions.ts");
       if (["queued", "running", "waiting"].includes(r.status)) await stopSession(r.session_id);
       if (a.action === "stop") return { text: `Stopped ${a.job}.` };
       const to = a.teammate ? await findTeammate(a.teammate) : null;

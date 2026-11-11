@@ -85,7 +85,7 @@ export function installSlackInbound(): void {
     const place: SlackPlace = { app_id: appId, team: teamId, channel: ev.channel, channel_type: ev.channel_type ?? "channel", thread_ts: threadNow, trigger_ts: ev.ts, user: ev.user, direct: Boolean(dm || mentioned || inThread) }; // a reply in its own thread is addressed to it
     const session = await openSession(teammateId, kindNow, keyNow, { slack: place });
     // Start the teammate's Pi now, in parallel with the batching wait below.
-    void import("../pi/supervisor.ts").then((m) => m.prewarm(session.id, teammateId)).catch(() => null);
+    void import("../pi/sessions.ts").then((m) => m.prewarm(session.id, teammateId)).catch(() => null);
     // Files dropped in the message go onto the teammate's computer (its session folder), and the message says where.
     if (ev.files?.length) text = `${text}\n${await saveFiles(appId, teammateId, session.id, ev.files).catch((e) => `[files: couldn't save them (${(e as Error).message.slice(0, 120)})]`)}`.trim();
     // The kill switch works where the teammate was asked directly or is in the thread; a "stop" said in a channel

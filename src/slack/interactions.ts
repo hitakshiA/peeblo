@@ -173,7 +173,7 @@ async function homeControl({ appId, payload, a, who }: Click): Promise<void> {
     // The same rule as a typed "stop": the person who asked, the teammate's owner, or an admin.
     const owner = r ? await getTeammate(r.teammate_id) : null;
     if (r && !(r.person_id === who.id || (owner && mayManageTeammate(owner, who)))) return void (await respond(payload.response_url, { response_type: "ephemeral", text: "Only the person who asked for this job, its teammate's owner or an admin can stop it." }).catch(() => {}));
-    if (r) { tmId = r.teammate_id; const { stopSession } = await import("../pi/supervisor.ts"); await appendEvent({ sessionId: r.session_id, type: "slack.stop", data: { user: payload.user.id, from: "home", stopped: true } }); await stopSession(r.session_id); }
+    if (r) { tmId = r.teammate_id; const { stopSession } = await import("../pi/sessions.ts"); await appendEvent({ sessionId: r.session_id, type: "slack.stop", data: { user: payload.user.id, from: "home", stopped: true } }); await stopSession(r.session_id); }
   } else if (a.action_id.endsWith("_schedule")) {
     const sc = (await pool.query("SELECT teammate_id, created_by FROM schedules WHERE id = $1", [a.value])).rows[0];
     const tm = sc ? await getTeammate(sc.teammate_id) : null;
@@ -337,7 +337,7 @@ export function installSlackInteractions(): void {
       const { mayManageTeammate } = await import("../authority.ts");
       const allowed = !asker || (who && (asker.person_id === who.id || (tm && mayManageTeammate(tm, who))));
       if (s && allowed) {
-        const { stopSession } = await import("../pi/supervisor.ts");
+        const { stopSession } = await import("../pi/sessions.ts");
         // Recorded first, so the job's ending can say who stopped it.
         await appendEvent({ sessionId: s.id, type: "slack.stop", data: { user: event.user ?? null, from: "agent_session_stopped", stopped: true } });
         await stopSession(s.id);
