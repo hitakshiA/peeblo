@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
     "knip": "6.43.0",
     "typescript": "5.9.3"
