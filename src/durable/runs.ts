@@ -105,6 +105,12 @@ export async function registerJobsQueue(): Promise<void> {
   await DBOS.registerQueue(JOBS_QUEUE, { workerConcurrency: config.maxRunning, onConflict: "always_update" });
 }
 
+// Waits for a run's workflow to end (DBOS is told the moment it does), at most a minute at a time and never past `until`.
+export async function waitForRun(runId: string, until: number): Promise<void> {
+  const seconds = Math.max(1, Math.min(60, Math.ceil((until - Date.now()) / 1000)));
+  await DBOS.getResult(runId, { timeoutSeconds: seconds }).catch(() => null);
+}
+
 export async function startRun(runId: string, opts: { child?: boolean } = {}): Promise<void> {
   if (opts.child) return void (await DBOS.startWorkflow(runWorkflow, { workflowID: runId })(runId));
   const { pool } = await import("../db.ts");

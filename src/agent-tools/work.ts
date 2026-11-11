@@ -5,7 +5,7 @@
 // boundary: it may run on another open-weight model, and one whose cost estimate is over the price
 // card threshold waits for a person first.
 import { config } from "../config.ts";
-import { startRun } from "../durable/runs.ts";
+import { startRun, waitForRun } from "../durable/runs.ts";
 import { checkModel } from "../crew/model-change.ts";
 import { countTokens, estimateCost } from "../otari/catalog.ts";
 import { ROLES } from "../otari/routing.ts";
@@ -103,7 +103,8 @@ export const subagentTool: AgentTool = {
         return { text: answer, untrusted: "subagent", data: { run_id: sub.run.id, session_id: s.id } };
       }
       if (Date.now() > until) return { text: "The subagent didn't finish in time.", isError: true, data: { run_id: sub.run.id } };
-      await new Promise((r) => setTimeout(r, 2000));
+      // DBOS wakes this the moment the subagent's workflow ends (Postgres notifications), else after a minute.
+      await waitForRun(sub.run.id, until);
     }
   },
 };

@@ -182,7 +182,8 @@ export async function answerOf(runId: string, timeoutMs: number): Promise<{ stat
       return { status: r.status, text: (posts.join("\n\n") || fin).slice(0, 6000) };
     }
     if (Date.now() > until) return { status: "running", text: "" };
-    await new Promise((x) => setTimeout(x, 2000));
+    const { waitForRun } = await import("../durable/runs.ts");
+    await waitForRun(runId, until);
   }
 }
 
