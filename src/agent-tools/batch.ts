@@ -164,7 +164,8 @@ export const batchRunTool: AgentTool = {
       r = await otari<any>(
         "POST",
         "/batches",
-        { model, requests, metadata: { peeblo_session: ctx.sessionId, name }, ...(ctx.endUser ? { user: ctx.endUser } : {}) },
+        // No `user`: /batches refuses an end-user id (403), like /images and /embeddings; the teammate's key pays.
+        { model, requests, metadata: { peeblo_session: ctx.sessionId, name } },
         { ...auth, timeoutMs: 120_000, retries: 0 },
       );
     } catch (e) {

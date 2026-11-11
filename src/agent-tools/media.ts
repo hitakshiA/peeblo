@@ -304,7 +304,8 @@ export const makeImageTool: AgentTool = {
           n: 1,
           size: SIZES[a.shape ?? "square"] ?? SIZES.square,
           response_format: "b64_json",
-          ...(ctx.endUser ? { user: ctx.endUser } : {}),
+          // No `user`: /images/generations refuses an end-user id (403), like /embeddings and /rerank. The teammate's
+          // own key still carries the cost.
         },
         { ...auth, timeoutMs: 120_000, retries: 0 },
       );
