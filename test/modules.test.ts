@@ -5,6 +5,11 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const src = join(import.meta.dirname, "..", "src");
-const files = readdirSync(src, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts") && f !== "main.ts" && f !== "bin.ts").sort();
+const files = readdirSync(src, { recursive: true, encoding: "utf8" })
+  .filter((f) => f.endsWith(".ts") && f !== "main.ts" && f !== "bin.ts")
+  .sort();
 
-for (const f of files) test(`loads ${f}`, async () => { await import(join(src, f)); });
+for (const f of files)
+  test(`loads ${f}`, async () => {
+    await import(join(src, f));
+  });

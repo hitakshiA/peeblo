@@ -9,9 +9,14 @@ import { otari } from "../otari/client.ts";
 import type { TeammateConfig } from "../store/teammates.ts";
 
 export type ConnectorTool = {
-  name: string;          // what the model sees: <server>__<tool>
-  server: string; serverId: string; revision: string;
-  tool: string; description: string; inputSchema: Record<string, unknown>; readOnlyHint: boolean | null; // null: the server says nothing
+  name: string; // what the model sees: <server>__<tool>
+  server: string;
+  serverId: string;
+  revision: string;
+  tool: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  readOnlyHint: boolean | null; // null: the server says nothing
   serverReadOnly?: boolean; // every tool on this server only reads (a registered read-only bridge, or nothing on it writes)
 };
 
@@ -22,18 +27,35 @@ const toolCache = new Map<string, { at: number; revision: string; tools: any[] }
 // while a fresh one loads; a call on a changed server is refused (409) and that server is re-read.
 const CACHE_FILE = join(config.dataDir, "catalog-cache.json");
 try {
-  const saved = JSON.parse(readFileSync(CACHE_FILE, "utf8")) as { servers?: { list: { id: string; name: string; purpose_hint?: string }[] }; tools?: [string, { at: number; revision: string; tools: any[] }][] };
+  const saved = JSON.parse(readFileSync(CACHE_FILE, "utf8")) as {
+    servers?: { list: { id: string; name: string; purpose_hint?: string }[] };
+    tools?: [string, { at: number; revision: string; tools: any[] }][];
+  };
   if (saved.servers?.list) servers = { list: saved.servers.list, at: 0 };
   for (const [id, e] of saved.tools ?? []) toolCache.set(id, { ...e, at: 0 });
-} catch { /* no copy yet */ }
-const saveCache = () => { try { writeFileSync(CACHE_FILE, JSON.stringify({ servers, tools: [...toolCache] })); } catch { /* best effort */ } };
+} catch {
+  /* no copy yet */
+}
+const saveCache = () => {
+  try {
+    writeFileSync(CACHE_FILE, JSON.stringify({ servers, tools: [...toolCache] }));
+  } catch {
+    /* best effort */
+  }
+};
 const refreshing = new Set<string>();
 
 export async function serverList() {
   if (servers && Date.now() - servers.at < TTL) return servers.list;
   if (servers && !refreshing.has("servers")) {
     refreshing.add("servers");
-    void otari<{ servers: any[] }>("GET", "/mcp/servers").then(({ data }) => { servers = { at: Date.now(), list: data.servers ?? [] }; saveCache(); }).catch(() => {}).finally(() => refreshing.delete("servers"));
+    void otari<{ servers: any[] }>("GET", "/mcp/servers")
+      .then(({ data }) => {
+        servers = { at: Date.now(), list: data.servers ?? [] };
+        saveCache();
+      })
+      .catch(() => {})
+      .finally(() => refreshing.delete("servers"));
     return servers.list;
   }
   const { data } = await otari<{ servers: { id: string; name: string; purpose_hint?: string }[] }>("GET", "/mcp/servers");
@@ -45,7 +67,12 @@ async function serverTools(id: string, fresh = false) {
   const hit = toolCache.get(id);
   if (!fresh && hit && Date.now() - hit.at < TTL) return hit;
   if (!fresh && hit) {
-    if (!refreshing.has(id)) { refreshing.add(id); void serverTools(id, true).catch(() => {}).finally(() => refreshing.delete(id)); }
+    if (!refreshing.has(id)) {
+      refreshing.add(id);
+      void serverTools(id, true)
+        .catch(() => {})
+        .finally(() => refreshing.delete(id));
+    }
     return hit;
   }
   const { data } = await otari<{ server_revision: string; tools: any[] }>("GET", `/mcp/servers/${id}/tools`);
@@ -59,12 +86,25 @@ const safe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_");
 
 // Tools a server always refuses ("not available due to compliance requirements"): noted once, then not offered.
 const UNAVAILABLE_FILE = join(config.dataDir, "unavailable-tools.json");
-const unavailable = new Set<string>((() => { try { return JSON.parse(readFileSync(UNAVAILABLE_FILE, "utf8")) as string[]; } catch { return []; } })());
+const unavailable = new Set<string>(
+  (() => {
+    try {
+      return JSON.parse(readFileSync(UNAVAILABLE_FILE, "utf8")) as string[];
+    } catch {
+      return [];
+    }
+  })(),
+);
 export function markUnavailable(server: string, tool: string): void {
   unavailable.add(`${server}.${tool}`);
-  try { writeFileSync(UNAVAILABLE_FILE, JSON.stringify([...unavailable])); } catch { /* best effort */ }
+  try {
+    writeFileSync(UNAVAILABLE_FILE, JSON.stringify([...unavailable]));
+  } catch {
+    /* best effort */
+  }
 }
-export const ALWAYS_REFUSES = /not available due to compliance|this tool is (disabled|not enabled)|tool is not available (for|on) (this|your) (plan|account|workspace)/i;
+export const ALWAYS_REFUSES =
+  /not available due to compliance|this tool is (disabled|not enabled)|tool is not available (for|on) (this|your) (plan|account|workspace)/i;
 
 // The tools of every connector the teammate has, as Otari authorizes them for Peeblo's key.
 export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorTool[]; missing: string[]; failed: string[] }> {
@@ -72,7 +112,8 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
   const list = await serverList();
   // "all" (Peeblo, the chief of staff): every MCP server connected in Otari. Their tools start deferred; writes
   // still go through the gate like anyone's.
-  if (c.connectors.includes("all")) c = { ...c, connectors: [...new Set([...c.connectors.filter((x) => x !== "all"), ...list.map((x) => x.name)])] };
+  if (c.connectors.includes("all"))
+    c = { ...c, connectors: [...new Set([...c.connectors.filter((x) => x !== "all"), ...list.map((x) => x.name)])] };
   const tools: ConnectorTool[] = [];
   const missing: string[] = [];
   const failed: string[] = [];
@@ -82,16 +123,27 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
   const loaded = await Promise.all(found.filter((f) => f.s).map(async (f) => ({ f, t: await serverTools(f.s!.id).catch(() => null) })));
   for (const { f, t } of loaded) {
     const s = f.s!;
-    if (!t) { failed.push(f.name); continue; }
+    if (!t) {
+      failed.push(f.name);
+      continue;
+    }
     // A read-only server: registered as one (PEEBLO_READONLY_SERVERS), or none of its
     // tools has a write or destructive word and none is marked as not read-only.
-    const serverReadOnly = READONLY_SERVERS.has(s.name) || t.tools.every((x: any) => x.annotations?.readOnlyHint !== false && !WRITE_WORDS.test(x.name) && !DESTRUCTIVE_WORDS.test(x.name));
+    const serverReadOnly =
+      READONLY_SERVERS.has(s.name) ||
+      t.tools.every((x: any) => x.annotations?.readOnlyHint !== false && !WRITE_WORDS.test(x.name) && !DESTRUCTIVE_WORDS.test(x.name));
     for (const tool of t.tools) {
       if (unavailable.has(`${s.name}.${tool.name}`)) continue;
       tools.push({
-        name: `${safe(s.name)}__${safe(tool.name)}`.slice(0, 64), server: s.name, serverId: s.id, revision: t.revision,
-        tool: tool.name, description: `[${s.name}] ${tool.description ?? tool.name}`.slice(0, 1024),
-        inputSchema: tool.input_schema ?? { type: "object", properties: {} }, readOnlyHint: typeof tool.annotations?.readOnlyHint === "boolean" ? tool.annotations.readOnlyHint : null, serverReadOnly,
+        name: `${safe(s.name)}__${safe(tool.name)}`.slice(0, 64),
+        server: s.name,
+        serverId: s.id,
+        revision: t.revision,
+        tool: tool.name,
+        description: `[${s.name}] ${tool.description ?? tool.name}`.slice(0, 1024),
+        inputSchema: tool.input_schema ?? { type: "object", properties: {} },
+        readOnlyHint: typeof tool.annotations?.readOnlyHint === "boolean" ? tool.annotations.readOnlyHint : null,
+        serverReadOnly,
       });
     }
   }
@@ -101,18 +153,140 @@ export async function catalogFor(c: TeammateConfig): Promise<{ tools: ConnectorT
 // Whether a call runs at once or waits for a person. A server's own annotations are untrusted (Otari says
 // so too), so "auto" only runs tools that both look like reads by name and say they are read-only.
 export type CallKind = "read" | "write" | "destructive";
-const READ_WORDS = new Set(["get", "list", "search", "read", "fetch", "query", "describe", "retrieve", "find", "lookup", "count", "show", "view", "help", "tools", "info", "schema", "learn", "all",
-  "chart", "charts", "render", "metrics", "stats", "logs", "availability", "insights", "report", "reports", "analytics", "inspect", "whoami", "ping", "discover", "analyze", "history", "timeline", "status"]);
+const READ_WORDS = new Set([
+  "get",
+  "list",
+  "search",
+  "read",
+  "fetch",
+  "query",
+  "describe",
+  "retrieve",
+  "find",
+  "lookup",
+  "count",
+  "show",
+  "view",
+  "help",
+  "tools",
+  "info",
+  "schema",
+  "learn",
+  "all",
+  "chart",
+  "charts",
+  "render",
+  "metrics",
+  "stats",
+  "logs",
+  "availability",
+  "insights",
+  "report",
+  "reports",
+  "analytics",
+  "inspect",
+  "whoami",
+  "ping",
+  "discover",
+  "analyze",
+  "history",
+  "timeline",
+  "status",
+]);
 // Words that make a call a write even when the server calls it read-only (a server's hint never makes a call safer
 // on its own; it can only confirm a name that says nothing about writing).
 const READONLY_SERVERS = new Set(config.readonlyServers);
 const NEVER_READ = /(submit|invoke|feedback|trigger|run_|execute(?!read)|send|pay|charge)/i;
 // Word lists, matched against whole words of the tool's name (snake, kebab or camel case), never substrings:
 // "list_postgres_roles" is a read, not a "post".
-const WRITE = new Set(["create", "update", "updates", "write", "save", "set", "add", "post", "send", "push", "merge", "edit", "upsert", "insert", "execute", "trigger", "publish", "invite", "assign", "upload", "submit", "invoke", "run", "pay", "charge", "move", "rename", "enable", "disable", "toggle", "import", "sync", "comment", "reply", "close", "resolve", "acknowledge", "snooze", "transfer", "duplicate", "copy", "generate"]);
-const DESTRUCTIVE = new Set(["delete", "remove", "drop", "destroy", "refund", "cancel", "archive", "revoke", "purge", "truncate", "reset", "void", "unpublish", "disconnect"]);
-const READ_VERBS = new Set(["get", "list", "search", "read", "fetch", "query", "describe", "retrieve", "find", "lookup", "count", "show", "view", "chart", "render", "inspect", "analyze", "discover", "whoami", "ping"]);
-const wordsOf = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().split(/[_\-\s.]+/).filter(Boolean);
+const WRITE = new Set([
+  "create",
+  "update",
+  "updates",
+  "write",
+  "save",
+  "set",
+  "add",
+  "post",
+  "send",
+  "push",
+  "merge",
+  "edit",
+  "upsert",
+  "insert",
+  "execute",
+  "trigger",
+  "publish",
+  "invite",
+  "assign",
+  "upload",
+  "submit",
+  "invoke",
+  "run",
+  "pay",
+  "charge",
+  "move",
+  "rename",
+  "enable",
+  "disable",
+  "toggle",
+  "import",
+  "sync",
+  "comment",
+  "reply",
+  "close",
+  "resolve",
+  "acknowledge",
+  "snooze",
+  "transfer",
+  "duplicate",
+  "copy",
+  "generate",
+]);
+const DESTRUCTIVE = new Set([
+  "delete",
+  "remove",
+  "drop",
+  "destroy",
+  "refund",
+  "cancel",
+  "archive",
+  "revoke",
+  "purge",
+  "truncate",
+  "reset",
+  "void",
+  "unpublish",
+  "disconnect",
+]);
+const READ_VERBS = new Set([
+  "get",
+  "list",
+  "search",
+  "read",
+  "fetch",
+  "query",
+  "describe",
+  "retrieve",
+  "find",
+  "lookup",
+  "count",
+  "show",
+  "view",
+  "chart",
+  "render",
+  "inspect",
+  "analyze",
+  "discover",
+  "whoami",
+  "ping",
+]);
+const wordsOf = (name: string) =>
+  name
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[_\-\s.]+/)
+    .filter(Boolean);
 const WRITE_WORDS = { test: (name: string) => wordsOf(name).some((w) => WRITE.has(w)) };
 const DESTRUCTIVE_WORDS = { test: (name: string) => wordsOf(name).some((w) => DESTRUCTIVE.has(w)) };
 
@@ -134,7 +308,11 @@ function posthogExecKind(command: string): CallKind {
   // PostHog's insight queries (query-trends, query-funnel, query-web-stats, query-retention…) only read.
   if (/^query-[a-z-]+$/.test(tool ?? "") && !/^query-run$/.test(tool ?? "")) return "read";
   // "call execute-sql {query: SELECT …}" and the query tools only read.
-  if (/^(execute-sql|query|query-run|run-query|hogql)/.test(tool ?? "")) return /"query"\s*:\s*"\s*(select|with)\b/i.test(command) && !/\b(insert|update|delete|drop|alter|create)\b/i.test(command.replace(/created?_at|createdAt/gi, "")) ? "read" : "write";
+  if (/^(execute-sql|query|query-run|run-query|hogql)/.test(tool ?? ""))
+    return /"query"\s*:\s*"\s*(select|with)\b/i.test(command) &&
+      !/\b(insert|update|delete|drop|alter|create)\b/i.test(command.replace(/created?_at|createdAt/gi, ""))
+      ? "read"
+      : "write";
   return tool ? kindOfName(tool) : "write";
 }
 
@@ -148,7 +326,8 @@ export function classify(t: ConnectorTool, args: Record<string, unknown>): CallK
   if (/^(run_?sql|execute_?sql|run_?query|execute_?query|query_?sql|sql)$/i.test(t.tool)) {
     const q = String(args.sql ?? args.query ?? args.statement ?? args.command ?? "");
     const bare = q.replace(/--[^\n]*/g, "").replace(/created?_at|createdAt|updated_at/gi, "");
-    if (/^\s*(select|with|explain|show)\b/i.test(bare) && !/\b(insert|update|delete|drop|alter|create|truncate|grant|merge)\b/i.test(bare)) return "read";
+    if (/^\s*(select|with|explain|show)\b/i.test(bare) && !/\b(insert|update|delete|drop|alter|create|truncate|grant|merge)\b/i.test(bare))
+      return "read";
   }
   // Dispatchers that say their kind in their name (Atlassian's executeRead / executeWrite / executeDestructive).
   const disp = /^execute_?(read|write|destructive)$/i.exec(t.tool)?.[1]?.toLowerCase();
@@ -158,10 +337,17 @@ export function classify(t: ConnectorTool, args: Record<string, unknown>): CallK
   // A name of nouns only ("sentry_projects", "incidents", "deployments", "metrics"): no verb says it writes, so it
   // reads unless its server marks it as not read-only.
   const words = wordsOf(t.tool);
-  if (k === "write" && t.readOnlyHint !== false && !words.some((w) => WRITE.has(w) || DESTRUCTIVE.has(w) || READ_VERBS.has(w)) && !NEVER_READ.test(t.tool)) return "read";
+  if (
+    k === "write" &&
+    t.readOnlyHint !== false &&
+    !words.some((w) => WRITE.has(w) || DESTRUCTIVE.has(w) || READ_VERBS.has(w)) &&
+    !NEVER_READ.test(t.tool)
+  )
+    return "read";
   // A tool whose name has no write words (it was "write" only because no read word matched) and that its server
   // marks read-only is a read: Better Stack's incidents and monitors, Neon's list_*, Stripe's reports.
-  if (k === "write" && t.readOnlyHint === true && !WRITE_WORDS.test(t.tool) && !DESTRUCTIVE_WORDS.test(t.tool) && !NEVER_READ.test(t.tool)) return "read";
+  if (k === "write" && t.readOnlyHint === true && !WRITE_WORDS.test(t.tool) && !DESTRUCTIVE_WORDS.test(t.tool) && !NEVER_READ.test(t.tool))
+    return "read";
   return k;
 }
 
@@ -172,7 +358,13 @@ export function outOfScope(t: ConnectorTool, args: Record<string, unknown>, scop
   if (!allowed?.length) return null;
   if (t.server === "github" && typeof args.owner === "string" && typeof args.repo === "string") {
     const full = `${args.owner}/${args.repo}`.toLowerCase();
-    const glob = (p: string) => new RegExp(`^${p.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")}$`);
+    const glob = (p: string) =>
+      new RegExp(
+        `^${p
+          .toLowerCase()
+          .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*/g, "[^/]*")}$`,
+      );
     const ok = allowed.some((p) => glob(p).test(full));
     return ok ? null : `${full} is not one of the repositories this teammate may use (${allowed.join(", ")})`;
   }
@@ -182,20 +374,31 @@ export function outOfScope(t: ConnectorTool, args: Record<string, unknown>, scop
 // The install-wide GitHub limit (PEEBLO_GITHUB_REPOS): a call naming owner/repo must name one of them, a search is
 // narrowed to them (its own repo:, user: and org: qualifiers are replaced), and any other call that could reach
 // another repo is refused. Returns the arguments to run with, or the reason it can't run.
-export function githubLimit(t: ConnectorTool, args: Record<string, unknown>, repos: string[]): { args: Record<string, unknown> } | { refuse: string } {
+export function githubLimit(
+  t: ConnectorTool,
+  args: Record<string, unknown>,
+  repos: string[],
+): { args: Record<string, unknown> } | { refuse: string } {
   if (t.server !== "github" || !repos.length) return { args };
   const allowed = repos.map((r) => r.toLowerCase());
   const list = repos.join(", ");
   if (typeof args.owner === "string" && typeof args.repo === "string") {
-    return allowed.includes(`${args.owner}/${args.repo}`.toLowerCase()) ? { args } : { refuse: `${args.owner}/${args.repo} isn't one of the repositories Peeblo may use here (${list})` };
+    return allowed.includes(`${args.owner}/${args.repo}`.toLowerCase())
+      ? { args }
+      : { refuse: `${args.owner}/${args.repo} isn't one of the repositories Peeblo may use here (${list})` };
   }
   if (t.tool === "get_me" || t.tool === "search_users") return { args };
   if (t.tool.startsWith("search_") && typeof args.query === "string") {
-    const query = `${args.query.replace(/\b(repo|user|org|owner):\S+/gi, " ").replace(/\s+/g, " ").trim()} ${repos.map((r) => `repo:${r}`).join(" ")}`.trim();
+    const query = `${args.query
+      .replace(/\b(repo|user|org|owner):\S+/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()} ${repos.map((r) => `repo:${r}`).join(" ")}`.trim();
     const { owner: _o, repo: _r, ...rest } = args;
     return { args: { ...rest, query } };
   }
-  return { refuse: `${t.tool} can reach repositories beyond the ones Peeblo may use here (${list}); name one of those with owner and repo` };
+  return {
+    refuse: `${t.tool} can reach repositories beyond the ones Peeblo may use here (${list}); name one of those with owner and repo`,
+  };
 }
 
 export function needsApproval(mode: TeammateConfig["mode"], kind: CallKind): boolean {
@@ -206,20 +409,36 @@ export function needsApproval(mode: TeammateConfig["mode"], kind: CallKind): boo
 }
 
 // With auth, the call runs on that key (a teammate's own, once Otari holds its access: src/otari/mcp-access.ts).
-export async function executeTool(t: ConnectorTool, args: Record<string, unknown>, auth?: { authorization: string }): Promise<{ data: any; requestId: string | null }> {
-  const body = { mcp_server_id: t.serverId, server_revision: t.revision, tool_name: t.tool, arguments: args, client_execution_id: randomUUID() };
+export async function executeTool(
+  t: ConnectorTool,
+  args: Record<string, unknown>,
+  auth?: { authorization: string },
+): Promise<{ data: any; requestId: string | null }> {
+  const body = {
+    mcp_server_id: t.serverId,
+    server_revision: t.revision,
+    tool_name: t.tool,
+    arguments: args,
+    client_execution_id: randomUUID(),
+  };
   try {
     return await otari("POST", "/mcp/execute", body, auth ? { auth } : undefined);
   } catch (e) {
     // The server was re-registered under a new id (an admin replaced it): re-read the list and run it there once.
     if (!/MCP server not found/i.test(String((e as Error).message))) throw e;
     const { data } = await otari<{ servers: any[] }>("GET", "/mcp/servers");
-    servers = { at: Date.now(), list: data.servers ?? [] }; saveCache();
+    servers = { at: Date.now(), list: data.servers ?? [] };
+    saveCache();
     const now = servers.list.find((x) => x.name === t.server);
     if (!now || now.id === t.serverId) throw e;
     toolCache.delete(t.serverId);
     const fresh = await serverTools(now.id, true);
-    return otari("POST", "/mcp/execute", { ...body, mcp_server_id: now.id, server_revision: fresh.revision, client_execution_id: randomUUID() }, auth ? { auth } : undefined);
+    return otari(
+      "POST",
+      "/mcp/execute",
+      { ...body, mcp_server_id: now.id, server_revision: fresh.revision, client_execution_id: randomUUID() },
+      auth ? { auth } : undefined,
+    );
   }
 }
 
@@ -230,7 +449,10 @@ export function forgetServer(serverId: string): void {
 
 // Loads every server's tool list once at start (and every 25 min), so the first session isn't the one waiting.
 export function warmCatalog(): void {
-  const warm = () => void serverList().then((l) => Promise.all(l.map((x) => serverTools(x.id, true).catch(() => null)))).catch(() => {});
+  const warm = () =>
+    void serverList()
+      .then((l) => Promise.all(l.map((x) => serverTools(x.id, true).catch(() => null))))
+      .catch(() => {});
   warm();
   setInterval(warm, 25 * 60_000).unref();
 }

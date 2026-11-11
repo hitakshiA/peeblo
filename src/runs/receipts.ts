@@ -6,8 +6,18 @@ import { dataOf, type ModelCallEvent } from "../store/event-types.ts";
 import { receiptLinks } from "../otari/traces.ts";
 
 export type Receipt = {
-  run_id: string; calls: number; cost_usd: number; prompt_tokens: number; cached_tokens: number; completion_tokens: number;
-  models: string[]; providers: string[]; fallbacks: number; failed_attempts: number; request_ids: string[]; people: string[];
+  run_id: string;
+  calls: number;
+  cost_usd: number;
+  prompt_tokens: number;
+  cached_tokens: number;
+  completion_tokens: number;
+  models: string[];
+  providers: string[];
+  fallbacks: number;
+  failed_attempts: number;
+  request_ids: string[];
+  people: string[];
   interrupted: { request_id: string; settled_cost_usd: number | null }[];
   otari_tools: Record<string, number>; // tool calls Otari ran inside model calls (web_search, web_fetch, …), cost included above
   connector_calls: Record<string, number>; // completed connector calls Otari executed for Peeblo, by server
@@ -19,20 +29,32 @@ export type Receipt = {
 export async function buildReceipt(runId: string, opts: { links?: boolean } = {}): Promise<Receipt> {
   const events = await runEvents(runId);
   // Helpers this job started (subagent, pick_model) are part of its cost: their model calls join the receipt.
-  const helpers = events.filter((e) => e.type === "tool.call").map((e) => dataOf(e, "tool.call")).filter((d) => ["subagent", "pick_model"].includes(d.tool) && d.result?.run_id).map((d) => String(d.result?.run_id));
-  const helperCalls = (await Promise.all([...new Set(helpers)].map((id) => runEvents(id).catch(() => [])))).flat().filter((e) => e.type === "model.call");
+  const helpers = events
+    .filter((e) => e.type === "tool.call")
+    .map((e) => dataOf(e, "tool.call"))
+    .filter((d) => ["subagent", "pick_model"].includes(d.tool) && d.result?.run_id)
+    .map((d) => String(d.result?.run_id));
+  const helperCalls = (await Promise.all([...new Set(helpers)].map((id) => runEvents(id).catch(() => []))))
+    .flat()
+    .filter((e) => e.type === "model.call");
   const calls: ModelCallEvent[] = [...events.filter((e) => e.type === "model.call"), ...helperCalls].map((e) => dataOf(e, "model.call"));
   // Calls Otari answered but that never finished here (core died mid-stream): take Otari's settled cost.
   const finished = new Set(calls.map((c) => c.request_id));
-  const opened = events.filter((e) => e.type === "model.call.opened").map((e) => dataOf(e, "model.call.opened")).filter((o) => o.request_id && !finished.has(o.request_id));
-  const interrupted = await Promise.all(opened.map(async (o) => {
-    const u = await requestUsage(String(o.request_id)).catch(() => null);
-    return { request_id: o.request_id as string, settled_cost_usd: u ? Number(u.cost_usd) : null };
-  }));
+  const opened = events
+    .filter((e) => e.type === "model.call.opened")
+    .map((e) => dataOf(e, "model.call.opened"))
+    .filter((o) => o.request_id && !finished.has(o.request_id));
+  const interrupted = await Promise.all(
+    opened.map(async (o) => {
+      const u = await requestUsage(String(o.request_id)).catch(() => null);
+      return { request_id: o.request_id as string, settled_cost_usd: u ? Number(u.cost_usd) : null };
+    }),
+  );
   const sessionId = events[0]?.session_id ?? undefined;
   const requestIds = [...calls.map((c) => c.request_id).filter((x): x is string => Boolean(x)), ...interrupted.map((i) => i.request_id)];
   const links = sessionId && opts.links !== false ? await receiptLinks(sessionId, requestIds).catch(() => null) : null;
-  const sum = (k: "cost_usd" | "prompt_tokens" | "cached_tokens" | "completion_tokens") => calls.reduce((a, c) => a + (Number(c[k]) || 0), 0);
+  const sum = (k: "cost_usd" | "prompt_tokens" | "cached_tokens" | "completion_tokens") =>
+    calls.reduce((a, c) => a + (Number(c[k]) || 0), 0);
   const ok = calls.filter((c) => c.status >= 200 && c.status < 300);
   const work = calls.filter((c) => c.role !== "guard");
   const reported = work.filter((c) => typeof c.guardrails === "string" && c.guardrails.includes('"status":"evaluated"')).length;
@@ -40,20 +62,36 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
   const unreported = work.filter((c) => !c.guardrails && c.status === 200 && c.guard_mandate === true).length;
   const lakeraChecks = reported + unreported;
   const openChecks = events.filter((e) => e.type === "guard.checked");
-  const blocked = events.filter((e) => e.type === "guard.blocked").length + openChecks.filter((e) => dataOf(e, "guard.checked").safe === false).length;
-  const guard = openChecks.length ? { checked_by: String(dataOf(openChecks[0], "guard.checked").checked_by), checks: openChecks.length, blocked }
-    : lakeraChecks || blocked ? { checked_by: unreported ? "lakera (Otari org guardrail; streamed verdicts not reported)" : "lakera (Otari org guardrail)", checks: lakeraChecks + blocked, blocked } : { checked_by: null, checks: 0, blocked: 0 };
+  const blocked =
+    events.filter((e) => e.type === "guard.blocked").length + openChecks.filter((e) => dataOf(e, "guard.checked").safe === false).length;
+  const guard = openChecks.length
+    ? { checked_by: String(dataOf(openChecks[0], "guard.checked").checked_by), checks: openChecks.length, blocked }
+    : lakeraChecks || blocked
+      ? {
+          checked_by: unreported ? "lakera (Otari org guardrail; streamed verdicts not reported)" : "lakera (Otari org guardrail)",
+          checks: lakeraChecks + blocked,
+          blocked,
+        }
+      : { checked_by: null, checks: 0, blocked: 0 };
   const tools = events.filter((e) => e.type === "tool.call").map((e) => dataOf(e, "tool.call"));
   return {
     run_id: runId,
     calls: ok.length,
     // Model calls, calls a crash cut off, and tools Otari bills on their own (code execution, the file reader).
-    cost_usd: Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0) + toolCosts(events)) * 1e6) / 1e6,
+    cost_usd:
+      Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0) + toolCosts(events)) * 1e6) / 1e6,
     prompt_tokens: sum("prompt_tokens"),
     cached_tokens: sum("cached_tokens"),
     completion_tokens: sum("completion_tokens"),
     guard,
-    models: [...new Set(ok.filter((c) => c.role !== "guard").map((c) => c.served_model ?? c.requested_model).filter((x): x is string => Boolean(x)))],
+    models: [
+      ...new Set(
+        ok
+          .filter((c) => c.role !== "guard")
+          .map((c) => c.served_model ?? c.requested_model)
+          .filter((x): x is string => Boolean(x)),
+      ),
+    ],
     providers: [...new Set(ok.map((c) => c.provider).filter((x): x is string => Boolean(x)))],
     fallbacks: calls.filter((c) => c.otari_fallback || c.peebloFallback).length,
     failed_attempts: calls.filter((c) => c.failed || c.status >= 400).length,
@@ -61,16 +99,45 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
     links,
     people: [...new Set(calls.map((c) => c.end_user).filter((x): x is string => Boolean(x)))],
     interrupted,
-    otari_tools: tools.filter((d) => d.by === "otari" && d.status === "completed").reduce((acc: Record<string, number>, d) => { acc[d.tool] = (acc[d.tool] ?? 0) + 1; return acc; }, {}),
-    connector_calls: tools.filter((d) => d.via === "otari_mcp" && d.status === "completed" && d.server).reduce((acc: Record<string, number>, d) => { const s = String(d.server); acc[s] = (acc[s] ?? 0) + 1; return acc; }, {}),
-    approvals: events.filter((e) => e.type === "approval.resolved").reduce((acc, e) => { const st = dataOf(e, "approval.resolved").status; acc[st] = (acc[st] ?? 0) + 1; return acc; }, { approved: 0, denied: 0, expired: 0 }),
+    otari_tools: tools
+      .filter((d) => d.by === "otari" && d.status === "completed")
+      .reduce((acc: Record<string, number>, d) => {
+        acc[d.tool] = (acc[d.tool] ?? 0) + 1;
+        return acc;
+      }, {}),
+    connector_calls: tools
+      .filter((d) => d.via === "otari_mcp" && d.status === "completed" && d.server)
+      .reduce((acc: Record<string, number>, d) => {
+        const s = String(d.server);
+        acc[s] = (acc[s] ?? 0) + 1;
+        return acc;
+      }, {}),
+    approvals: events
+      .filter((e) => e.type === "approval.resolved")
+      .reduce(
+        (acc, e) => {
+          const st = dataOf(e, "approval.resolved").status;
+          acc[st] = (acc[st] ?? 0) + 1;
+          return acc;
+        },
+        { approved: 0, denied: 0, expired: 0 },
+      ),
   };
 }
 
 export function receiptLine(r: Receipt): string {
-  if (!r.models.length && r.guard.blocked) return `blocked by the guardrail (${r.guard.checked_by}) before the teammate ran · ${money(r.cost_usd)}`;
+  if (!r.models.length && r.guard.blocked)
+    return `blocked by the guardrail (${r.guard.checked_by}) before the teammate ran · ${money(r.cost_usd)}`;
   const via = r.providers.length ? ` via ${r.providers.join(", ")}` : "";
-  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${Object.entries(r.otari_tools).map(([t, n]) => ` · ${n} ${t.replace("_", " ")}`).join("")}${Object.entries(r.connector_calls).map(([s, n]) => ` · ${n} ${s}`).join("")}${r.approvals.approved ? ` · ${r.approvals.approved} approved` : ""}${r.approvals.denied ? ` · ${r.approvals.denied} declined` : ""}${r.fallbacks ? ` · ${r.fallbacks} fallback` : " · no fallback"}${r.interrupted.length ? ` · ${r.interrupted.length} interrupted` : ""}${r.guard.checked_by ? ` · guard: ${r.guard.checked_by}${r.guard.blocked ? " (blocked)" : ""}` : ""}`;
+  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${Object.entries(
+    r.otari_tools,
+  )
+    .map(([t, n]) => ` · ${n} ${t.replace("_", " ")}`)
+    .join("")}${Object.entries(r.connector_calls)
+    .map(([s, n]) => ` · ${n} ${s}`)
+    .join(
+      "",
+    )}${r.approvals.approved ? ` · ${r.approvals.approved} approved` : ""}${r.approvals.denied ? ` · ${r.approvals.denied} declined` : ""}${r.fallbacks ? ` · ${r.fallbacks} fallback` : " · no fallback"}${r.interrupted.length ? ` · ${r.interrupted.length} interrupted` : ""}${r.guard.checked_by ? ` · guard: ${r.guard.checked_by}${r.guard.blocked ? " (blocked)" : ""}` : ""}`;
 }
 
 // Small runs cost fractions of a cent; show enough digits that a real cost never reads as $0.
@@ -82,7 +149,10 @@ function toolCosts(events: { type: string; data: unknown }[]): number {
   let n = 0;
   for (const e of events) {
     if (e.type === "tool.cost") n += Number(dataOf(e, "tool.cost").cost_usd) || 0;
-    else if (e.type === "tool.call") { const d = dataOf(e, "tool.call"); if (d.tool === "understand_file" && d.status === "completed") n += Number(d.result?.cost_usd) || 0; }
+    else if (e.type === "tool.call") {
+      const d = dataOf(e, "tool.call");
+      if (d.tool === "understand_file" && d.status === "completed") n += Number(d.result?.cost_usd) || 0;
+    }
   }
   return n;
 }

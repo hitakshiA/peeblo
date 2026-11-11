@@ -8,12 +8,35 @@ import { pool } from "../db.ts";
 import { newId } from "../ids.ts";
 import { appendEvent } from "../store/events.ts";
 
-export type Decision = { decision: "approved" | "denied"; scope?: "once" | "job" | "always"; personId: string | null; arguments?: Record<string, unknown>; reason?: string; superseded?: boolean };
-export type ApprovalResult = { approvalId: string; status: "approved" | "denied" | "expired"; scope: Decision["scope"] | null; arguments?: Record<string, unknown> | null; reason?: string | null; superseded?: boolean };
+export type Decision = {
+  decision: "approved" | "denied";
+  scope?: "once" | "job" | "always";
+  personId: string | null;
+  arguments?: Record<string, unknown>;
+  reason?: string;
+  superseded?: boolean;
+};
+export type ApprovalResult = {
+  approvalId: string;
+  status: "approved" | "denied" | "expired";
+  scope: Decision["scope"] | null;
+  arguments?: Record<string, unknown> | null;
+  reason?: string | null;
+  superseded?: boolean;
+};
 
 // Keys sorted at every level. (A key list passed to JSON.stringify filters nested keys too, which made calls that
 // differ only inside a nested object, like Stripe's params.starting_after, look identical.)
-const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as any)[k])])) : v;
+const canon = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(canon)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v as object)
+            .sort()
+            .map((k) => [k, canon((v as any)[k])]),
+        )
+      : v;
 export function fingerprint(action: Record<string, unknown>): string {
   const canonical = JSON.stringify(canon(action));
   return createHash("sha256").update(canonical).digest("hex").slice(0, 32);
@@ -21,17 +44,40 @@ export function fingerprint(action: Record<string, unknown>): string {
 
 async function approvalWorkflowFn(approvalId: string, runId: string, sessionId: string, ttlSeconds: number): Promise<ApprovalResult> {
   const answer = await DBOS.recv<Decision>("approval", ttlSeconds);
-  return DBOS.runStep(async () => {
-    const status = answer ? answer.decision : "expired";
-    await pool.query(
-      "UPDATE approvals SET status = $2, scope = $3, decided_by = $4, decided_at = now() WHERE id = $1 AND status = 'pending'",
-      [approvalId, status, answer?.scope ?? null, answer?.personId ?? null],
-    );
-    await pool.query("UPDATE runs SET status = 'running' WHERE id = $1 AND status = 'waiting'", [runId]);
-    await appendEvent({ sessionId, runId, type: "approval.resolved", data: { approval_id: approvalId, status, scope: answer?.scope ?? null, by: answer?.personId ?? null, edited: Boolean(answer?.arguments), reason: answer?.reason ?? null, superseded: Boolean(answer?.superseded) } });
-    // Edit on the card: the person approved a changed call, which is what runs.
-    return { approvalId, status, scope: answer?.scope ?? null, arguments: answer?.decision === "approved" ? answer?.arguments ?? null : null, reason: answer?.reason ?? null, superseded: Boolean(answer?.superseded) };
-  }, { name: "approval-resolve" });
+  return DBOS.runStep(
+    async () => {
+      const status = answer ? answer.decision : "expired";
+      await pool.query(
+        "UPDATE approvals SET status = $2, scope = $3, decided_by = $4, decided_at = now() WHERE id = $1 AND status = 'pending'",
+        [approvalId, status, answer?.scope ?? null, answer?.personId ?? null],
+      );
+      await pool.query("UPDATE runs SET status = 'running' WHERE id = $1 AND status = 'waiting'", [runId]);
+      await appendEvent({
+        sessionId,
+        runId,
+        type: "approval.resolved",
+        data: {
+          approval_id: approvalId,
+          status,
+          scope: answer?.scope ?? null,
+          by: answer?.personId ?? null,
+          edited: Boolean(answer?.arguments),
+          reason: answer?.reason ?? null,
+          superseded: Boolean(answer?.superseded),
+        },
+      });
+      // Edit on the card: the person approved a changed call, which is what runs.
+      return {
+        approvalId,
+        status,
+        scope: answer?.scope ?? null,
+        arguments: answer?.decision === "approved" ? (answer?.arguments ?? null) : null,
+        reason: answer?.reason ?? null,
+        superseded: Boolean(answer?.superseded),
+      };
+    },
+    { name: "approval-resolve" },
+  );
 }
 const approvalWorkflow = DBOS.registerWorkflow(approvalWorkflowFn, { name: "approval" });
 
@@ -41,7 +87,12 @@ async function record(runId: string, sessionId: string, raw: Record<string, unkn
   const action = await withApprovers(runId, raw);
   // An estimate for the card: the next model call of this run, at its current prompt size, at catalog prices.
   if (action.price_usd == null) {
-    const last = (await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'model.call' AND data->>'status' = '200' ORDER BY id DESC LIMIT 1", [runId])).rows[0]?.data;
+    const last = (
+      await pool.query(
+        "SELECT data FROM events WHERE run_id = $1 AND type = 'model.call' AND data->>'status' = '200' ORDER BY id DESC LIMIT 1",
+        [runId],
+      )
+    ).rows[0]?.data;
     if (last?.requested_model && last?.prompt_tokens) {
       const { estimateCost } = await import("../otari/catalog.ts");
       const { ROLES } = await import("../otari/routing.ts");
@@ -63,18 +114,39 @@ async function record(runId: string, sessionId: string, raw: Record<string, unkn
 // The same call in the same run (what a person sees on the card): its kind, teammate, tool and arguments.
 // Free-text fields the model words differently on a retry (why, context, intent) don't make it a different call.
 const PROSE = new Set(["reason", "why", "context", "intent", "note", "explanation"]);
-const sameCall = (a: any) => fingerprint({ kind: a.kind ?? null, teammate: a.teammate ?? null, server: a.server ?? null, tool: a.tool ?? null,
-  arguments: JSON.stringify(Object.fromEntries(Object.entries(a.arguments ?? {}).filter(([k]) => !PROSE.has(k)).sort(([x], [y]) => x.localeCompare(y)))) });
+const sameCall = (a: any) =>
+  fingerprint({
+    kind: a.kind ?? null,
+    teammate: a.teammate ?? null,
+    server: a.server ?? null,
+    tool: a.tool ?? null,
+    arguments: JSON.stringify(
+      Object.fromEntries(
+        Object.entries(a.arguments ?? {})
+          .filter(([k]) => !PROSE.has(k))
+          .sort(([x], [y]) => x.localeCompare(y)),
+      ),
+    ),
+  });
 
 // From outside a workflow (a tool call during a turn). After a restart the call that was waiting is gone; when the
 // agent makes the same call again it joins the card already shown (still waiting, or answered but never run), so a
 // person never answers twice and an approved call runs once.
-export async function askApproval(runId: string, sessionId: string, action: Record<string, unknown>, ttlSeconds: number): Promise<ApprovalResult> {
+export async function askApproval(
+  runId: string,
+  sessionId: string,
+  action: Record<string, unknown>,
+  ttlSeconds: number,
+): Promise<ApprovalResult> {
   const key = sameCall(action);
-  const earlier = (await pool.query(
-    `SELECT a.id FROM approvals a WHERE a.run_id = $1 AND a.status IN ('pending', 'approved', 'denied')
+  const earlier = (
+    await pool.query(
+      `SELECT a.id FROM approvals a WHERE a.run_id = $1 AND a.status IN ('pending', 'approved', 'denied')
        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.run_id = $1 AND e.type = 'tool.call' AND e.data->>'approval_id' = a.id)
-     ORDER BY a.created_at DESC`, [runId])).rows as { id: string }[];
+     ORDER BY a.created_at DESC`,
+      [runId],
+    )
+  ).rows as { id: string }[];
   for (const r of earlier) {
     const row = (await pool.query("SELECT action FROM approvals WHERE id = $1", [r.id])).rows[0];
     if (row && sameCall(row.action) === key) {
@@ -92,7 +164,9 @@ export async function expireApproval(approvalId: string): Promise<{ ok: boolean;
   const row = (await pool.query("SELECT status FROM approvals WHERE id = $1", [approvalId])).rows[0];
   if (!row) return { ok: false, status: "not_found" };
   if (row.status !== "pending") return { ok: false, status: row.status };
-  await DBOS.send(approvalId, { decision: "expired", scope: null, personId: null } as any, "approval", `expire:${approvalId}`).catch(() => null);
+  await DBOS.send(approvalId, { decision: "expired", scope: null, personId: null } as any, "approval", `expire:${approvalId}`).catch(
+    () => null,
+  );
   await pool.query("UPDATE approvals SET status = 'expired', decided_at = now() WHERE id = $1 AND status = 'pending'", [approvalId]);
   return { ok: true, status: "expired" };
 }

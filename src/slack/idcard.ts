@@ -8,13 +8,19 @@ import { renderAvatarSvg } from "open-bot-avatar";
 import type { Teammate } from "../store/teammates.ts";
 
 const DIR = join(import.meta.dirname, "..", "..", "assets", "avatars");
-export const SHAPES = readdirSync(DIR).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+export const SHAPES = readdirSync(DIR)
+  .filter((f) => f.endsWith(".json"))
+  .map((f) => f.replace(/\.json$/, ""));
 export const COLORS = ["#2E7D5B", "#3B6FB6", "#B5582A", "#7A4FB0", "#C2412D", "#1F8A8A", "#A6782B", "#4A5A6A"];
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 export function pickFace(seed: string, shape?: string | null, color?: string | null): { shape: string; color: string } {
-  let h = 0; for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return { shape: shape && SHAPES.includes(shape) ? shape : SHAPES[h % SHAPES.length], color: color && /^#[0-9a-f]{6}$/i.test(color) ? color : COLORS[h % COLORS.length] };
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return {
+    shape: shape && SHAPES.includes(shape) ? shape : SHAPES[h % SHAPES.length],
+    color: color && /^#[0-9a-f]{6}$/i.test(color) ? color : COLORS[h % COLORS.length],
+  };
 }
 
 export async function facePng(face: { shape: string; color: string }, size = 512): Promise<Buffer> {
@@ -22,7 +28,10 @@ export async function facePng(face: { shape: string; color: string }, size = 512
   const svg = renderAvatarSvg(JSON.parse(readFileSync(join(DIR, `${face.shape}.json`), "utf8")), { color: face.color, size: inner });
   const bot = await sharp(Buffer.from(svg)).resize(inner).png().toBuffer();
   const pad = Math.round((size - inner) / 2);
-  return sharp({ create: { width: size, height: size, channels: 4, background: "#F4EFE6" } }).composite([{ input: bot, top: pad, left: pad }]).png().toBuffer();
+  return sharp({ create: { width: size, height: size, channels: 4, background: "#F4EFE6" } })
+    .composite([{ input: bot, top: pad, left: pad }])
+    .png()
+    .toBuffer();
 }
 
 // The role on up to two lines, broken at words (never cut mid-word).
@@ -33,7 +42,10 @@ function roleLines(role: string, width = 40): string[] {
     const cur = lines[lines.length - 1];
     if ((cur + " " + w).trim().length <= width) lines[lines.length - 1] = (cur + " " + w).trim();
     else if (lines.length < 2) lines.push(w);
-    else { lines[1] = `${lines[1].replace(/[.,;:]?$/, "")}…`; break; }
+    else {
+      lines[1] = `${lines[1].replace(/[.,;:]?$/, "")}…`;
+      break;
+    }
   }
   return lines;
 }
@@ -42,28 +54,40 @@ function roleLines(role: string, width = 40): string[] {
 export async function idCardHeroPng(card: Buffer): Promise<Buffer> {
   const inner = await sharp(card).resize({ width: 760 }).png().toBuffer();
   const meta = await sharp(inner).metadata();
-  const W = 1200, H = 600;
+  const W = 1200,
+    H = 600;
   return sharp({ create: { width: W, height: H, channels: 4, background: "#F4EFE6" } })
-    .composite([{ input: inner, left: Math.round((W - (meta.width ?? 760)) / 2), top: Math.round((H - (meta.height ?? 440)) / 2) }]).png().toBuffer();
+    .composite([{ input: inner, left: Math.round((W - (meta.width ?? 760)) / 2), top: Math.round((H - (meta.height ?? 440)) / 2) }])
+    .png()
+    .toBuffer();
 }
 
 export async function idCardPng(tm: Teammate, face: { shape: string; color: string }, hiredBy: string): Promise<Buffer> {
-  const W = 900, H = 520;
+  const W = 900,
+    H = 520;
   const avatar = (await facePng(face, 300)).toString("base64");
   const c = tm.config;
   const { modelLabel } = await import("./look.ts");
   const model = await modelLabel(c.model.default);
   // The ID is the teammate's slug: the same on the card before and after the hire (never a preview id).
   const id = tm.slug.toUpperCase().slice(0, 16);
-  const bars = [...id].map((ch, i) => `<rect x="${600 + i * 18}" y="430" width="${(ch.charCodeAt(0) % 3) + 3}" height="50" fill="#1d1c1d"/>`).join("");
-  const line = (y: number, k: string, v: string) => `<text x="380" y="${y}" font-family="Helvetica, Arial, sans-serif" font-size="20" fill="#6b6b6b">${esc(k)}</text><text x="520" y="${y}" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1d1c1d">${esc(v.slice(0, 34))}</text>`;
+  const bars = [...id]
+    .map((ch, i) => `<rect x="${600 + i * 18}" y="430" width="${(ch.charCodeAt(0) % 3) + 3}" height="50" fill="#1d1c1d"/>`)
+    .join("");
+  const line = (y: number, k: string, v: string) =>
+    `<text x="380" y="${y}" font-family="Helvetica, Arial, sans-serif" font-size="20" fill="#6b6b6b">${esc(k)}</text><text x="520" y="${y}" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1d1c1d">${esc(v.slice(0, 34))}</text>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
     <rect x="10" y="10" width="${W - 20}" height="${H - 20}" rx="28" fill="#FFFDF8" stroke="#1d1c1d" stroke-width="3"/>
     <rect x="10" y="10" width="${W - 20}" height="70" rx="28" fill="${face.color}"/><rect x="10" y="50" width="${W - 20}" height="30" fill="${face.color}"/>
     <text x="40" y="58" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#FFFDF8">PEEBLO · TEAMMATE ID</text>
     <image x="40" y="110" width="300" height="300" href="data:image/png;base64,${avatar}"/>
     <text x="380" y="160" font-family="Helvetica, Arial, sans-serif" font-size="48" font-weight="700" fill="#1d1c1d">${esc(c.name)}</text>
-    ${roleLines(c.role).map((l, i) => `<text x="380" y="${196 + i * 28}" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#3a3a3a">${esc(l)}</text>`).join("")}
+    ${roleLines(c.role)
+      .map(
+        (l, i) =>
+          `<text x="380" y="${196 + i * 28}" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#3a3a3a">${esc(l)}</text>`,
+      )
+      .join("")}
     ${line(280, "Hired by", hiredBy)}${line(318, "Model", model)}${line(356, "Budget", `$${c.budget.monthly_usd}/month`)}${line(394, "Approvals", `${c.mode} mode`)}
     <text x="40" y="465" font-family="Courier, monospace" font-size="22" fill="#1d1c1d">ID ${esc(id)}</text>${bars}
   </svg>`;

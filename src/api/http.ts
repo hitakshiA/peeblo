@@ -1,7 +1,14 @@
 // A tiny JSON router over node:http. Handlers throw errors with a numeric `status` for client errors.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-type Req = { method: string; path: string; params: Record<string, string>; query: URLSearchParams; body: any; headers: IncomingMessage["headers"] };
+type Req = {
+  method: string;
+  path: string;
+  params: Record<string, string>;
+  query: URLSearchParams;
+  body: any;
+  headers: IncomingMessage["headers"];
+};
 export type Handler = (req: Req) => Promise<unknown>;
 type Route = { method: string; pattern: RegExp; keys: string[]; handler: Handler };
 
@@ -9,7 +16,14 @@ export class Router {
   private routes: Route[] = [];
   add(method: string, path: string, handler: Handler): this {
     const keys: string[] = [];
-    const pattern = new RegExp("^" + path.replace(/:([a-z_]+)/g, (_, k) => { keys.push(k); return "([^/]+)"; }) + "$");
+    const pattern = new RegExp(
+      "^" +
+        path.replace(/:([a-z_]+)/g, (_, k) => {
+          keys.push(k);
+          return "([^/]+)";
+        }) +
+        "$",
+    );
     this.routes.push({ method, pattern, keys, handler });
     return this;
   }

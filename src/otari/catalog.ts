@@ -8,15 +8,30 @@ import { join } from "node:path";
 import { otari } from "./client.ts";
 
 export type OtariModel = {
-  id: string; name?: string; type?: string; context_window?: number; max_output_tokens?: number; owned_by?: string;
+  id: string;
+  name?: string;
+  type?: string;
+  context_window?: number;
+  max_output_tokens?: number;
+  owned_by?: string;
   supported_parameters?: string[];
   pricing?: { input_price_per_million?: number; output_price_per_million?: number; cache_read_price_per_million?: number };
 };
 
 const OPEN_WEIGHT: RegExp[] = [
-  /^deepseek\//, /^moonshotai\/kimi/, /^z-ai\/glm/, /^minimax\//, /^xiaomi\/mimo/,
-  /^alibaba\/qwen/, /^meta\/(llama|muse-spark-open)/, /^google\/gemma/,
-  /^openai\/gpt-oss/, /^nvidia\/(llama-)?nemotron/, /^microsoft\/phi/, /^nousresearch\//, /^openbmb\//,
+  /^deepseek\//,
+  /^moonshotai\/kimi/,
+  /^z-ai\/glm/,
+  /^minimax\//,
+  /^xiaomi\/mimo/,
+  /^alibaba\/qwen/,
+  /^meta\/(llama|muse-spark-open)/,
+  /^google\/gemma/,
+  /^openai\/gpt-oss/,
+  /^nvidia\/(llama-)?nemotron/,
+  /^microsoft\/phi/,
+  /^nousresearch\//,
+  /^openbmb\//,
   /^mistralai\/(mistral-small|ministral|devstral|magistral-small|mistral-7b|mixtral|pixtral-12b|mistral-large-[34](-0)?$)/,
   /^reflection\/beam/,
   /^(all-minilm|bge-|e5-|granite-)/,
@@ -26,12 +41,30 @@ const OPEN_WEIGHT: RegExp[] = [
 const CLOSED: RegExp[] = [/^alibaba\/qwen(-max|-plus|-turbo|-flash|3\.\d+-(flash|max|plus))/];
 // Open-weight but never offered: too old for agent work (it drops tools and loses track of multi-step jobs).
 const NOT_OFFERED: RegExp[] = [/^openai\/gpt-oss/];
-export const isOpenWeight = (id: string): boolean => OPEN_WEIGHT.some((r) => r.test(id)) && !CLOSED.some((r) => r.test(id)) && !NOT_OFFERED.some((r) => r.test(id));
+export const isOpenWeight = (id: string): boolean =>
+  OPEN_WEIGHT.some((r) => r.test(id)) && !CLOSED.some((r) => r.test(id)) && !NOT_OFFERED.some((r) => r.test(id));
 
-export type Tier = { tier: "S" | "A" | "B" | "C" | "D" | "E"; aa_v5: number; aa_cost_per_task?: number; minutes_per_task?: number; est_otari_cost_per_task?: number; tokens_per_second?: number; note?: string };
-export type Measured = { cost_per_call: number; prompt_tokens_per_call: number; completion_tokens_per_call: number; output_tokens_per_second: number | null; calls: number; provider?: string; at: string };
+export type Tier = {
+  tier: "S" | "A" | "B" | "C" | "D" | "E";
+  aa_v5: number;
+  aa_cost_per_task?: number;
+  minutes_per_task?: number;
+  est_otari_cost_per_task?: number;
+  tokens_per_second?: number;
+  note?: string;
+};
+export type Measured = {
+  cost_per_call: number;
+  prompt_tokens_per_call: number;
+  completion_tokens_per_call: number;
+  output_tokens_per_second: number | null;
+  calls: number;
+  provider?: string;
+  at: string;
+};
 type TierFile = {
-  source: string; models: Record<string, Tier>;
+  source: string;
+  models: Record<string, Tier>;
   roles: Record<string, { default: string; fallback: string[]; purpose: string }>;
   heavy: { model: string; fallback: string[]; purpose: string };
   measured: Record<string, Measured>;
@@ -80,6 +113,11 @@ export const roughTokens = (text: string): number => Math.ceil(text.length / 4);
 // The exact count from Otari (/messages/count_tokens) for a price card a person reads; the rough count if it fails.
 // Not used on every model call: it would add a round trip to each.
 export async function countTokens(model: string, text: string): Promise<number> {
-  const r = await otari<{ input_tokens?: number }>("POST", "/messages/count_tokens", { model, messages: [{ role: "user", content: text.slice(0, 400_000) }] }, { retries: 0, timeoutMs: 5000 }).catch(() => null);
+  const r = await otari<{ input_tokens?: number }>(
+    "POST",
+    "/messages/count_tokens",
+    { model, messages: [{ role: "user", content: text.slice(0, 400_000) }] },
+    { retries: 0, timeoutMs: 5000 },
+  ).catch(() => null);
   return r?.data?.input_tokens ?? roughTokens(text);
 }

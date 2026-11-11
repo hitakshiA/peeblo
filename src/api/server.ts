@@ -21,14 +21,19 @@ import { bad, notFound, readJson, Router, send } from "./http.ts";
 import { addConsoleRoutes, consoleCookie, consolePerson, login, logout, serveConsole } from "./console.ts";
 import { addSetupRoutes } from "./setup.ts";
 
-
 const router = new Router()
   .add("GET", "/healthz", async () => ({ ok: true }))
   .add("GET", "/v1/teammates", async () => {
     // Each with its face (shape and color), so the console draws the same live avatar as Slack's ID card.
     const { pickFace } = await import("../slack/idcard.ts");
     const faces = new Map((await pool.query("SELECT teammate_id, avatar FROM hires")).rows.map((r) => [r.teammate_id, r.avatar]));
-    return { teammates: (await listTeammates()).map((t) => ({ ...t, face: t.slug === "peeblo" ? { shape: "peeblo", color: "#2E7D5B" } : pickFace(t.slug, faces.get(t.id)?.shape, faces.get(t.id)?.color) })) };
+    return {
+      teammates: (await listTeammates()).map((t) => ({
+        ...t,
+        face:
+          t.slug === "peeblo" ? { shape: "peeblo", color: "#2E7D5B" } : pickFace(t.slug, faces.get(t.id)?.shape, faces.get(t.id)?.color),
+      })),
+    };
   })
   .add("POST", "/v1/teammates", async ({ body }) => {
     const { slug, hidden, ...config } = body ?? {};
@@ -43,8 +48,17 @@ const router = new Router()
     // The same checks as a change by talking (the console acts as the first admin); a model goes through /model.
     if ((patch as any).model) throw bad("change the model with POST /v1/teammates/:slug/model (it checks the model and who asks)");
     const { configProblems } = await import("../rules/hire-rules.ts");
-    const admin = config.admins[0] ? (await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [config.admins[0]])).rows[0] ?? { slack_user: config.admins[0] } : null;
-    const problem = await configProblems(admin, { mode: (patch as any).mode, budget_usd: (patch as any).budget?.monthly_usd, tools: (patch as any).tools, connectors: (patch as any).connectors });
+    const admin = config.admins[0]
+      ? ((await pool.query("SELECT * FROM people WHERE slack_user = $1 LIMIT 1", [config.admins[0]])).rows[0] ?? {
+          slack_user: config.admins[0],
+        })
+      : null;
+    const problem = await configProblems(admin, {
+      mode: (patch as any).mode,
+      budget_usd: (patch as any).budget?.monthly_usd,
+      tools: (patch as any).tools,
+      connectors: (patch as any).connectors,
+    });
     if (problem) throw bad(problem);
     const t = await updateTeammate(params.slug, patch, { label: "api" }, note);
     if ((patch as any)?.computer) await import("../environment/recipes.ts").then((r) => r.queueIfNeeded(t.id)).catch(() => {});
@@ -56,7 +70,13 @@ const router = new Router()
     if (!body?.model || !body?.person) throw bad("model and person {slack_team, slack_user} are required");
     const person = await personForSlack(body.person.slack_team, body.person.slack_user, { displayName: body.person.display_name });
     try {
-      const r = await changeModel(params.slug, { model: String(body.model), fallback: body.fallback ?? null, personId: person.id, now: body.now?.session_id ? { sessionId: String(body.now.session_id) } : null, why: body.why });
+      const r = await changeModel(params.slug, {
+        model: String(body.model),
+        fallback: body.fallback ?? null,
+        personId: person.id,
+        now: body.now?.session_id ? { sessionId: String(body.now.session_id) } : null,
+        why: body.why,
+      });
       return { version: r.teammate.version, model: r.teammate.config.model, applies_to: r.appliesTo };
     } catch (e) {
       if (e instanceof ModelChangeRefused) throw Object.assign(new Error(e.message), { status: 403 });
@@ -88,10 +108,17 @@ const router = new Router()
     if (!(await getSession(params.id))) throw notFound("session");
     if (!body?.text?.trim()) throw bad("text is required");
     // A person can be named by Peeblo id or by Slack team + user (they become an Otari end user on first use).
-    const personId = body.person_id ?? (body.person?.slack_team && body.person?.slack_user
-      ? (await personForSlack(body.person.slack_team, body.person.slack_user, { displayName: body.person.display_name })).id : null);
+    const personId =
+      body.person_id ??
+      (body.person?.slack_team && body.person?.slack_user
+        ? (await personForSlack(body.person.slack_team, body.person.slack_user, { displayName: body.person.display_name })).id
+        : null);
     const { submissionId, run, created } = await submit({
-      sessionId: params.id, personId, requestId: String(body.request_id ?? newId("rq")), text: body.text, source: "api",
+      sessionId: params.id,
+      personId,
+      requestId: String(body.request_id ?? newId("rq")),
+      text: body.text,
+      source: "api",
     });
     if (created) await startRun(run.id);
     return { submission_id: submissionId, run_id: run.id, created };
@@ -99,7 +126,13 @@ const router = new Router()
   // Schedules and triggers: list them, and run one now (a watch polls; the console's "run now" button).
   .add("GET", "/v1/schedules", async () => {
     const { pool } = await import("../db.ts");
-    return { schedules: (await pool.query("SELECT s.id, t.slug AS teammate, s.kind, s.name, s.cron, s.run_at, s.enabled, s.last_run_at, s.filter, s.watch, s.budget_usd FROM schedules s JOIN teammates t ON t.id = s.teammate_id ORDER BY s.created_at DESC")).rows };
+    return {
+      schedules: (
+        await pool.query(
+          "SELECT s.id, t.slug AS teammate, s.kind, s.name, s.cron, s.run_at, s.enabled, s.last_run_at, s.filter, s.watch, s.budget_usd FROM schedules s JOIN teammates t ON t.id = s.teammate_id ORDER BY s.created_at DESC",
+        )
+      ).rows,
+    };
   })
   .add("POST", "/v1/schedules/:id/run", async ({ params }) => {
     const { pool } = await import("../db.ts");
@@ -135,9 +168,13 @@ const router = new Router()
     // Otari's rule engine checks the command against the teammate policy first.
     const command = argv.length >= 3 && /(^|\/)(ba)?sh$/.test(argv[0]) && argv[1] === "-c" ? argv[2] : argv.join(" ");
     const rule = await checkAction({ commands: [command] });
-    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('admin', 'computer.exec.check', $1, $2)", [tm.id, { command, decision: rule.decision, failing: rule.failing.map((g) => g.gate_id), request_id: rule.requestId }]);
+    await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('admin', 'computer.exec.check', $1, $2)", [
+      tm.id,
+      { command, decision: rule.decision, failing: rule.failing.map((g) => g.gate_id), request_id: rule.requestId },
+    ]);
     if (rule.decision === "deny") throw Object.assign(new Error(`refused by the teammate policy: ${ruleMessage(rule)}`), { status: 403 });
-    if (rule.decision === "ask" && body.confirm !== true) throw Object.assign(new Error(`needs a person's yes: ${ruleMessage(rule)} Send confirm: true to run it.`), { status: 409 });
+    if (rule.decision === "ask" && body.confirm !== true)
+      throw Object.assign(new Error(`needs a person's yes: ${ruleMessage(rule)} Send confirm: true to run it.`), { status: 409 });
     return vmExec(tm.id, argv, { timeoutMs: Number(body.timeout_ms ?? 60_000) });
   })
   .add("POST", "/v1/teammates/:slug/computer/sleep", async ({ params }) => {
@@ -149,10 +186,21 @@ const router = new Router()
   .add("GET", "/v1/slack/apps", async () => ({ apps: await listApps() }))
   .add("POST", "/v1/slack/apps", async ({ body }) => {
     const s = body?.secrets ?? {};
-    if (!body?.app_id || !s.signing_secret || !s.client_id || !s.client_secret) throw bad("app_id and secrets.signing_secret, client_id, client_secret are required");
+    if (!body?.app_id || !s.signing_secret || !s.client_id || !s.client_secret)
+      throw bad("app_id and secrets.signing_secret, client_id, client_secret are required");
     let teammateId: string | null = null;
-    if (body.teammate) { const tm = await getTeammate(String(body.teammate)); if (!tm) throw notFound("teammate"); teammateId = tm.id; }
-    await saveApp({ app_id: body.app_id, teammate_id: teammateId, team_id: body.team_id ?? null, bot_user_id: body.bot_user_id ?? null, secrets: s });
+    if (body.teammate) {
+      const tm = await getTeammate(String(body.teammate));
+      if (!tm) throw notFound("teammate");
+      teammateId = tm.id;
+    }
+    await saveApp({
+      app_id: body.app_id,
+      teammate_id: teammateId,
+      team_id: body.team_id ?? null,
+      bot_user_id: body.bot_user_id ?? null,
+      secrets: s,
+    });
     return { app_id: body.app_id, teammate_id: teammateId };
   });
 
@@ -173,13 +221,30 @@ export function startApi(): Promise<Server> {
     const url = new URL(req.url ?? "/", "http://core");
     // The console and API answer only to this machine's own names (no DNS rebinding), and a change only from the
     // console's own pages (a web page elsewhere can't post here, e.g. to choose the first password).
-    const host = String(req.headers.host ?? "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
-    if (!LOCAL_HOSTS.has(host) && host !== config.apiHost) return send(res, 403, { error: "the console only answers on this machine (open it at http://127.0.0.1:7340/console/)" });
-    const origin = req.headers.origin ? (() => { try { return new URL(String(req.headers.origin)).host; } catch { return "bad"; } })() : null;
-    if (req.method !== "GET" && origin && origin !== req.headers.host) return send(res, 403, { error: "changes come only from the console's own pages" });
+    const host = String(req.headers.host ?? "")
+      .replace(/:\d+$/, "")
+      .replace(/^\[|\]$/g, "");
+    if (!LOCAL_HOSTS.has(host) && host !== config.apiHost)
+      return send(res, 403, { error: "the console only answers on this machine (open it at http://127.0.0.1:7340/console/)" });
+    const origin = req.headers.origin
+      ? (() => {
+          try {
+            return new URL(String(req.headers.origin)).host;
+          } catch {
+            return "bad";
+          }
+        })()
+      : null;
+    if (req.method !== "GET" && origin && origin !== req.headers.host)
+      return send(res, 403, { error: "changes come only from the console's own pages" });
     // The console's built files, and its login (the only routes that work without a token or cookie).
-    try { if (req.method === "GET" && serveConsole(url.pathname, res)) return; } catch { return send(res, 500, { error: "console error" }); }
-    if (req.method === "POST" && url.pathname === "/v1/console/login") return void (await login(req, res, await readJson(req).catch(() => ({}))));
+    try {
+      if (req.method === "GET" && serveConsole(url.pathname, res)) return;
+    } catch {
+      return send(res, 500, { error: "console error" });
+    }
+    if (req.method === "POST" && url.pathname === "/v1/console/login")
+      return void (await login(req, res, await readJson(req).catch(() => ({}))));
     if (req.method === "POST" && url.pathname === "/v1/console/logout") return logout(req, res);
     // The first visit chooses the console password (only while none is set), and is signed in with it.
     if (req.method === "POST" && url.pathname === "/v1/setup/password") {
@@ -196,14 +261,34 @@ export function startApi(): Promise<Server> {
     if (!route) return send(res, 404, { error: "not found" });
     const viaConsole = consoleCookie(req);
     // Before sign-in, the setup state says only whether a password exists (so the console knows which screen to show).
-    if (url.pathname === "/v1/setup/state" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 200, { signed_in: false, password_set: Boolean(config.consolePassword), mode: config.otariKey ? "running" : "setup", next: config.consolePassword ? "login" : "password" });
-    if (url.pathname !== "/healthz" && !viaConsole && !authorized(req.headers.authorization)) return send(res, 401, { error: "sign in, or send the admin token" });
+    if (url.pathname === "/v1/setup/state" && !viaConsole && !authorized(req.headers.authorization))
+      return send(res, 200, {
+        signed_in: false,
+        password_set: Boolean(config.consolePassword),
+        mode: config.otariKey ? "running" : "setup",
+        next: config.consolePassword ? "login" : "password",
+      });
+    if (url.pathname !== "/healthz" && !viaConsole && !authorized(req.headers.authorization))
+      return send(res, 401, { error: "sign in, or send the admin token" });
     try {
       let body = req.method === "GET" ? {} : await readJson(req);
       // Console actions are made as the console's admin person: the server fills it in.
-      if (viaConsole && body && typeof body === "object") { const p = await consolePerson(); if (p) body = { ...body, person_id: p.id }; }
-      const out: any = await route.handler({ method: req.method!, path: url.pathname, params: route.params, query: url.searchParams, body, headers: req.headers });
-      if (out?.__raw) return void res.writeHead(200, { "content-type": out.__type ?? "application/octet-stream", "cache-control": "max-age=3600" }).end(out.__raw);
+      if (viaConsole && body && typeof body === "object") {
+        const p = await consolePerson();
+        if (p) body = { ...body, person_id: p.id };
+      }
+      const out: any = await route.handler({
+        method: req.method!,
+        path: url.pathname,
+        params: route.params,
+        query: url.searchParams,
+        body,
+        headers: req.headers,
+      });
+      if (out?.__raw)
+        return void res
+          .writeHead(200, { "content-type": out.__type ?? "application/octet-stream", "cache-control": "max-age=3600" })
+          .end(out.__raw);
       send(res, 200, out);
     } catch (error) {
       const status = (error as { status?: number }).status ?? 500;

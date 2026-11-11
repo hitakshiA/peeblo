@@ -14,7 +14,9 @@
     "lint": "biome lint",
     "test": "node --test --import ./test/setup.ts \"test/**/*.test.ts\"",
     "knip": "knip --no-progress",
-    "test:integration": "node --test --import ./test/setup.ts \"test/integration/*.test.ts\""
+    "test:integration": "node --test --import ./test/setup.ts \"test/integration/*.test.ts\"",
+    "format": "biome format --write src test console/src",
+    "format:check": "biome format src test console/src"
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "5.4.0",

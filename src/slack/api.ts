@@ -2,11 +2,19 @@
 import { getApp } from "../ingress/apps.ts";
 
 export class SlackError extends Error {
-  method: string; code: string; detail?: unknown;
-  constructor(method: string, code: string, detail?: unknown) { super(`${method}: ${code}`); this.method = method; this.code = code; this.detail = detail; }
+  method: string;
+  code: string;
+  detail?: unknown;
+  constructor(method: string, code: string, detail?: unknown) {
+    super(`${method}: ${code}`);
+    this.method = method;
+    this.code = code;
+    this.detail = detail;
+  }
 }
 
-const READS = /^(conversations\.(replies|history|info|members|list)|users\.(info|list|lookupByEmail)|reactions\.get|team\.info|auth\.test|chat\.getPermalink|files\.(getUploadURLExternal|completeUploadExternal))$/;
+const READS =
+  /^(conversations\.(replies|history|info|members|list)|users\.(info|list|lookupByEmail)|reactions\.get|team\.info|auth\.test|chat\.getPermalink|files\.(getUploadURLExternal|completeUploadExternal))$/;
 
 export async function slack<T = any>(appId: string, method: string, payload: Record<string, unknown>): Promise<T> {
   const app = await getApp(appId);
@@ -17,10 +25,18 @@ export async function slack<T = any>(appId: string, method: string, payload: Rec
     const form = READS.test(method);
     const r = await fetch(`https://slack.com/api/${method}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": form ? "application/x-www-form-urlencoded" : "application/json; charset=utf-8" },
-      body: form ? new URLSearchParams(Object.entries(payload).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)])) : JSON.stringify(payload),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": form ? "application/x-www-form-urlencoded" : "application/json; charset=utf-8",
+      },
+      body: form
+        ? new URLSearchParams(Object.entries(payload).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]))
+        : JSON.stringify(payload),
     });
-    if (r.status === 429 && attempt < 3) { await new Promise((x) => setTimeout(x, 1000 * Number(r.headers.get("retry-after") ?? 1))); continue; }
+    if (r.status === 429 && attempt < 3) {
+      await new Promise((x) => setTimeout(x, 1000 * Number(r.headers.get("retry-after") ?? 1)));
+      continue;
+    }
     const j: any = await r.json();
     if (!j.ok) throw new SlackError(method, j.error ?? `http_${r.status}`, j.response_metadata);
     return j as T;
@@ -48,16 +64,27 @@ export async function displayName(appId: string, user: string): Promise<string |
     const name = j.user?.profile?.display_name || j.user?.real_name || j.user?.name || null;
     if (name) names.set(user, { name, at: Date.now() });
     return name;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-export const react = (appId: string, channel: string, ts: string, name: string) => slack(appId, "reactions.add", { channel, timestamp: ts, name }).catch(() => null);
-export const unreact = (appId: string, channel: string, ts: string, name: string) => slack(appId, "reactions.remove", { channel, timestamp: ts, name }).catch(() => null);
+export const react = (appId: string, channel: string, ts: string, name: string) =>
+  slack(appId, "reactions.add", { channel, timestamp: ts, name }).catch(() => null);
+export const unreact = (appId: string, channel: string, ts: string, name: string) =>
+  slack(appId, "reactions.remove", { channel, timestamp: ts, name }).catch(() => null);
 
 // A person's time zone (IANA, e.g. "Asia/Kolkata") from their Slack profile, cached for a day.
 const zones = new Map<string, { tz: string | null; at: number }>();
 export async function personTz(appId: string, user: string): Promise<string | null> {
   const c = zones.get(user);
   if (c && Date.now() - c.at < 86_400_000) return c.tz;
-  try { const j = await slack(appId, "users.info", { user }); const tz = j.user?.tz ?? null; zones.set(user, { tz, at: Date.now() }); return tz; } catch { return null; }
+  try {
+    const j = await slack(appId, "users.info", { user });
+    const tz = j.user?.tz ?? null;
+    zones.set(user, { tz, at: Date.now() });
+    return tz;
+  } catch {
+    return null;
+  }
 }

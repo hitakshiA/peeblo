@@ -7,8 +7,47 @@ import { pool } from "../db.ts";
 import { appendEvent, onEvent } from "../store/events.ts";
 import { getTeammate, type Teammate } from "../store/teammates.ts";
 
-export const BOT_SCOPES = ["app_mentions:read", "assistant:write", "channels:history", "channels:read", "channels:join", "channels:write.invites", "chat:write", "commands", "files:read", "files:write", "groups:history", "groups:read", "groups:write.invites", "im:history", "im:read", "im:write", "mpim:history", "mpim:read", "mpim:write", "reactions:read", "reactions:write", "users:read", "users:read.email", "links:read", "links:write", "canvases:read", "canvases:write"];
-const EVENTS = ["app_mention", "message.channels", "message.groups", "message.im", "message.mpim", "app_home_opened", "member_joined_channel", "agent_session_stopped", "agent_session_title_changed", "app_context_changed"];
+export const BOT_SCOPES = [
+  "app_mentions:read",
+  "assistant:write",
+  "channels:history",
+  "channels:read",
+  "channels:join",
+  "channels:write.invites",
+  "chat:write",
+  "commands",
+  "files:read",
+  "files:write",
+  "groups:history",
+  "groups:read",
+  "groups:write.invites",
+  "im:history",
+  "im:read",
+  "im:write",
+  "mpim:history",
+  "mpim:read",
+  "mpim:write",
+  "reactions:read",
+  "reactions:write",
+  "users:read",
+  "users:read.email",
+  "links:read",
+  "links:write",
+  "canvases:read",
+  "canvases:write",
+];
+const EVENTS = [
+  "app_mention",
+  "message.channels",
+  "message.groups",
+  "message.im",
+  "message.mpim",
+  "app_home_opened",
+  "member_joined_channel",
+  "agent_session_stopped",
+  "agent_session_title_changed",
+  "app_context_changed",
+];
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
 // Slack's short description limit counts bytes, so it ends on a word with plain dots, never "…".
@@ -22,7 +61,12 @@ async function ownerName(tm: Teammate): Promise<string | null> {
   return p?.display_name ? String(p.display_name).split(" ")[0] : null;
 }
 
-const ASKS: Record<string, string> = { ask: "Asks before every write", auto: "Asks before money, deletes and any write you didn't ask for", trusted: "Asks before money and deletes", yolo: "Acts without asking" };
+const ASKS: Record<string, string> = {
+  ask: "Asks before every write",
+  auto: "Asks before money, deletes and any write you didn't ask for",
+  trusted: "Asks before money and deletes",
+  yolo: "Acts without asking",
+};
 
 // Three plain facts under the bio (code fills them; the model never writes these numbers).
 async function facts(tm: Teammate): Promise<string> {
@@ -46,26 +90,63 @@ export async function manifestFor(tm: Teammate, color: string): Promise<Record<s
   if (long.length < 175) long = `${bio}\nIt works on its own computer and keeps a receipt for every reply.\n\n${await facts(tm)}`;
   const short = cut(c.name, 18);
   return {
-    display_information: { name: cut(c.name, 35), description: shortCut(c.role, 130), long_description: cut(long, 4000), background_color: color },
+    display_information: {
+      name: cut(c.name, 35),
+      description: shortCut(c.role, 130),
+      long_description: cut(long, 4000),
+      background_color: color,
+    },
     features: {
       app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
       // The name people see, never the internal slug (a reused name gets a suffix like "ledger-59o" in the slug only).
       bot_user: { display_name: cut(c.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), 80), always_online: true },
       // The agent description replaces Slack's generic assistant text, so it is the agent's own bio.
-      agent_view: { agent_description: cut(c.profile?.agent_description?.trim() || bio, 300), suggested_prompts: (c.profile?.starter_prompts ?? []).slice(0, 4) },
+      agent_view: {
+        agent_description: cut(c.profile?.agent_description?.trim() || bio, 300),
+        suggested_prompts: (c.profile?.starter_prompts ?? []).slice(0, 4),
+      },
       shortcuts: [
-        { name: cut(`Ask ${short} about this`, 24), type: "message", callback_id: "ask_about", description: cut(`Ask ${c.name} about this message, in a thread`, 150) },
-        { name: cut(`Hand this to ${short}`, 24), type: "message", callback_id: "hand_to", description: cut(`Give ${c.name} this message as a job`, 150) },
-        { name: cut(`New job for ${short}`, 24), type: "global", callback_id: "new_job", description: cut(`Describe a job for ${c.name}`, 150) },
+        {
+          name: cut(`Ask ${short} about this`, 24),
+          type: "message",
+          callback_id: "ask_about",
+          description: cut(`Ask ${c.name} about this message, in a thread`, 150),
+        },
+        {
+          name: cut(`Hand this to ${short}`, 24),
+          type: "message",
+          callback_id: "hand_to",
+          description: cut(`Give ${c.name} this message as a job`, 150),
+        },
+        {
+          name: cut(`New job for ${short}`, 24),
+          type: "global",
+          callback_id: "new_job",
+          description: cut(`Describe a job for ${c.name}`, 150),
+        },
       ],
       // Slash commands only on Peeblo's own app, so many teammate apps never clash.
-      ...(peeblo ? { slash_commands: [{ command: "/peeblo", url: `${base}/slack/commands`, description: "Your AI crew: crew, hire, budget, settings @teammate", usage_hint: "crew | hire | budget | settings @name", should_escape: true }] } : {}),
+      ...(peeblo
+        ? {
+            slash_commands: [
+              {
+                command: "/peeblo",
+                url: `${base}/slack/commands`,
+                description: "Your AI crew: crew, hire, budget, settings @teammate",
+                usage_hint: "crew | hire | budget | settings @name",
+                should_escape: true,
+              },
+            ],
+          }
+        : {}),
     },
     oauth_config: { redirect_urls: [`${base}/slack/oauth/callback`], scopes: { bot: BOT_SCOPES } },
     settings: {
       event_subscriptions: { request_url: `${base}/slack/events`, bot_events: tm.slug === "peeblo" ? [...EVENTS, "team_join"] : EVENTS },
       interactivity: { is_enabled: true, request_url: `${base}/slack/interactions` },
-      org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false,
+      org_deploy_enabled: false,
+      socket_mode_enabled: false,
+      token_rotation_enabled: false,
     },
   };
 }
@@ -80,7 +161,9 @@ export async function faceOf(tm: Teammate): Promise<{ shape: string; color: stri
   const { pickFace } = await import("./idcard.ts");
   return pickFace(tm.slug);
 }
-async function faceColor(tm: Teammate): Promise<string> { return (await faceOf(tm)).color; }
+async function faceColor(tm: Teammate): Promise<string> {
+  return (await faceOf(tm)).color;
+}
 
 // One manifest update at a time, a minute apart (apps.manifest.update is rate limited).
 let chain: Promise<unknown> = Promise.resolve();
@@ -88,7 +171,8 @@ let last = 0;
 export function syncManifest(teammateId: string): Promise<{ ok: boolean; error?: string }> {
   const job = chain.then(async () => {
     // No Slack app, nothing to update (and no reason to wait a turn in the queue).
-    if (!(await pool.query("SELECT 1 FROM slack_apps WHERE teammate_id = $1 LIMIT 1", [teammateId])).rows.length) return { ok: false, error: "no Slack app" };
+    if (!(await pool.query("SELECT 1 FROM slack_apps WHERE teammate_id = $1 LIMIT 1", [teammateId])).rows.length)
+      return { ok: false, error: "no Slack app" };
     const wait = last + 61_000 - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     last = Date.now();
@@ -107,8 +191,24 @@ export async function updateNow(teammateId: string): Promise<{ ok: boolean; erro
   const token = await configToken();
   const manifest = await manifestFor(tm, await faceColor(tm));
   for (const a of apps) {
-    const r: any = await (await fetch("https://slack.com/api/apps.manifest.update", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: new URLSearchParams({ app_id: a.app_id, manifest: JSON.stringify(manifest) }) })).json();
-    await appendEvent({ type: "slack.manifest_updated", data: { teammate_id: tm.id, app_id: a.app_id, ok: r.ok, error: r.error ?? null, errors: r.errors ?? null, needs_reinstall: r.permissions_updated ?? null } });
+    const r: any = await (
+      await fetch("https://slack.com/api/apps.manifest.update", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: new URLSearchParams({ app_id: a.app_id, manifest: JSON.stringify(manifest) }),
+      })
+    ).json();
+    await appendEvent({
+      type: "slack.manifest_updated",
+      data: {
+        teammate_id: tm.id,
+        app_id: a.app_id,
+        ok: r.ok,
+        error: r.error ?? null,
+        errors: r.errors ?? null,
+        needs_reinstall: r.permissions_updated ?? null,
+      },
+    });
     if (!r.ok) return { ok: false, error: `${r.error}${r.errors ? ` ${JSON.stringify(r.errors).slice(0, 400)}` : ""}` };
     // The app icon is the same face as the ID card and App Home.
     await setIcon(tm, a.app_id);
@@ -121,8 +221,14 @@ export async function setIcon(tm: Teammate, appId: string): Promise<boolean> {
   const { facePng } = await import("./idcard.ts");
   const fd = new FormData();
   fd.append("app_id", appId);
-  fd.append("file", new Blob([new Uint8Array(await facePng(await faceOf(tm) as any))], { type: "image/png" }), "face.png");
-  const icon: any = await (await fetch("https://slack.com/api/apps.icon.set", { method: "POST", headers: { authorization: `Bearer ${await configToken()}` }, body: fd })).json();
+  fd.append("file", new Blob([new Uint8Array(await facePng((await faceOf(tm)) as any))], { type: "image/png" }), "face.png");
+  const icon: any = await (
+    await fetch("https://slack.com/api/apps.icon.set", {
+      method: "POST",
+      headers: { authorization: `Bearer ${await configToken()}` },
+      body: fd,
+    })
+  ).json();
   await appendEvent({ type: "slack.icon_set", data: { teammate_id: tm.id, app_id: appId, ok: icon.ok, error: icon.error ?? null } });
   return Boolean(icon.ok);
 }
@@ -140,17 +246,34 @@ export function installProfileSync(): void {
 // for Peeblo's own app) gets the install link, since only a person can grant new scopes.
 export async function staleApps(): Promise<{ appId: string; teammateId: string | null; name: string; missing: string[] }[]> {
   const { getApp } = await import("../ingress/apps.ts");
-  const rows = (await pool.query("SELECT a.app_id, a.teammate_id FROM slack_apps a LEFT JOIN teammates t ON t.id = a.teammate_id WHERE a.bot_user_id IS NOT NULL AND (t.id IS NULL OR (t.archived_at IS NULL AND NOT t.hidden))")).rows;
+  const rows = (
+    await pool.query(
+      "SELECT a.app_id, a.teammate_id FROM slack_apps a LEFT JOIN teammates t ON t.id = a.teammate_id WHERE a.bot_user_id IS NOT NULL AND (t.id IS NULL OR (t.archived_at IS NULL AND NOT t.hidden))",
+    )
+  ).rows;
   const out: { appId: string; teammateId: string | null; name: string; missing: string[] }[] = [];
   for (const r of rows) {
     const token = (await getApp(r.app_id))?.secrets.bot_token;
     if (!token) continue;
-    const res = await fetch("https://slack.com/api/auth.test", { method: "POST", headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+    const res = await fetch("https://slack.com/api/auth.test", { method: "POST", headers: { authorization: `Bearer ${token}` } }).catch(
+      () => null,
+    );
     const body: any = await res?.json().catch(() => null);
-    if (!res || !body?.ok) continue;   // an uninstalled or revoked app shows up in the install checks instead
-    const granted = new Set(String(res.headers.get("x-oauth-scopes") ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+    if (!res || !body?.ok) continue; // an uninstalled or revoked app shows up in the install checks instead
+    const granted = new Set(
+      String(res.headers.get("x-oauth-scopes") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
     const missing = BOT_SCOPES.filter((s) => !granted.has(s));
-    if (missing.length) out.push({ appId: r.app_id, teammateId: r.teammate_id, name: (r.teammate_id ? (await getTeammate(r.teammate_id))?.config.name : null) ?? "Peeblo", missing });
+    if (missing.length)
+      out.push({
+        appId: r.app_id,
+        teammateId: r.teammate_id,
+        name: (r.teammate_id ? (await getTeammate(r.teammate_id))?.config.name : null) ?? "Peeblo",
+        missing,
+      });
   }
   return out;
 }
@@ -163,6 +286,14 @@ export async function askForReinstalls(): Promise<void> {
     const app = await getApp(s.appId);
     if (!app?.secrets.client_id) continue;
     await appendEvent({ type: "slack.needs_reinstall", data: { app_id: s.appId, teammate_id: s.teammateId, missing: s.missing } });
-    await appendEvent({ type: "notify.owner", data: { teammate_id: s.teammateId, kind: "reinstall", key: s.appId, text: `${s.name} needs one click to keep up with this version of Peeblo: Slack asks you to approve a new permission it uses. <${installUrl(s.appId, app.secrets.client_id)}|Reinstall ${s.name}>` } });
+    await appendEvent({
+      type: "notify.owner",
+      data: {
+        teammate_id: s.teammateId,
+        kind: "reinstall",
+        key: s.appId,
+        text: `${s.name} needs one click to keep up with this version of Peeblo: Slack asks you to approve a new permission it uses. <${installUrl(s.appId, app.secrets.client_id)}|Reinstall ${s.name}>`,
+      },
+    });
   }
 }

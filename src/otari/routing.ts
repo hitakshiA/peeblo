@@ -15,7 +15,17 @@ const pinned = new Map<string, string>();
 export async function zdrRequired(): Promise<boolean> {
   const { admin, session } = await import("./admin.ts");
   if (!(await session())) return false;
-  return Boolean((await admin<{ require_zero_data_retention?: boolean }>("GET", "/workspaces/{workspace}/provider-policy", undefined, "reading the provider policy", "").catch(() => null))?.require_zero_data_retention);
+  return Boolean(
+    (
+      await admin<{ require_zero_data_retention?: boolean }>(
+        "GET",
+        "/workspaces/{workspace}/provider-policy",
+        undefined,
+        "reading the provider policy",
+        "",
+      ).catch(() => null)
+    )?.require_zero_data_retention,
+  );
 }
 export async function zdrOffering(catalogId: string): Promise<string | null> {
   const r = await otari<any>("GET", `/catalog/models/${catalogId}`).catch(() => null);
@@ -25,7 +35,10 @@ export async function pinnedName(catalogId: string): Promise<string> {
   if (catalogId.includes(":")) return catalogId;
   if (await zdrRequired()) {
     const zdr = await zdrOffering(catalogId);
-    if (!zdr) throw new Error(`${catalogId} has no zero-data-retention provider in Otari, which this workspace requires; pick another model in config/model-tiers.json`);
+    if (!zdr)
+      throw new Error(
+        `${catalogId} has no zero-data-retention provider in Otari, which this workspace requires; pick another model in config/model-tiers.json`,
+      );
     return zdr;
   }
   const hit = pinned.get(catalogId);
@@ -40,7 +53,10 @@ export async function pinnedName(catalogId: string): Promise<string> {
 
 // One policy per role, all open-weight: the default model first, then what Otari falls back to.
 // (from config/model-tiers.json, with the quality tiers they were picked from).
-export const ROLES: Record<string, { default: string; fallback: string[]; purpose: string; step_down?: { at_budget_pct: number; model: string } }> = tierFile.roles;
+export const ROLES: Record<
+  string,
+  { default: string; fallback: string[]; purpose: string; step_down?: { at_budget_pct: number; model: string } }
+> = tierFile.roles;
 
 // A policy Otari just stored is unknown to some of its servers for several seconds (calls alternate between
 // "unknown model" and answers), so wait until it answers several times in a row.
@@ -70,22 +86,55 @@ export async function rolePoliciesInOtari(): Promise<string[]> {
 
 // Which model a piece of delegated work should run on, from Otari's recommender. Candidates are catalog
 // ids with what each is for; the answer is a catalog id (falls back to the parent's model on any error).
-export type Recommendation = { model: string; probabilities: Record<string, number>; reason: string | null; requestId: string | null; fallback: boolean };
-export async function recommend(q: { sessionId: string; toolUseId: string; agentType: string; description: string; prompt: string; parentModel: string; candidates: Record<string, string>; endUser?: string }): Promise<Recommendation> {
+export type Recommendation = {
+  model: string;
+  probabilities: Record<string, number>;
+  reason: string | null;
+  requestId: string | null;
+  fallback: boolean;
+};
+export async function recommend(q: {
+  sessionId: string;
+  toolUseId: string;
+  agentType: string;
+  description: string;
+  prompt: string;
+  parentModel: string;
+  candidates: Record<string, string>;
+  endUser?: string;
+}): Promise<Recommendation> {
   try {
     const byPinned = new Map<string, string>();
     const candidates: Record<string, string> = {};
     // "otari:<catalog id>" names a candidate without pinning a provider, so nothing is called to find one.
-    for (const [id, purpose] of Object.entries(q.candidates)) { const p = id.includes(":") ? id : `otari:${id}`; byPinned.set(p, id); candidates[p] = purpose; }
+    for (const [id, purpose] of Object.entries(q.candidates)) {
+      const p = id.includes(":") ? id : `otari:${id}`;
+      byPinned.set(p, id);
+      candidates[p] = purpose;
+    }
     const r = await otari<{ model: string; reason?: string; probabilities?: Record<string, number> }>("POST", "/routing/recommend", {
-      harness: "pi", session_id: q.sessionId, tool_use_id: q.toolUseId, agent_type: q.agentType, description: q.description,
-      prompt: q.prompt.slice(0, 8000), parent_model: q.parentModel, candidates,
+      harness: "pi",
+      session_id: q.sessionId,
+      tool_use_id: q.toolUseId,
+      agent_type: q.agentType,
+      description: q.description,
+      prompt: q.prompt.slice(0, 8000),
+      parent_model: q.parentModel,
+      candidates,
     });
     const probabilities = Object.fromEntries(Object.entries(r.data.probabilities ?? {}).map(([k, v]) => [byPinned.get(k) ?? k, v]));
-    return { model: byPinned.get(r.data.model) ?? q.parentModel, probabilities, reason: r.data.reason ?? null, requestId: r.requestId, fallback: !byPinned.has(r.data.model) };
+    return {
+      model: byPinned.get(r.data.model) ?? q.parentModel,
+      probabilities,
+      reason: r.data.reason ?? null,
+      requestId: r.requestId,
+      fallback: !byPinned.has(r.data.model),
+    };
   } catch (e) {
     const err = e as { status?: number; requestId?: string | null; message?: string };
-    console.error(`otari: /routing/recommend failed (${err.status ?? "?"} ${err.requestId ?? "no request id"}): ${String(err.message).slice(0, 200)}`);
+    console.error(
+      `otari: /routing/recommend failed (${err.status ?? "?"} ${err.requestId ?? "no request id"}): ${String(err.message).slice(0, 200)}`,
+    );
     return { model: q.parentModel, probabilities: {}, reason: null, requestId: err.requestId ?? null, fallback: true };
   }
 }
@@ -94,7 +143,9 @@ export async function recommend(q: { sessionId: string; toolUseId: string; agent
 // key's budget is mostly used ("when" is checked by Otari against the key's own ceiling, so each teammate steps
 // down on its own budget, and the receipt shows the model that served).
 export async function policySpec(r: (typeof ROLES)[string]): Promise<PolicySpec> {
-  const step = r.step_down ? [{ when: { budget_used_pct: { gte: r.step_down.at_budget_pct } }, target: await pinnedName(r.step_down.model) }] : [];
+  const step = r.step_down
+    ? [{ when: { budget_used_pct: { gte: r.step_down.at_budget_pct } }, target: await pinnedName(r.step_down.model) }]
+    : [];
   return { select: [...step, { default: await pinnedName(r.default) }], on_failure: await Promise.all(r.fallback.map(pinnedName)) };
 }
 
@@ -108,7 +159,10 @@ export function modelFor(requested: string): string {
 // Creates or updates every role policy. Runs at start and after an admin signs Peeblo in to Otari.
 export async function syncRolePolicies(): Promise<boolean> {
   const { session, upsertRoutingPolicy } = await import("./admin.ts");
-  if (!(await session())) { policiesReady = false; return false; }
+  if (!(await session())) {
+    policiesReady = false;
+    return false;
+  }
   try {
     // Only what's missing, or what config/model-tiers.json changed since Peeblo last wrote it: an edit made in Otari's
     // dashboard stays until the file changes that role.
@@ -118,13 +172,23 @@ export async function syncRolePolicies(): Promise<boolean> {
     const { config } = await import("../config.ts");
     const file = join(config.dataDir, "role-policies.json");
     let pushed: Record<string, string> = {};
-    try { pushed = JSON.parse(readFileSync(file, "utf8")); } catch { /* first run */ }
+    try {
+      pushed = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      /* first run */
+    }
     const have = new Set(await rolePoliciesInOtari());
-    const zdr = await zdrRequired();   // turning zero data retention on or off re-pins every role
+    const zdr = await zdrRequired(); // turning zero data retention on or off re-pins every role
     for (const [name, r] of Object.entries(ROLES)) {
-      const hash = createHash("sha256").update(JSON.stringify(r) + (zdr ? ":zdr" : "")).digest("hex").slice(0, 16);
+      const hash = createHash("sha256")
+        .update(JSON.stringify(r) + (zdr ? ":zdr" : ""))
+        .digest("hex")
+        .slice(0, 16);
       if (have.has(name) && pushed[name] === hash) continue;
-      if (have.has(name) && !pushed[name]) { pushed[name] = hash; continue; } // made earlier (or by hand): adopt it
+      if (have.has(name) && !pushed[name]) {
+        pushed[name] = hash;
+        continue;
+      } // made earlier (or by hand): adopt it
       await upsertRoutingPolicy(name, await policySpec(r));
       pushed[name] = hash;
     }

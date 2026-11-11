@@ -51,12 +51,17 @@ test("outOfScope: GitHub calls must name a repo the teammate may use", () => {
 });
 
 test("githubLimit: calls stay inside the install-wide repo list", () => {
-  assert.deepEqual(githubLimit(tool("github", "get_file_contents"), { owner: "Acme", repo: "Web" }, ["acme/web"]), { args: { owner: "Acme", repo: "Web" } });
+  assert.deepEqual(githubLimit(tool("github", "get_file_contents"), { owner: "Acme", repo: "Web" }, ["acme/web"]), {
+    args: { owner: "Acme", repo: "Web" },
+  });
   assert.deepEqual(githubLimit(tool("github", "get_me"), {}, ["acme/web"]), { args: {} });
   // A search is narrowed: its own repo/user/org qualifiers are replaced by the allowed repos.
-  assert.deepEqual(githubLimit(tool("github", "search_issues"), { query: "bug repo:other/x is:open", owner: "o" }, ["acme/web", "acme/api"]), {
-    args: { query: "bug is:open repo:acme/web repo:acme/api" },
-  });
+  assert.deepEqual(
+    githubLimit(tool("github", "search_issues"), { query: "bug repo:other/x is:open", owner: "o" }, ["acme/web", "acme/api"]),
+    {
+      args: { query: "bug is:open repo:acme/web repo:acme/api" },
+    },
+  );
   assert.ok("refuse" in githubLimit(tool("github", "list_repos"), {}, ["acme/web"]));
   // Other servers, or no limit set: unchanged.
   assert.deepEqual(githubLimit(tool("linear", "list_issues"), { a: 1 }, ["acme/web"]), { args: { a: 1 } });

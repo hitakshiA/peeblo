@@ -11,7 +11,8 @@ import type { Teammate } from "../store/teammates.ts";
 const DIR = join(import.meta.dirname, "..", "..", "skills");
 // Skills a teammate learned on the job (skill_save, approved by a person), one folder each, beside its memory.
 const learnedDir = (slug: string) => join(config.dataDir, "teammates", slug, "skills");
-const learned = (slug: string) => (existsSync(learnedDir(slug)) ? readdirSync(learnedDir(slug)).filter((n) => existsSync(join(learnedDir(slug), n, "SKILL.md"))) : []);
+const learned = (slug: string) =>
+  existsSync(learnedDir(slug)) ? readdirSync(learnedDir(slug)).filter((n) => existsSync(join(learnedDir(slug), n, "SKILL.md"))) : [];
 const dirOf = (tm: Teammate, name: string) => (existsSync(join(DIR, name, "SKILL.md")) ? join(DIR, name) : join(learnedDir(tm.slug), name));
 export const SKILL_NAME = /^[a-z][a-z0-9-]{2,40}$/;
 
@@ -21,7 +22,10 @@ export function saveSkill(tm: Teammate, name: string, description: string, body:
   if (existsSync(join(DIR, name))) throw new Error(`${name} is one of Peeblo's own skills; pick another name.`);
   const dir = join(learnedDir(tm.slug), name);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${description.replace(/\n/g, " ").slice(0, 300)}\n---\n\n${body.trim()}\n`);
+  writeFileSync(
+    join(dir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${description.replace(/\n/g, " ").slice(0, 300)}\n---\n\n${body.trim()}\n`,
+  );
   return dir;
 }
 
@@ -57,11 +61,29 @@ export function removeSkill(tm: Teammate, name: string): boolean {
 function skillsFor(tm: Teammate): string[] {
   const computer = tm.config.tools.includes("computer");
   return [
-    ...(tm.slug === "peeblo" ? ["working-as-chief-of-staff", "hiring-a-teammate", "writing-job-specs", "channel-etiquette", "company-setup", "changing-otari-settings"] : []),
-    "writing-routines", "tidying-memory", "reviewing-work", "writing-in-slack", "working-with-numbers", "handling-approvals",
-    "answering-incident-questions", "reconciling-records", "replying-to-customers",
+    ...(tm.slug === "peeblo"
+      ? [
+          "working-as-chief-of-staff",
+          "hiring-a-teammate",
+          "writing-job-specs",
+          "channel-etiquette",
+          "company-setup",
+          "changing-otari-settings",
+        ]
+      : []),
+    "writing-routines",
+    "tidying-memory",
+    "reviewing-work",
+    "writing-in-slack",
+    "working-with-numbers",
+    "handling-approvals",
+    "answering-incident-questions",
+    "reconciling-records",
+    "replying-to-customers",
     ...(computer ? ["writing-recipes", ...(((tm.config.computer as any)?.repos ?? []).length ? ["working-in-repos"] : [])] : []),
-  ].filter((s) => existsSync(join(DIR, s, "SKILL.md"))).concat(learned(tm.slug));
+  ]
+    .filter((s) => existsSync(join(DIR, s, "SKILL.md")))
+    .concat(learned(tm.slug));
 }
 
 function frontmatter(tm: Teammate, name: string): { name: string; description: string } {
@@ -81,14 +103,20 @@ export function skillsPrompt(tm: Teammate): string {
     "read_skill is the only way to open a skill; when a skill has scripts or templates, read_skill also puts them on your computer.",
     "",
     "<available_skills>",
-    ...list.flatMap((s) => ["  <skill>", `    <name>${esc(s.name)}</name>`, `    <description>${esc(s.description)}</description>`, "  </skill>"]),
+    ...list.flatMap((s) => [
+      "  <skill>",
+      `    <name>${esc(s.name)}</name>`,
+      `    <description>${esc(s.description)}</description>`,
+      "  </skill>",
+    ]),
     "</available_skills>",
   ].join("\n");
 }
 
 // A skill's SKILL.md, or another file inside that skill's folder. Only skills this teammate has.
 export function readSkill(tm: Teammate, name: string, file?: string | null): string {
-  if (!skillsFor(tm).includes(name)) throw new Error(`No skill called ${name} here; the list in your instructions has the ones you can use.`);
+  if (!skillsFor(tm).includes(name))
+    throw new Error(`No skill called ${name} here; the list in your instructions has the ones you can use.`);
   const base = realpathSync(dirOf(tm, name));
   const target = normalize(join(base, file || "SKILL.md"));
   if (!target.startsWith(base + sep) || !existsSync(target)) throw new Error(`${file} isn't a file of the ${name} skill.`);
@@ -102,6 +130,16 @@ export function copySkillTo(tm: Teammate, name: string, destHost: string, destGu
   if (!skillsFor(tm).includes(name)) return null;
   const base = realpathSync(dirOf(tm, name));
   if (readdirSync(base).every((f) => f === "SKILL.md")) return null;
-  cpSync(base, join(destHost, name), { recursive: true, dereference: false, filter: (src) => { try { return realpathSync(src).startsWith(base); } catch { return false; } } });
+  cpSync(base, join(destHost, name), {
+    recursive: true,
+    dereference: false,
+    filter: (src) => {
+      try {
+        return realpathSync(src).startsWith(base);
+      } catch {
+        return false;
+      }
+    },
+  });
   return `${destGuest}/${name}`;
 }

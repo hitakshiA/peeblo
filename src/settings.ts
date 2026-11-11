@@ -10,7 +10,11 @@ const dir = () => process.env.PEEBLO_DATA_DIR?.trim() || "/data";
 const file = () => join(dir(), "settings.json");
 
 function readSettings(): Record<string, string> {
-  try { return existsSync(file()) ? JSON.parse(readFileSync(file(), "utf8")) : {}; } catch { return {}; }
+  try {
+    return existsSync(file()) ? JSON.parse(readFileSync(file(), "utf8")) : {};
+  } catch {
+    return {};
+  }
 }
 
 // Called by config.ts before it reads the environment.
@@ -20,9 +24,16 @@ export function loadSettingsIntoEnv(): void {
 
 export function saveSettings(patch: Record<string, string | null>): void {
   const s = readSettings();
-  for (const [k, v] of Object.entries(patch)) { if (v === null || v === "") delete s[k]; else s[k] = v; }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === "") delete s[k];
+    else s[k] = v;
+  }
   writeFileSync(file(), JSON.stringify(s, null, 2));
-  try { chmodSync(file(), 0o600); } catch { /* best effort */ }
+  try {
+    chmodSync(file(), 0o600);
+  } catch {
+    /* best effort */
+  }
 }
 
 // Restart into the new settings after the current response has gone out.

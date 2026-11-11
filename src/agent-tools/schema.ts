@@ -2,8 +2,16 @@
 // Schemas stay flat and strict (every property required, optional ones nullable, no extra keys), the shape
 // open models handle best and providers can enforce.
 export type Schema = {
-  type: string | string[]; description?: string; properties?: Record<string, Schema>; required?: string[];
-  enum?: unknown[]; minimum?: number; maximum?: number; additionalProperties?: boolean; items?: Schema; maxItems?: number;
+  type: string | string[];
+  description?: string;
+  properties?: Record<string, Schema>;
+  required?: string[];
+  enum?: unknown[];
+  minimum?: number;
+  maximum?: number;
+  additionalProperties?: boolean;
+  items?: Schema;
+  maxItems?: number;
 };
 
 export function object(properties: Record<string, Schema>): Schema {
@@ -21,13 +29,21 @@ export function validate(s: Schema, v: unknown, path = "arguments"): string | nu
   if (t === "array" && s.items) {
     const a = v as unknown[];
     if (s.maxItems !== undefined && a.length > s.maxItems) return `${path} can have at most ${s.maxItems} items`;
-    for (let i = 0; i < a.length; i++) { const e = validate(s.items, a[i], `${path}[${i}]`); if (e) return e; }
+    for (let i = 0; i < a.length; i++) {
+      const e = validate(s.items, a[i], `${path}[${i}]`);
+      if (e) return e;
+    }
   }
   if (t === "object" && s.properties) {
     const o = v as Record<string, unknown>;
     for (const r of s.required ?? []) if (!(r in o)) return `${path}.${r} is missing (send null if you have no value)`;
-    if (s.additionalProperties === false) for (const k of Object.keys(o)) if (!(k in s.properties)) return `${path}.${k} is not a field of this tool`;
-    for (const [k, sub] of Object.entries(s.properties)) if (k in o) { const e = validate(sub, o[k], `${path}.${k}`); if (e) return e; }
+    if (s.additionalProperties === false)
+      for (const k of Object.keys(o)) if (!(k in s.properties)) return `${path}.${k} is not a field of this tool`;
+    for (const [k, sub] of Object.entries(s.properties))
+      if (k in o) {
+        const e = validate(sub, o[k], `${path}.${k}`);
+        if (e) return e;
+      }
   }
   return null;
 }

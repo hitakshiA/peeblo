@@ -11,6 +11,9 @@ test("filterMiss: null when every field matches, by event name or dotted path", 
 });
 
 test("filterMiss: names the first field that doesn't match", () => {
-  assert.equal(filterMiss({ "deployment.environment": "production" }, "x", { deployment: { environment: "staging" } }), 'deployment.environment is "staging", wants "production"');
+  assert.equal(
+    filterMiss({ "deployment.environment": "production" }, "x", { deployment: { environment: "staging" } }),
+    'deployment.environment is "staging", wants "production"',
+  );
   assert.match(filterMiss({ "a.b.c": "1" }, "x", {}) ?? "", /^a\.b\.c is undefined/);
 });

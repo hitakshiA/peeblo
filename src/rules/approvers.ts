@@ -16,14 +16,24 @@ export async function adminIds(): Promise<string[]> {
 }
 
 // The run a chain started from, and how it started (a person, or a schedule or trigger).
-export async function runOrigin(runId: string): Promise<{ source: string | null; personId: string | null; teammateId: string | null; ownerId: string | null }> {
-  const { rows: c } = await pool.query("SELECT data->>'root' AS root FROM events WHERE type = 'chain.call' AND data->>'child_run' = $1 LIMIT 1", [runId]);
+export async function runOrigin(
+  runId: string,
+): Promise<{ source: string | null; personId: string | null; teammateId: string | null; ownerId: string | null }> {
+  const { rows: c } = await pool.query(
+    "SELECT data->>'root' AS root FROM events WHERE type = 'chain.call' AND data->>'child_run' = $1 LIMIT 1",
+    [runId],
+  );
   const root = c[0]?.root ?? runId;
   const q = `SELECT sub.source, sub.person_id, s.teammate_id, t.owner_person FROM runs r JOIN submissions sub ON sub.id = r.submission_id
               JOIN sessions s ON s.id = r.session_id JOIN teammates t ON t.id = s.teammate_id WHERE r.id = $1`;
   const rootRow = (await pool.query(q, [root])).rows[0];
   const own = root === runId ? rootRow : (await pool.query(q, [runId])).rows[0];
-  return { source: rootRow?.source ?? null, personId: own?.person_id ?? null, teammateId: own?.teammate_id ?? null, ownerId: own?.owner_person ?? null };
+  return {
+    source: rootRow?.source ?? null,
+    personId: own?.person_id ?? null,
+    teammateId: own?.teammate_id ?? null,
+    ownerId: own?.owner_person ?? null,
+  };
 }
 export const isUnattended = async (runId: string) => UNATTENDED.has((await runOrigin(runId)).source ?? "");
 
@@ -54,7 +64,10 @@ export async function withApprovers(runId: string, action: Record<string, any>):
 export async function approverNames(ids: string[], plain = false): Promise<string> {
   if (!ids.length) return "an admin";
   const { rows } = await pool.query("SELECT id, display_name, slack_user FROM people WHERE id = ANY($1)", [ids]);
-  const names = ids.map((id) => rows.find((r) => r.id === id)).filter(Boolean).map((r) => (r.slack_user && !plain ? `<@${r.slack_user}>` : String(r.display_name ?? "a person").split(" ")[0]));
+  const names = ids
+    .map((id) => rows.find((r) => r.id === id))
+    .filter(Boolean)
+    .map((r) => (r.slack_user && !plain ? `<@${r.slack_user}>` : String(r.display_name ?? "a person").split(" ")[0]));
   return names.length <= 2 ? names.join(" or ") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
 }
 
@@ -63,16 +76,30 @@ export async function approverNames(ids: string[], plain = false): Promise<strin
 // prompt and any payload were written by an agent or a service, so they come back separately and never count.
 const PERSON_SOURCES = ["slack", "api"];
 export async function personWords(runId: string): Promise<{ asks: string[]; agentWritten: string | null }> {
-  const { rows: c } = await pool.query("SELECT data->>'root' AS root FROM events WHERE type = 'chain.call' AND data->>'child_run' = $1 LIMIT 1", [runId]);
+  const { rows: c } = await pool.query(
+    "SELECT data->>'root' AS root FROM events WHERE type = 'chain.call' AND data->>'child_run' = $1 LIMIT 1",
+    [runId],
+  );
   const root = c[0]?.root ?? runId;
-  const r = (await pool.query("SELECT r.session_id, sub.source, sub.request_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1", [root])).rows[0];
+  const r = (
+    await pool.query(
+      "SELECT r.session_id, sub.source, sub.request_id FROM runs r JOIN submissions sub ON sub.id = r.submission_id WHERE r.id = $1",
+      [root],
+    )
+  ).rows[0];
   if (!r) return { asks: [], agentWritten: null };
   if (UNATTENDED.has(r.source)) {
     const id = String(r.request_id).split(":")[1];
     const s = (await pool.query("SELECT prompt, origin_request FROM schedules WHERE id = $1", [id])).rows[0];
-    return { asks: s?.origin_request ? [String(s.origin_request).slice(0, 1500)] : [], agentWritten: s?.prompt ? String(s.prompt).slice(0, 1500) : null };
+    return {
+      asks: s?.origin_request ? [String(s.origin_request).slice(0, 1500)] : [],
+      agentWritten: s?.prompt ? String(s.prompt).slice(0, 1500) : null,
+    };
   }
-  const { rows } = await pool.query("SELECT text FROM submissions WHERE session_id = $1 AND source = ANY($2) AND person_id IS NOT NULL ORDER BY created_at DESC LIMIT 5", [r.session_id, PERSON_SOURCES]);
+  const { rows } = await pool.query(
+    "SELECT text FROM submissions WHERE session_id = $1 AND source = ANY($2) AND person_id IS NOT NULL ORDER BY created_at DESC LIMIT 5",
+    [r.session_id, PERSON_SOURCES],
+  );
   return { asks: rows.map((x) => String(x.text).slice(0, 1500)).reverse(), agentWritten: null };
 }
 
@@ -80,36 +107,90 @@ export async function personWords(runId: string): Promise<{ asks: string[]; agen
 // before a reviewer's allow counts. Lines like "- money: <name>", "- merges, flags, deploys: <name>", "- marketing
 // sends: <name>", "- account <customer name>: <name>". An admin sets it by telling Peeblo (company memory). A person
 // who said "I'll approve" or "ask me first" in this job gets the card. With no map, the teammate's owner or an admin.
-export async function policyApprovers(runId: string, call: { server?: string; tool?: string; risk?: string; arguments?: unknown }): Promise<{ who: string[]; why: string } | null> {
+export async function policyApprovers(
+  runId: string,
+  call: { server?: string; tool?: string; risk?: string; arguments?: unknown },
+): Promise<{ who: string[]; why: string } | null> {
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   let text = "";
-  for (const at of [["company", "approvals.md"], ["product", "approvals.md"]]) {
-    try { text = readFileSync(join(config.dataDir, "company-memory", ...at), "utf8"); break; } catch { /* not here */ }
+  for (const at of [
+    ["company", "approvals.md"],
+    ["product", "approvals.md"],
+  ]) {
+    try {
+      text = readFileSync(join(config.dataDir, "company-memory", ...at), "utf8");
+      break;
+    } catch {
+      /* not here */
+    }
   }
-  const rules = [...text.matchAll(/^-\s*([^:\n]+):\s*(.+)$/gm)].map((m) => ({ key: m[1].trim().toLowerCase(), names: m[2].split(/,| or | and /).map((x) => x.trim()).filter(Boolean) }));
+  const rules = [...text.matchAll(/^-\s*([^:\n]+):\s*(.+)$/gm)].map((m) => ({
+    key: m[1].trim().toLowerCase(),
+    names: m[2]
+      .split(/,| or | and /)
+      .map((x) => x.trim())
+      .filter(Boolean),
+  }));
   const tool = String(call.tool ?? "").toLowerCase();
   const args = JSON.stringify(call.arguments ?? {}).toLowerCase();
-  const ids = async (names: string[]) => uniq(await Promise.all(names.map(async (n) => (await pool.query(
-    "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1", [n])).rows[0]?.id)));
-  const pick = async (pred: (k: string) => boolean, why: string) => { const r = rules.find((x) => pred(x.key)); if (!r) return null; const who = await ids(r.names); return who.length ? { who, why } : null; };
+  const ids = async (names: string[]) =>
+    uniq(
+      await Promise.all(
+        names.map(
+          async (n) =>
+            (
+              await pool.query(
+                "SELECT id FROM people WHERE lower(display_name) = lower($1) OR lower(split_part(display_name, ' ', 1)) = lower($1) OR slack_user = $1 LIMIT 1",
+                [n],
+              )
+            ).rows[0]?.id,
+        ),
+      ),
+    );
+  const pick = async (pred: (k: string) => boolean, why: string) => {
+    const r = rules.find((x) => pred(x.key));
+    if (!r) return null;
+    const who = await ids(r.names);
+    return who.length ? { who, why } : null;
+  };
   // The requester's own words in this job ("I'll approve", "ask me first") pick who gets an ordinary write's card,
   // never a money, delete or shipping card: those follow the map, else go to an admin (below).
   const o = await runOrigin(runId);
   const high = ["money", "destructive", "shipping", "outside_thread"].includes(String(call.risk ?? ""));
   if (o.personId && !high) {
-    const said = (await pool.query(`SELECT sub.text FROM submissions sub JOIN runs r ON r.submission_id = sub.id WHERE r.session_id = (SELECT session_id FROM runs WHERE id = $1) AND sub.person_id = $2 ORDER BY sub.created_at DESC LIMIT 5`, [runId, o.personId])).rows.map((x) => String(x.text)).join("\n");
-    if (/\b(i['’]?ll approve|i will approve|ask me (first|before)|check with me|let me approve|i approve it)\b/i.test(said)) return { who: [o.personId], why: "they said they'd approve it" };
+    const said = (
+      await pool.query(
+        `SELECT sub.text FROM submissions sub JOIN runs r ON r.submission_id = sub.id WHERE r.session_id = (SELECT session_id FROM runs WHERE id = $1) AND sub.person_id = $2 ORDER BY sub.created_at DESC LIMIT 5`,
+        [runId, o.personId],
+      )
+    ).rows
+      .map((x) => String(x.text))
+      .join("\n");
+    if (/\b(i['’]?ll approve|i will approve|ask me (first|before)|check with me|let me approve|i approve it)\b/i.test(said))
+      return { who: [o.personId], why: "they said they'd approve it" };
   }
   // By what the call does, on any service: money, shipping (merges, deploys, flags, releases), sends to customers.
   const reads = /^(get|list|read|search|fetch|describe)/.test(tool);
-  if (call.risk === "money" || (!reads && /refund|credit|quote|coupon|discount|invoice|payout|charge/.test(tool))) { const r = await pick((k) => /money|credit|refund/.test(k), "money goes to its approver"); if (r) return r; }
-  if (call.risk === "shipping" || (!reads && /merge|deploy|release|rollout|flag/.test(tool))) { const r = await pick((k) => /merge|flag|deploy|release/.test(k), "merges, flags and deploys go to their approver"); if (r) return r; }
-  if (!reads && /send|broadcast|publish|campaign/.test(tool)) { const r = await pick((k) => /marketing|send|publish/.test(k), "marketing sends go to their approver"); if (r) return r; }
+  if (call.risk === "money" || (!reads && /refund|credit|quote|coupon|discount|invoice|payout|charge/.test(tool))) {
+    const r = await pick((k) => /money|credit|refund/.test(k), "money goes to its approver");
+    if (r) return r;
+  }
+  if (call.risk === "shipping" || (!reads && /merge|deploy|release|rollout|flag/.test(tool))) {
+    const r = await pick((k) => /merge|flag|deploy|release/.test(k), "merges, flags and deploys go to their approver");
+    if (r) return r;
+  }
+  if (!reads && /send|broadcast|publish|campaign/.test(tool)) {
+    const r = await pick((k) => /marketing|send|publish/.test(k), "marketing sends go to their approver");
+    if (r) return r;
+  }
   // A named customer account: its owner, wherever the call touches it (the whole account name appears in the call).
   for (const r of rules.filter((x) => x.key.startsWith("account "))) {
     const acct = r.key.slice(8).trim();
-    if (acct.length > 2 && args.includes(acct)) { const who = await ids(r.names); if (who.length) return { who, why: `${r.key.slice(8)} is their account` }; }
+    if (acct.length > 2 && args.includes(acct)) {
+      const who = await ids(r.names);
+      if (who.length) return { who, why: `${r.key.slice(8)} is their account` };
+    }
   }
   // No map line for it: money, deletes, shipping and posts outside the thread go to an admin (or the teammate's
   // owner), so nobody approves their own refund unless they are one of those.
@@ -119,4 +200,3 @@ export async function policyApprovers(runId: string, call: { server?: string; to
   }
   return null;
 }
-

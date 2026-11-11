@@ -23,7 +23,9 @@ before(async () => {
   // Start from an empty database every time.
   await db.pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public");
 });
-after(async () => { if (url) await db.pool.end(); });
+after(async () => {
+  if (url) await db.pool.end();
+});
 
 test("migrations apply in order, and a second run applies nothing", { skip }, async () => {
   const first = await db.migrate();
@@ -35,7 +37,11 @@ test("migrations apply in order, and a second run applies nothing", { skip }, as
 });
 
 test("a submission is idempotent on its request id: one run, however often Slack redelivers it", { skip }, async () => {
-  const tm = await teammates.createTeammate(`it-${Date.now()}`, { name: "Itest", role: "integration test", model: { default: "peeblo-worker" } }, { personId: null, label: "test" });
+  const tm = await teammates.createTeammate(
+    `it-${Date.now()}`,
+    { name: "Itest", role: "integration test", model: { default: "peeblo-worker" } },
+    { personId: null, label: "test" },
+  );
   const s = await sessions.openSession(tm.id, "dm", `D1:${Date.now()}`);
   const again = await sessions.openSession(tm.id, "dm", s.place_key);
   assert.equal(again.id, s.id, "the same place opens the same session");
@@ -50,7 +56,11 @@ test("a submission is idempotent on its request id: one run, however often Slack
 });
 
 test("the event log is append-only and read back in order", { skip }, async () => {
-  const tm = await teammates.createTeammate(`ev-${Date.now()}`, { name: "Evtest", role: "integration test", model: { default: "peeblo-worker" } }, { personId: null, label: "test" });
+  const tm = await teammates.createTeammate(
+    `ev-${Date.now()}`,
+    { name: "Evtest", role: "integration test", model: { default: "peeblo-worker" } },
+    { personId: null, label: "test" },
+  );
   const s = await sessions.openSession(tm.id, "api", `api:${Date.now()}`);
   const { run } = await sessions.submit({ sessionId: s.id, personId: null, requestId: `api:${Date.now()}`, text: "count", source: "api" });
   for (let i = 1; i <= 5; i++) await events.appendEvent({ sessionId: s.id, runId: run.id, type: "turn.started", data: { turn: i } });
@@ -59,7 +69,11 @@ test("the event log is append-only and read back in order", { skip }, async () =
 });
 
 test("a teammate's config is versioned: an edit is a new version, the old one stays readable", { skip }, async () => {
-  const tm = await teammates.createTeammate(`ver-${Date.now()}`, { name: "Vtest", role: "first role", model: { default: "peeblo-worker" } }, { personId: null, label: "test" });
+  const tm = await teammates.createTeammate(
+    `ver-${Date.now()}`,
+    { name: "Vtest", role: "first role", model: { default: "peeblo-worker" } },
+    { personId: null, label: "test" },
+  );
   const next = await teammates.updateTeammate(tm.slug, { role: "second role" }, { label: "test" });
   assert.equal(next.version, tm.version + 1);
   assert.equal((await teammates.teammateAt(tm.id, tm.version))?.config.role, "first role");

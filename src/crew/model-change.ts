@@ -23,7 +23,10 @@ export async function checkModel(id: string): Promise<string | null> {
   return null;
 }
 
-export async function changeModel(slug: string, change: { model: string; fallback?: string | null; personId: string; now?: { sessionId: string } | null; why?: string }): Promise<{ teammate: Teammate; appliesTo: "new sessions" | "now" }> {
+export async function changeModel(
+  slug: string,
+  change: { model: string; fallback?: string | null; personId: string; now?: { sessionId: string } | null; why?: string },
+): Promise<{ teammate: Teammate; appliesTo: "new sessions" | "now" }> {
   const tm = await getTeammate(slug);
   if (!tm) throw Object.assign(new Error("no such teammate"), { status: 404 });
   const person = await getPerson(change.personId);
@@ -35,14 +38,37 @@ export async function changeModel(slug: string, change: { model: string; fallbac
   // A typical turn (8k tokens in, 800 out) on the new model must fit what is left this month.
   const est = await estimateCost(change.model in ROLES ? ROLES[change.model].default : change.model, 8000, 800);
   const s = await teammateSpend(tm);
-  if (est !== null && s.spent + est > s.cap) throw new ModelChangeRefused(`${tm.config.name} has ${usd(Math.max(0, s.cap - s.spent))} left this month, less than one turn on ${change.model} (about ${usd(est)})`);
+  if (est !== null && s.spent + est > s.cap)
+    throw new ModelChangeRefused(
+      `${tm.config.name} has ${usd(Math.max(0, s.cap - s.spent))} left this month, less than one turn on ${change.model} (about ${usd(est)})`,
+    );
 
   // A specific model a person picked keeps a fallback (a role policy has Otari's own): the worker role's model, or the
   // reviewer's when that is the model picked.
-  const fallback = change.fallback ?? (change.model in ROLES ? null : [ROLES["peeblo-worker"].default, ROLES["peeblo-reviewer"].default].find((m) => m !== change.model) ?? null);
-  const next = await updateTeammate(slug, { model: { default: change.model, ...(fallback ? { fallback } : {}) } as Teammate["config"]["model"] }, { label: `person:${person!.id}` }, change.why ?? "model change");
+  const fallback =
+    change.fallback ??
+    (change.model in ROLES
+      ? null
+      : ([ROLES["peeblo-worker"].default, ROLES["peeblo-reviewer"].default].find((m) => m !== change.model) ?? null));
+  const next = await updateTeammate(
+    slug,
+    { model: { default: change.model, ...(fallback ? { fallback } : {}) } as Teammate["config"]["model"] },
+    { label: `person:${person!.id}` },
+    change.why ?? "model change",
+  );
   if (change.now) {
-    await appendEvent({ sessionId: change.now.sessionId, runId: null, type: "session.config", data: { version: next.version, model: change.model, reason: "takeover", by: person!.display_name ?? person!.id, why: change.why ?? null } });
+    await appendEvent({
+      sessionId: change.now.sessionId,
+      runId: null,
+      type: "session.config",
+      data: {
+        version: next.version,
+        model: change.model,
+        reason: "takeover",
+        by: person!.display_name ?? person!.id,
+        why: change.why ?? null,
+      },
+    });
   }
   return { teammate: next, appliesTo: change.now ? "now" : "new sessions" };
 }

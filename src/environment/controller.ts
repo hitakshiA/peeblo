@@ -29,7 +29,16 @@ import { getTeammate } from "../store/teammates.ts";
 import { buildPath, currentBuild, type Tier } from "./image.ts";
 
 // leases: background jobs keeping the computer awake (job id → when the lease ends).
-type Live = { vm: VM; idle?: NodeJS.Timeout; booted: number; lastUsed: number; inflight: number; disk: string; size: Tier; leases: Map<string, number> };
+type Live = {
+  vm: VM;
+  idle?: NodeJS.Timeout;
+  booted: number;
+  lastUsed: number;
+  inflight: number;
+  disk: string;
+  size: Tier;
+  leases: Map<string, number>;
+};
 const live = new Map<string, Live>();
 const booting = new Map<string, Promise<Live>>();
 
@@ -46,7 +55,79 @@ export const awakeCap = (size: Tier) => (size === "small" ? config.awakeCapSmall
 const RESERVE_MB = config.hostReserveMb;
 // Package registries and code hosts every build needs: Codex's "Common dependencies" preset
 // (learn.chatgpt.com/docs/cloud/internet-access), each domain with its subdomains.
-const COMMON_DEPENDENCIES = ["alpinelinux.org", "anaconda.com", "apache.org", "apt.llvm.org", "archlinux.org", "azure.com", "bitbucket.org", "bower.io", "centos.org", "cocoapods.org", "continuum.io", "cpan.org", "crates.io", "debian.org", "docker.com", "docker.io", "dot.net", "dotnet.microsoft.com", "eclipse.org", "fedoraproject.org", "gcr.io", "ghcr.io", "github.com", "githubusercontent.com", "gitlab.com", "golang.org", "google.com", "goproxy.io", "gradle.org", "hashicorp.com", "haskell.org", "hex.pm", "java.com", "java.net", "jcenter.bintray.com", "json-schema.org", "json.schemastore.org", "k8s.io", "launchpad.net", "maven.org", "mcr.microsoft.com", "metacpan.org", "microsoft.com", "nodejs.org", "npmjs.com", "npmjs.org", "nuget.org", "oracle.com", "packagecloud.io", "packages.microsoft.com", "packagist.org", "pkg.go.dev", "ppa.launchpad.net", "pub.dev", "pypa.io", "pypi.org", "pypi.python.org", "pythonhosted.org", "quay.io", "ruby-lang.org", "rubyforge.org", "rubygems.org", "rubyonrails.org", "rustup.rs", "rvm.io", "sourceforge.net", "spring.io", "swift.org", "ubuntu.com", "visualstudio.com", "yarnpkg.com"];
+const COMMON_DEPENDENCIES = [
+  "alpinelinux.org",
+  "anaconda.com",
+  "apache.org",
+  "apt.llvm.org",
+  "archlinux.org",
+  "azure.com",
+  "bitbucket.org",
+  "bower.io",
+  "centos.org",
+  "cocoapods.org",
+  "continuum.io",
+  "cpan.org",
+  "crates.io",
+  "debian.org",
+  "docker.com",
+  "docker.io",
+  "dot.net",
+  "dotnet.microsoft.com",
+  "eclipse.org",
+  "fedoraproject.org",
+  "gcr.io",
+  "ghcr.io",
+  "github.com",
+  "githubusercontent.com",
+  "gitlab.com",
+  "golang.org",
+  "google.com",
+  "goproxy.io",
+  "gradle.org",
+  "hashicorp.com",
+  "haskell.org",
+  "hex.pm",
+  "java.com",
+  "java.net",
+  "jcenter.bintray.com",
+  "json-schema.org",
+  "json.schemastore.org",
+  "k8s.io",
+  "launchpad.net",
+  "maven.org",
+  "mcr.microsoft.com",
+  "metacpan.org",
+  "microsoft.com",
+  "nodejs.org",
+  "npmjs.com",
+  "npmjs.org",
+  "nuget.org",
+  "oracle.com",
+  "packagecloud.io",
+  "packages.microsoft.com",
+  "packagist.org",
+  "pkg.go.dev",
+  "ppa.launchpad.net",
+  "pub.dev",
+  "pypa.io",
+  "pypi.org",
+  "pypi.python.org",
+  "pythonhosted.org",
+  "quay.io",
+  "ruby-lang.org",
+  "rubyforge.org",
+  "rubygems.org",
+  "rubyonrails.org",
+  "rustup.rs",
+  "rvm.io",
+  "sourceforge.net",
+  "spring.io",
+  "swift.org",
+  "ubuntu.com",
+  "visualstudio.com",
+  "yarnpkg.com",
+];
 export const DEFAULT_HOSTS = [...COMMON_DEPENDENCIES, ...COMMON_DEPENDENCIES.map((d) => `*.${d}`)];
 // Methods that only read. A large computer may read any public site, but sends data (POST, PUT, …) only to its
 // allowed hosts: untrusted pages, company files and a way out never meet without a person (Meta's Rule of Two).
@@ -55,7 +136,9 @@ export function egressRefusal(size: Tier, method: string, host: string, allowed:
   if (size !== "large" || READ_METHODS.has(method.toUpperCase())) return null;
   const h = host.toLowerCase().replace(/:\d+$/, "");
   const ok = allowed.some((p) => p === h || (p.startsWith("*.") && (h.endsWith(p.slice(1)) || h === p.slice(2))));
-  return ok ? null : `peeblo: this computer may read any site but sends data (${method.toUpperCase()}) only to its allowed hosts; ${h} isn't one. The teammate's owner can add it.`;
+  return ok
+    ? null
+    : `peeblo: this computer may read any site but sends data (${method.toUpperCase()}) only to its allowed hosts; ${h} isn't one. The teammate's owner can add it.`;
 }
 
 export function workspaceOf(slug: string): string {
@@ -81,9 +164,15 @@ export function availableMb(): number {
       const page = Number(/page size of (\d+)/.exec(out)?.[1] ?? 16384);
       const n = (k: string) => Number(new RegExp(`${k}:\\s+(\\d+)`).exec(out)?.[1] ?? 0);
       return Math.round(((n("Pages free") + n("Pages inactive") + n("Pages speculative") + n("Pages purgeable")) * page) / 1e6);
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
-  try { return Math.round(Number(/MemAvailable:\s+(\d+)/.exec(readFileSync("/proc/meminfo", "utf8"))?.[1]) / 1024); } catch { return Math.round(freemem() / 1e6); }
+  try {
+    return Math.round(Number(/MemAvailable:\s+(\d+)/.exec(readFileSync("/proc/meminfo", "utf8"))?.[1]) / 1024);
+  } catch {
+    return Math.round(freemem() / 1e6);
+  }
 }
 
 async function setState(teammateId: string, state: "asleep" | "booting" | "awake", vmId: string | null, workspace: string): Promise<void> {
@@ -96,19 +185,27 @@ async function setState(teammateId: string, state: "asleep" | "booting" | "awake
 
 // Makes room before a wake: the tier's awake cap, then free host memory. Only idle computers are put to sleep.
 async function makeRoom(size: Tier): Promise<void> {
-  const idle = (pred: (l: Live) => boolean) => [...live.entries()].filter(([, l]) => l.inflight === 0 && !leased(l) && pred(l)).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+  const idle = (pred: (l: Live) => boolean) =>
+    [...live.entries()].filter(([, l]) => l.inflight === 0 && !leased(l) && pred(l)).sort((a, b) => a[1].lastUsed - b[1].lastUsed);
   // Every computer of this size is busy: wait up to 3 minutes for one to go idle, then give up.
   const until = Date.now() + 180_000;
   while ([...live.values()].filter((l) => l.size === size).length >= awakeCap(size)) {
     const victim = idle((l) => l.size === size)[0];
-    if (victim) { await sleep(victim[0], "evicted: awake cap"); continue; }
-    if (Date.now() > until) throw new Error(`all ${awakeCap(size)} ${size} computers are still busy after 3 minutes; try again in a moment`);
+    if (victim) {
+      await sleep(victim[0], "evicted: awake cap");
+      continue;
+    }
+    if (Date.now() > until)
+      throw new Error(`all ${awakeCap(size)} ${size} computers are still busy after 3 minutes; try again in a moment`);
     await new Promise((r) => setTimeout(r, 2000));
   }
   const need = TIERS[size].footprintMb + RESERVE_MB;
   while (availableMb() < need) {
     const victim = idle(() => true)[0];
-    if (!victim) { await appendEvent({ type: "env.memory_pressure", data: { size, available_mb: availableMb(), need_mb: need } }); break; }
+    if (!victim) {
+      await appendEvent({ type: "env.memory_pressure", data: { size, available_mb: availableMb(), need_mb: need } });
+      break;
+    }
     await sleep(victim[0], "evicted: host memory");
   }
 }
@@ -120,7 +217,9 @@ async function pickL0(teammateId: string, size: Tier, pinned: string | null, ses
   if (!pinned || pinned === cur || !existsSync(buildPath(size, pinned))) return cur;
   const { rows } = await pool.query(
     `SELECT count(*)::int AS n FROM runs r JOIN sessions s ON s.id = r.session_id
-      WHERE s.teammate_id = $1 AND r.status IN ('running', 'waiting') AND s.id <> coalesce($2, '')`, [teammateId, sessionId]);
+      WHERE s.teammate_id = $1 AND r.status IN ('running', 'waiting') AND s.id <> coalesce($2, '')`,
+    [teammateId, sessionId],
+  );
   return rows[0].n > 0 ? pinned : cur;
 }
 
@@ -157,11 +256,17 @@ async function boot(teammateId: string, sessionId: string | null): Promise<Live>
       const u = new URL(req.url);
       const refused = egressRefusal(size, req.method, u.host, writable);
       if (refused) {
-        await appendEvent({ type: "env.blocked", data: { teammate_id: tm.id, reason: "write to a host outside the allowlist", method: req.method, host: u.host } });
+        await appendEvent({
+          type: "env.blocked",
+          data: { teammate_id: tm.id, reason: "write to a host outside the allowlist", method: req.method, host: u.host },
+        });
         return new Response(`${refused}\n`, { status: 403 });
       }
       if (u.pathname.endsWith("/git-receive-pack") || u.searchParams.get("service") === "git-receive-pack") {
-        await appendEvent({ type: "env.blocked", data: { teammate_id: tm.id, reason: "git push needs approval", host: u.host, path: u.pathname } });
+        await appendEvent({
+          type: "env.blocked",
+          data: { teammate_id: tm.id, reason: "git push needs approval", host: u.host, path: u.pathname },
+        });
         return new Response("peeblo: git push needs a person's approval\n", { status: 403 });
       }
       return undefined;
@@ -171,8 +276,13 @@ async function boot(teammateId: string, sessionId: string | null): Promise<Live>
   const crossArch = config.vmArch === "x86_64" && process.arch === "arm64";
   const options = {
     sessionLabel: `peeblo ${tm.slug}`,
-    sandbox: { imagePath: l0 === "custom" ? config.vmImage : imagePath(size, l0), ...(crossArch ? { append: "console=ttyS0 initramfs_async=1" } : {}) },
-    memory: tier.memory, cpus: tier.cpus, rootfs: { mode: "cow" as const, size: tier.disk },
+    sandbox: {
+      imagePath: l0 === "custom" ? config.vmImage : imagePath(size, l0),
+      ...(crossArch ? { append: "console=ttyS0 initramfs_async=1" } : {}),
+    },
+    memory: tier.memory,
+    cpus: tier.cpus,
+    rootfs: { mode: "cow" as const, size: tier.disk },
     httpHooks,
     env: { ...env, ...BARE_ENV },
     vfs: { mounts: { "/workspace": new RealFSProvider(workspace) } },
@@ -182,29 +292,55 @@ async function boot(teammateId: string, sessionId: string | null): Promise<Live>
   let from: "l2" | "l1" | "l0" = "l0";
   const start = async (path: string | null) => (path ? VmCheckpoint.load(path).resume<VM>(options) : VM.create(options));
   try {
-    if (existsSync(disk)) { vm = await start(disk); from = "l2"; }
-    else if (l1?.disk && existsSync(l1.disk)) { vm = await start(l1.disk); from = "l1"; }
-    else vm = await start(null);
+    if (existsSync(disk)) {
+      vm = await start(disk);
+      from = "l2";
+    } else if (l1?.disk && existsSync(l1.disk)) {
+      vm = await start(l1.disk);
+      from = "l1";
+    } else vm = await start(null);
   } catch (e) {
     await appendEvent({ type: "env.disk_reset", data: { teammate_id: tm.id, from, error: (e as Error).message.slice(0, 300) } });
     rmSync(disk, { force: true });
     l2ResetAt = new Date().toISOString();
     vm = await (l1?.disk && from !== "l1" && existsSync(l1.disk) ? start(l1.disk) : start(null));
   }
-  await vm.exec(["/bin/sh", "-c", `${PERSIST_HOME} git config --global --add safe.directory '*' 2>/dev/null; git config --global gc.auto 0; true`]);
+  await vm.exec([
+    "/bin/sh",
+    "-c",
+    `${PERSIST_HOME} git config --global --add safe.directory '*' 2>/dev/null; git config --global gc.auto 0; true`,
+  ]);
   // Chromium trusts only its NSS store, so the large tier adds Gondolin's egress CA there (TLS stays checked).
-  if (size === "large") await vm.exec(["/bin/sh", "-c", "d=sql:/root/.pki/nssdb; mkdir -p /root/.pki/nssdb; [ -f /root/.pki/nssdb/cert9.db ] || certutil -d $d -N --empty-password; certutil -d $d -A -t C,, -n gondolin-egress -i /etc/gondolin/mitm/ca.crt"]);
+  if (size === "large")
+    await vm.exec([
+      "/bin/sh",
+      "-c",
+      "d=sql:/root/.pki/nssdb; mkdir -p /root/.pki/nssdb; [ -f /root/.pki/nssdb/cert9.db ] || certutil -d $d -N --empty-password; certutil -d $d -A -t C,, -n gondolin-egress -i /etc/gondolin/mitm/ca.crt",
+    ]);
   const l: Live = { vm, booted: Date.now(), lastUsed: Date.now(), inflight: 0, disk, size, leases: new Map() };
   live.set(tm.id, l);
   await setState(tm.id, "awake", vm.id, workspace);
   await pool.query(
     `UPDATE environments SET size = $2, pins = pins || jsonb_build_object($2::text, $3::text), l2 = l2 || jsonb_build_object($2::text, jsonb_build_object('l0', $3::text, 'l1', $4::text)),
-       l2_reset_at = coalesce($5::timestamptz, l2_reset_at) WHERE teammate_id = $1`, [tm.id, size, l0, l1?.id ?? null, l2ResetAt]);
+       l2_reset_at = coalesce($5::timestamptz, l2_reset_at) WHERE teammate_id = $1`,
+    [tm.id, size, l0, l1?.id ?? null, l2ResetAt],
+  );
   const prov = (await pool.query("SELECT l2_reset_at FROM environments WHERE teammate_id = $1", [tm.id])).rows[0];
-  await appendEvent({ type: "env.booted", data: {
-    teammate_id: tm.id, vm_id: vm.id, ms: Date.now() - t0, size, memory: tier.memory, cpus: tier.cpus, from,
-    l0_build_id: l0, l1_build_id: l1?.id ?? null, l2_reset_at: prov?.l2_reset_at ?? null,
-  } });
+  await appendEvent({
+    type: "env.booted",
+    data: {
+      teammate_id: tm.id,
+      vm_id: vm.id,
+      ms: Date.now() - t0,
+      size,
+      memory: tier.memory,
+      cpus: tier.cpus,
+      from,
+      l0_build_id: l0,
+      l1_build_id: l1?.id ?? null,
+      l2_reset_at: prov?.l2_reset_at ?? null,
+    },
+  });
   const { startServices } = await import("./recipes.ts");
   await startServices(tm.id, vm, l1?.recipe ?? null).catch(() => {});
   return l;
@@ -271,7 +407,11 @@ export type ExecResult = { exitCode: number; stdout: string; stderr: string; ms:
 
 // Runs one command in the teammate's VM. A dead VM is reported as an error and forgotten, so the
 // caller sees a failed command (not a hung one) and the next command boots a fresh VM.
-export async function exec(teammateId: string, argv: string[], opts: { cwd?: string; timeoutMs?: number; signal?: AbortSignal; sessionId?: string; env?: Record<string, string> } = {}): Promise<ExecResult> {
+export async function exec(
+  teammateId: string,
+  argv: string[],
+  opts: { cwd?: string; timeoutMs?: number; signal?: AbortSignal; sessionId?: string; env?: Record<string, string> } = {},
+): Promise<ExecResult> {
   const l = await ensure(teammateId, opts.sessionId ?? null);
   touch(teammateId, l);
   l.inflight++;
@@ -297,7 +437,8 @@ export async function exec(teammateId: string, argv: string[], opts: { cwd?: str
 }
 
 export const isAwake = (teammateId: string) => live.has(teammateId);
-export const awake = () => [...live.entries()].map(([id, l]) => ({ teammateId: id, size: l.size, lastUsed: l.lastUsed, inflight: l.inflight }));
+export const awake = () =>
+  [...live.entries()].map(([id, l]) => ({ teammateId: id, size: l.size, lastUsed: l.lastUsed, inflight: l.inflight }));
 
 export async function sleepAll(): Promise<void> {
   await Promise.all([...live.keys()].map((id) => sleep(id, "shutdown")));

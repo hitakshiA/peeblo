@@ -20,27 +20,66 @@ async function cached<T>(key: string, ms: number, fn: () => Promise<T>): Promise
   cache.set(key, { at: Date.now(), v });
   return v;
 }
-const forget = (...keys: string[]) => { for (const k of keys) cache.delete(k); };
+const forget = (...keys: string[]) => {
+  for (const k of keys) cache.delete(k);
+};
 
 const baseUrl = (region: string) => (region === "eu" ? "https://eu.api.otari.ai/api/v1" : "https://api.otari.ai/api/v1");
 async function keyBudget(key: string, region: string): Promise<{ ok: boolean; error?: string; used?: number; limit?: number }> {
-  const r = await fetch(`${baseUrl(region)}/key/budget`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }) as any);
-  if (!r.ok) return { ok: false, error: r.status === 401 || r.status === 403 ? "Otari didn't accept that key" : r.status === 421 ? "That key is for the other region" : `Otari answered ${r.status}` };
+  const r = await fetch(`${baseUrl(region)}/key/budget`, {
+    headers: { authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(15_000),
+  }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }) as any);
+  if (!r.ok)
+    return {
+      ok: false,
+      error:
+        r.status === 401 || r.status === 403
+          ? "Otari didn't accept that key"
+          : r.status === 421
+            ? "That key is for the other region"
+            : `Otari answered ${r.status}`,
+    };
   const j: any = await r.json().catch(() => ({}));
   // A plain key works for model calls but can't name the people it bills; Otari says so on end-user budgets.
-  const s = await fetch(`${baseUrl(region)}/end-user-budgets`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
-  if (s?.status === 403) return { ok: false, error: "That's a plain key. Peeblo needs a service key: in Otari, API keys → Create key → Advanced → tick Service key" };
+  const s = await fetch(`${baseUrl(region)}/end-user-budgets`, {
+    headers: { authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => null);
+  if (s?.status === 403)
+    return {
+      ok: false,
+      error: "That's a plain key. Peeblo needs a service key: in Otari, API keys → Create key → Advanced → tick Service key",
+    };
   return { ok: true, used: j.limits?.[0]?.used_usd, limit: j.limits?.[0]?.limit_usd };
 }
 async function reachable(url: string): Promise<{ ok: boolean; error?: string }> {
   if (!/^https:\/\//.test(url)) return { ok: false, error: "It must start with https://" };
-  const r = await fetch(`${url.replace(/\/+$/, "")}/slack/events`, { method: "POST", headers: { "content-type": "application/json", "user-agent": "peeblo-check" }, body: JSON.stringify({ type: "url_verification", challenge: "peeblo-check" }), signal: AbortSignal.timeout(10_000) }).catch((e) => ({ ok: false, status: 0, text: async () => (e as Error).message }) as any);
+  const r = await fetch(`${url.replace(/\/+$/, "")}/slack/events`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "peeblo-check" },
+    body: JSON.stringify({ type: "url_verification", challenge: "peeblo-check" }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch((e) => ({ ok: false, status: 0, text: async () => (e as Error).message }) as any);
   const text = await r.text().catch(() => "");
-  return text === "peeblo-check" ? { ok: true } : { ok: false, error: r.status ? `It answered ${r.status}, but not as this Peeblo (point it at port ${config.ingressPort})` : "Nothing answered at that address" };
+  return text === "peeblo-check"
+    ? { ok: true }
+    : {
+        ok: false,
+        error: r.status
+          ? `It answered ${r.status}, but not as this Peeblo (point it at port ${config.ingressPort})`
+          : "Nothing answered at that address",
+      };
 }
 
 async function peebloApp(): Promise<{ app_id: string; team_id: string | null; bot_user_id: string | null } | null> {
-  return (await pool.query("SELECT a.app_id, a.team_id, a.bot_user_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1")).rows[0] ?? null;
+  return (
+    (
+      await pool.query(
+        "SELECT a.app_id, a.team_id, a.bot_user_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1",
+      )
+    ).rows[0] ?? null
+  );
 }
 
 async function setupState(): Promise<any> {
@@ -51,7 +90,15 @@ async function setupState(): Promise<any> {
   const s = config.otariKey ? await session().catch(() => null) : null;
   const pub = config.publicUrl ? await cached("pub", 20_000, () => reachable(config.publicUrl)) : null;
   const token = (await pool.query("SELECT 1 FROM slack_config WHERE id = 1")).rows.length > 0;
-  const tokenOk = token ? await cached("slack", 60_000, async () => { const { configTokenWorks } = await import("../slack/admin.ts"); return configTokenWorks().then(() => true, () => false); }) : null;
+  const tokenOk = token
+    ? await cached("slack", 60_000, async () => {
+        const { configTokenWorks } = await import("../slack/admin.ts");
+        return configTokenWorks().then(
+          () => true,
+          () => false,
+        );
+      })
+    : null;
   const app = await peebloApp();
   let installUrl: string | null = null;
   if (app && !app.bot_user_id && config.publicUrl) {
@@ -60,25 +107,69 @@ async function setupState(): Promise<any> {
     const a: any = await getApp(app.app_id);
     if (a?.secrets?.client_id) installUrl = url(app.app_id, a.secrets.client_id);
   }
-  const admins = config.admins.length ? (await pool.query("SELECT slack_user, display_name FROM people WHERE slack_user = ANY($1)", [config.admins])).rows : [];
+  const admins = config.admins.length
+    ? (await pool.query("SELECT slack_user, display_name FROM people WHERE slack_user = ANY($1)", [config.admins])).rows
+    : [];
   // The readiness list is ./peeblo check's Otari part, so the console and the CLI never disagree.
-  const readiness = otariKey?.ok ? await cached("ready", 30_000, async () => {
-    const { runChecks } = await import("../check.ts");
-    const all = await runChecks();
-    const pick = (name: string, id: string, label: string, fix_url?: string, fix_text?: string) => {
-      const r = all.find((x) => x.name === name);
-      // Connectors and per-teammate access are worth fixing but never block setup (an unhealthy server is a warning).
-      return r ? { id, label, ok: r.ok, required: !OPTIONAL.includes(id), detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) } : null;
-    };
-    return [
-      pick("Otari service key (bills each person)", "tier", "A default budget for each person", links.budgets(), "Sign in again on Connect Otari (it sets one), or Budgets → make a tier, then API keys → your key → default end-user budget"),
-      pick("Otari web search and code execution", "tools", "Web search and code execution", `${links.webSearch()}`, "Tools → turn on web search and code execution"),
-      guardItem(pick("Otari guardrail", "guardrail", guardMode() === "open" ? "The guardrail (open guard model)" : "The Lakera guardrail", links.guardrails(), "Guardrails → add Lakera Guard with the profile name peeblo-lakera (needs a Lakera account)")),
-      pick("Otari MCP connectors", "connectors", "Connectors (MCP servers)", links.mcpServers(), "Tools → MCP servers → add the services your team uses"),
-      pick("Otari routing policies", "routing", "Routing for each role", links.routing(), "Connect the dashboard above; Peeblo makes these itself"),
-      pick("Otari connector access per teammate", "access", "Connector access per teammate", links.mcpServers(), "Set each server's default access to read tools"),
-    ].filter(Boolean);
-  }) : [];
+  const readiness = otariKey?.ok
+    ? await cached("ready", 30_000, async () => {
+        const { runChecks } = await import("../check.ts");
+        const all = await runChecks();
+        const pick = (name: string, id: string, label: string, fix_url?: string, fix_text?: string) => {
+          const r = all.find((x) => x.name === name);
+          // Connectors and per-teammate access are worth fixing but never block setup (an unhealthy server is a warning).
+          return r
+            ? { id, label, ok: r.ok, required: !OPTIONAL.includes(id), detail: r.detail, ...(r.ok ? {} : { fix_url, fix_text }) }
+            : null;
+        };
+        return [
+          pick(
+            "Otari service key (bills each person)",
+            "tier",
+            "A default budget for each person",
+            links.budgets(),
+            "Sign in again on Connect Otari (it sets one), or Budgets → make a tier, then API keys → your key → default end-user budget",
+          ),
+          pick(
+            "Otari web search and code execution",
+            "tools",
+            "Web search and code execution",
+            `${links.webSearch()}`,
+            "Tools → turn on web search and code execution",
+          ),
+          guardItem(
+            pick(
+              "Otari guardrail",
+              "guardrail",
+              guardMode() === "open" ? "The guardrail (open guard model)" : "The Lakera guardrail",
+              links.guardrails(),
+              "Guardrails → add Lakera Guard with the profile name peeblo-lakera (needs a Lakera account)",
+            ),
+          ),
+          pick(
+            "Otari MCP connectors",
+            "connectors",
+            "Connectors (MCP servers)",
+            links.mcpServers(),
+            "Tools → MCP servers → add the services your team uses",
+          ),
+          pick(
+            "Otari routing policies",
+            "routing",
+            "Routing for each role",
+            links.routing(),
+            "Connect the dashboard above; Peeblo makes these itself",
+          ),
+          pick(
+            "Otari connector access per teammate",
+            "access",
+            "Connector access per teammate",
+            links.mcpServers(),
+            "Set each server's default access to read tools",
+          ),
+        ].filter(Boolean);
+      })
+    : [];
   const steps: [string, boolean][] = [
     ["password", Boolean(config.consolePassword)],
     ["otari", Boolean(otariKey?.ok)],
@@ -92,15 +183,40 @@ async function setupState(): Promise<any> {
     password_set: Boolean(config.consolePassword),
     mode: config.otariKey ? "running" : "setup",
     otari: {
-      key_set: Boolean(config.otariKey), key_ok: otariKey ? otariKey.ok : null, ...(otariKey?.error ? { key_error: otariKey.error } : {}), region,
-      used_usd: otariKey?.used ?? null, limit_usd: otariKey?.limit ?? null,
-      connected: Boolean(s), signed_in_as: s?.signedInAs ?? null, session_expires_at: s?.expiresAt ?? null,
-      links: { dashboard: links.usage(), keys: links.keys(), budgets: links.budgets(), guardrails: links.guardrails(), tools: links.webSearch(), mcp: links.mcpServers(), set_password: links.setPassword() },
+      key_set: Boolean(config.otariKey),
+      key_ok: otariKey ? otariKey.ok : null,
+      ...(otariKey?.error ? { key_error: otariKey.error } : {}),
+      region,
+      used_usd: otariKey?.used ?? null,
+      limit_usd: otariKey?.limit ?? null,
+      connected: Boolean(s),
+      signed_in_as: s?.signedInAs ?? null,
+      session_expires_at: s?.expiresAt ?? null,
+      links: {
+        dashboard: links.usage(),
+        keys: links.keys(),
+        budgets: links.budgets(),
+        guardrails: links.guardrails(),
+        tools: links.webSearch(),
+        mcp: links.mcpServers(),
+        set_password: links.setPassword(),
+      },
     },
-    public_url: { value: config.publicUrl || null, reachable: pub ? pub.ok : null, ...(pub?.error ? { error: pub.error } : {}),
-      hint: "On a server, a domain with HTTPS in front of port 8787 (Caddy does it in two lines). On a Mac, a tunnel to port 8787: a reserved zrok share without its warning page, a Cloudflare named tunnel, or Tailscale Funnel." },
-    slack: { token_set: token, token_ok: tokenOk, app_created: Boolean(app), install_url: installUrl, installed: Boolean(app?.bot_user_id),
-      workspace: app?.team_id ?? null, peeblo_dm_url: app?.bot_user_id && app.team_id ? `https://slack.com/app_redirect?app=${app.app_id}&team=${app.team_id}` : null },
+    public_url: {
+      value: config.publicUrl || null,
+      reachable: pub ? pub.ok : null,
+      ...(pub?.error ? { error: pub.error } : {}),
+      hint: "On a server, a domain with HTTPS in front of port 8787 (Caddy does it in two lines). On a Mac, a tunnel to port 8787: a reserved zrok share without its warning page, a Cloudflare named tunnel, or Tailscale Funnel.",
+    },
+    slack: {
+      token_set: token,
+      token_ok: tokenOk,
+      app_created: Boolean(app),
+      install_url: installUrl,
+      installed: Boolean(app?.bot_user_id),
+      workspace: app?.team_id ?? null,
+      peeblo_dm_url: app?.bot_user_id && app.team_id ? `https://slack.com/app_redirect?app=${app.app_id}&team=${app.team_id}` : null,
+    },
     admins,
     readiness,
     next: steps.find(([, done]) => !done)?.[0] ?? "done",
@@ -141,7 +257,9 @@ export function addSetupRoutes(router: Router): void {
       return { ok: true, restarting: true, region, used: r.used, limit: r.limit };
     })
     .add("POST", "/v1/setup/public-url", async ({ body }) => {
-      const url = String(body?.url ?? "").trim().replace(/\/+$/, "");
+      const url = String(body?.url ?? "")
+        .trim()
+        .replace(/\/+$/, "");
       const r = await reachable(url);
       if (!/^https:\/\//.test(url)) return { ok: false, reachable: false, error: r.error, restarting: false };
       saveSettings({ PEEBLO_PUBLIC_URL: url });
@@ -150,11 +268,30 @@ export function addSetupRoutes(router: Router): void {
       return { ok: true, reachable: r.ok, ...(r.error ? { error: r.error } : {}), restarting: true };
     })
     .add("POST", "/v1/setup/slack", async ({ body }) => {
-      const access = String(body?.access_token ?? "").trim(), refresh = String(body?.refresh_token ?? "").trim();
-      if (!refresh.startsWith("xoxe-")) return { ok: false, error: "The refresh token starts with xoxe-; copy both from api.slack.com/apps → Your App Configuration Tokens." };
+      const access = String(body?.access_token ?? "").trim(),
+        refresh = String(body?.refresh_token ?? "").trim();
+      if (!refresh.startsWith("xoxe-"))
+        return {
+          ok: false,
+          error: "The refresh token starts with xoxe-; copy both from api.slack.com/apps → Your App Configuration Tokens.",
+        };
       // Rotating proves the pair works and gives a fresh one with its expiry; the old pair stops working.
-      const r: any = await (await fetch("https://slack.com/api/tooling.tokens.rotate", { method: "POST", body: new URLSearchParams({ refresh_token: refresh }) })).json().catch(() => ({ ok: false, error: "Slack didn't answer" }));
-      if (!r.ok) return { ok: false, error: r.error === "invalid_refresh_token" ? "Slack didn't accept that refresh token (they work once: generate a new pair)" : `Slack said: ${r.error}` };
+      const r: any = await (
+        await fetch("https://slack.com/api/tooling.tokens.rotate", {
+          method: "POST",
+          body: new URLSearchParams({ refresh_token: refresh }),
+        })
+      )
+        .json()
+        .catch(() => ({ ok: false, error: "Slack didn't answer" }));
+      if (!r.ok)
+        return {
+          ok: false,
+          error:
+            r.error === "invalid_refresh_token"
+              ? "Slack didn't accept that refresh token (they work once: generate a new pair)"
+              : `Slack said: ${r.error}`,
+        };
       void access;
       const { storeToken } = await import("../slack/admin.ts");
       await storeToken({ access_token: r.token, refresh_token: r.refresh_token, exp: r.exp });
@@ -166,7 +303,10 @@ export function addSetupRoutes(router: Router): void {
       const { ensureManager, MANAGER } = await import("../crew/manager.ts");
       await ensureManager();
       const existing = await peebloApp();
-      if (existing) { const st = await setupState(); return { install_url: st.slack.install_url, installed: st.slack.installed }; }
+      if (existing) {
+        const st = await setupState();
+        return { install_url: st.slack.install_url, installed: st.slack.installed };
+      }
       const { getTeammate } = await import("../store/teammates.ts");
       const { createTeammateApp } = await import("../slack/admin.ts");
       const { facePng } = await import("../slack/idcard.ts");
@@ -183,16 +323,27 @@ export function addSetupRoutes(router: Router): void {
       const { listTeammates } = await import("../store/teammates.ts");
       const s = await session().catch(() => null);
       let servers: any[] = [];
-      if (s) { const l: any = await mcpServers(); servers = Array.isArray(l) ? l : l.servers ?? l.data ?? []; }
-      else { const { serverList } = await import("../connectors/mcp.ts"); servers = (await serverList().catch(() => [])) as any[]; }
+      if (s) {
+        const l: any = await mcpServers();
+        servers = Array.isArray(l) ? l : (l.servers ?? l.data ?? []);
+      } else {
+        const { serverList } = await import("../connectors/mcp.ts");
+        servers = (await serverList().catch(() => [])) as any[];
+      }
       const crew = (await listTeammates()).filter((t) => !(t as any).hidden);
       return {
-        otari_connected: Boolean(s), add_url: links.mcpServers(),
+        otari_connected: Boolean(s),
+        add_url: links.mcpServers(),
         servers: servers.map((x: any) => ({
-          name: x.name, label: serviceName(x.name), purpose: x.purpose_hint ?? null,
+          name: x.name,
+          label: serviceName(x.name),
+          purpose: x.purpose_hint ?? null,
           icon_url: existsSync(join(ASSETS, "services", `${x.name}.png`)) ? `/v1/icons/${x.name}.png` : null,
-          healthy: x.health ? x.health.status === "healthy" : null, tools: x.health?.tool_count ?? null,
-          used_by: crew.filter((t) => t.config.connectors.includes(x.name) || t.config.connectors.includes("all")).map((t) => ({ slug: t.slug, name: t.config.name, read_only: (t.config.read_only ?? []).includes(x.name) })),
+          healthy: x.health ? x.health.status === "healthy" : null,
+          tools: x.health?.tool_count ?? null,
+          used_by: crew
+            .filter((t) => t.config.connectors.includes(x.name) || t.config.connectors.includes("all"))
+            .map((t) => ({ slug: t.slug, name: t.config.name, read_only: (t.config.read_only ?? []).includes(x.name) })),
         })),
       };
     })

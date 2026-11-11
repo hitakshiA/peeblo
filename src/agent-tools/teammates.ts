@@ -8,13 +8,18 @@ import type { AgentTool } from "./types.ts";
 
 export const askTeammateTool: AgentTool = {
   name: "ask_teammate",
-  description: "Ask another teammate for something in its field (a number, a lookup, a review) in this same thread. wait: true gets you its answer here; wait: false lets it answer in the thread while you carry on. Pass on what the person said in their words; never say a person approved something unless they approved it on a card.",
+  description:
+    "Ask another teammate for something in its field (a number, a lookup, a review) in this same thread. wait: true gets you its answer here; wait: false lets it answer in the thread while you carry on. Pass on what the person said in their words; never say a person approved something unless they approved it on a card.",
   input_schema: object({
     teammate: { type: "string" },
     question: { type: "string", description: "What you need and why." },
     answer_shape: { type: ["string", "null"], description: "e.g. 'one number with its source'." },
     wait: { type: "boolean" },
-    announce: { type: "string", description: "The one line you post in this thread so people see you asked, in your words, e.g. 'Asked Warden to check the numbers with a second model.'" },
+    announce: {
+      type: "string",
+      description:
+        "The one line you post in this thread so people see you asked, in your words, e.g. 'Asked Warden to check the numbers with a second model.'",
+    },
   }),
   kind: "local",
   async authorize(ctx, a) {
@@ -22,19 +27,44 @@ export const askTeammateTool: AgentTool = {
     // Approval only exists on a card. A handoff that claims one without an approved card in this job goes back.
     if (/\b(approved|approves|signed off|gave the ok|said yes)\b/i.test(String(a.question ?? ""))) {
       const { pool } = await import("../db.ts");
-      const ok = ctx.runId ? (await pool.query("SELECT 1 FROM approvals WHERE run_id = $1 AND status = 'approved' LIMIT 1", [ctx.runId])).rowCount : 0;
-      if (!ok) return "Nobody approved anything on a card in this job, so don't say they did. Ask again with what the person said in their own words; if it needs approval, the card will ask them.";
+      const ok = ctx.runId
+        ? (await pool.query("SELECT 1 FROM approvals WHERE run_id = $1 AND status = 'approved' LIMIT 1", [ctx.runId])).rowCount
+        : 0;
+      if (!ok)
+        return "Nobody approved anything on a card in this job, so don't say they did. Ask again with what the person said in their own words; if it needs approval, the card will ask them.";
     }
     return null;
   },
   async run(ctx, a) {
     const callee = (await findTeammate(a.teammate))!;
-    const text = [`${ctx.teammate.config.name} asks (for ${ctx.person?.display_name ?? "the person in this thread"}):`, a.question, a.answer_shape ? `Answer as: ${a.answer_shape}` : "", "Reply with slack_post in this thread."].filter(Boolean).join("\n");
-    const r = await callTeammate({ runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId }, callee, text, "ask", a.announce);
+    const text = [
+      `${ctx.teammate.config.name} asks (for ${ctx.person?.display_name ?? "the person in this thread"}):`,
+      a.question,
+      a.answer_shape ? `Answer as: ${a.answer_shape}` : "",
+      "Reply with slack_post in this thread.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const r = await callTeammate(
+      { runId: ctx.runId, sessionId: ctx.sessionId, caller: ctx.teammate, personId: ctx.person?.id ?? null, toolCallId: ctx.toolCallId },
+      callee,
+      text,
+      "ask",
+      a.announce,
+    );
     if ("refused" in r) return { text: r.refused, isError: true };
-    if (!a.wait) return { text: `Asked ${callee.config.name}; it will answer ${r.inDm ? "in its own DM with the person" : "in this thread"}.`, data: r };
+    if (!a.wait)
+      return {
+        text: `Asked ${callee.config.name}; it will answer ${r.inDm ? "in its own DM with the person" : "in this thread"}.`,
+        data: r,
+      };
     const ans = await answerOf(r.runId, 6 * 60_000);
     if (ans.status === "running") return { text: `${callee.config.name} is still working; its answer will appear in the thread.`, data: r };
-    return { text: ans.status === "done" ? `${callee.config.name} answered:\n${ans.text}` : `${callee.config.name} couldn't finish (${ans.status}).`, untrusted: `teammate:${callee.slug}`, data: r };
+    return {
+      text:
+        ans.status === "done" ? `${callee.config.name} answered:\n${ans.text}` : `${callee.config.name} couldn't finish (${ans.status}).`,
+      untrusted: `teammate:${callee.slug}`,
+      data: r,
+    };
   },
 };

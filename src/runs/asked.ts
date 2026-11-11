@@ -10,11 +10,19 @@ export function askedLabel(text: string | null): string {
   // A handoff: "Tally asks (for Maya):\n<question>" reads as "From Tally: <question>".
   const hand = /^(.+?) asks \(for [^)]*\):\s*\n?([\s\S]*)$/.exec(t);
   const body = hand ? `From ${hand[1]}: ${hand[2].split("\nAnswer as:")[0]}` : t;
-  return body.replace(/\s*\((?:U|W)[A-Z0-9]{6,}\)/g, "").replace(/<@[A-Z0-9]+>/g, "someone").replace(/\nReply with slack_post in this thread\.?/g, "");
+  return body
+    .replace(/\s*\((?:U|W)[A-Z0-9]{6,}\)/g, "")
+    .replace(/<@[A-Z0-9]+>/g, "someone")
+    .replace(/\nReply with slack_post in this thread\.?/g, "");
 }
 
 // Short text cut at a word, with an ellipsis, never mid-word.
 export function cutWords(s: string, n: number): string {
   const t = s.replace(/\s+/g, " ").trim();
-  return t.length <= n ? t : `${t.slice(0, n - 1).replace(/\s+\S*$/, "").replace(/[.,;:!?]+$/, "")}…`;
+  return t.length <= n
+    ? t
+    : `${t
+        .slice(0, n - 1)
+        .replace(/\s+\S*$/, "")
+        .replace(/[.,;:!?]+$/, "")}…`;
 }

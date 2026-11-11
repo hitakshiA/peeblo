@@ -18,9 +18,19 @@ import type { AgentTool } from "./types.ts";
 
 export const planTool: AgentTool = {
   name: "plan",
-  description: "Write down or update your plan: the steps and where each stands. Only for work of 3 or more steps; a lookup or a two-source answer needs no plan. Update it alongside other tool calls, not on its own step.",
+  description:
+    "Write down or update your plan: the steps and where each stands. Only for work of 3 or more steps; a lookup or a two-source answer needs no plan. Update it alongside other tool calls, not on its own step.",
   input_schema: object({
-    steps: { type: "array", maxItems: 12, items: { type: "object", properties: { step: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done", "dropped"] } }, required: ["step", "status"], additionalProperties: false } },
+    steps: {
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "object",
+        properties: { step: { type: "string" }, status: { type: "string", enum: ["todo", "doing", "done", "dropped"] } },
+        required: ["step", "status"],
+        additionalProperties: false,
+      },
+    },
   }),
   kind: "read",
   async run(ctx, a) {
@@ -34,10 +44,14 @@ const modelFor = (m: string | null, fallback: string) => (m === null ? fallback 
 
 export const subagentTool: AgentTool = {
   name: "subagent",
-  description: "Hand a self-contained piece of side work (research, reading, comparing, running and checking something on a computer) to a fresh session of yourself, and get its answer back. Start several in one step for independent parts; they run at the same time. Say what you need and why, not how. It can look things up and use its own computer folder, but not change anything outside it.",
+  description:
+    "Hand a self-contained piece of side work (research, reading, comparing, running and checking something on a computer) to a fresh session of yourself, and get its answer back. Start several in one step for independent parts; they run at the same time. Say what you need and why, not how. It can look things up and use its own computer folder, but not change anything outside it.",
   input_schema: object({
     task: { type: "string", description: "What to find out, and what the answer should look like." },
-    model: { type: ["string", "null"], description: "A catalog model id or role policy for this work, or null for your own model (pick_model asks Otari's router)." },
+    model: {
+      type: ["string", "null"],
+      description: "A catalog model id or role policy for this work, or null for your own model (pick_model asks Otari's router).",
+    },
   }),
   kind: "read", // several at once; each is its own session, and nothing it does reaches outside its computer folder
   async authorize(ctx, a) {
@@ -50,8 +64,18 @@ export const subagentTool: AgentTool = {
     return est !== null && est > config.priceCardUsd ? { ask: `This subagent would cost about ${usd(est)} on ${a.model}.` } : null;
   },
   async run(ctx, a) {
-    const s = await openSession(ctx.teammate.id, "api", `subagent:${ctx.sessionId}:${ctx.toolCallId}`, { subagent_of: ctx.sessionId, model: a.model, read_only: true });
-    const sub = await submit({ sessionId: s.id, personId: ctx.person?.id ?? null, requestId: `subagent-${ctx.toolCallId}`, text: a.task, source: "subagent" });
+    const s = await openSession(ctx.teammate.id, "api", `subagent:${ctx.sessionId}:${ctx.toolCallId}`, {
+      subagent_of: ctx.sessionId,
+      model: a.model,
+      read_only: true,
+    });
+    const sub = await submit({
+      sessionId: s.id,
+      personId: ctx.person?.id ?? null,
+      requestId: `subagent-${ctx.toolCallId}`,
+      text: a.task,
+      source: "subagent",
+    });
     await startRun(sub.run.id, { child: true });
     // As long as its own work takes: it has the same limits as any job (budget, the stuck check, the hard limit).
     const until = Date.now() + config.turnTimeoutMs;
@@ -59,10 +83,23 @@ export const subagentTool: AgentTool = {
       const run = await getRun(sub.run.id);
       if (run && ["done", "failed", "cancelled"].includes(run.status)) {
         // Its answer is what it posted (agents answer with slack_post), else its final text.
-        const posts = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' ORDER BY id", [sub.run.id])).rows.map((x) => String(x.t ?? ""));
-        const { rows } = await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [sub.run.id]);
-        const answer = [...posts, String(rows[0]?.data?.text ?? "")].filter((x) => x.trim()).join("\n\n").slice(0, 20_000) || "(the subagent finished without an answer)";
-        if (run.status !== "done") return { text: `The subagent stopped (${run.status}${run.error ? `: ${run.error}` : ""}).`, isError: true, data: { run_id: sub.run.id } };
+        const posts = (
+          await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' ORDER BY id", [sub.run.id])
+        ).rows.map((x) => String(x.t ?? ""));
+        const { rows } = await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [
+          sub.run.id,
+        ]);
+        const answer =
+          [...posts, String(rows[0]?.data?.text ?? "")]
+            .filter((x) => x.trim())
+            .join("\n\n")
+            .slice(0, 20_000) || "(the subagent finished without an answer)";
+        if (run.status !== "done")
+          return {
+            text: `The subagent stopped (${run.status}${run.error ? `: ${run.error}` : ""}).`,
+            isError: true,
+            data: { run_id: sub.run.id },
+          };
         return { text: answer, untrusted: "subagent", data: { run_id: sub.run.id, session_id: s.id } };
       }
       if (Date.now() > until) return { text: "The subagent didn't finish in time.", isError: true, data: { run_id: sub.run.id } };
@@ -75,19 +112,38 @@ export const subagentTool: AgentTool = {
 // each listed step runs in this job without its own card. Required rules (no force-push, no credentials) still apply.
 export const planApprovalTool: AgentTool = {
   name: "plan_approval",
-  description: "When a person has asked for several writes as one job (\"push the fix, then merge\", \"put everyone's budget back\"), ask for them together: one card with the steps in plain words, each naming the tool it will use. Once approved, those tools run in this job without another card. Don't use it to bundle steps nobody asked for.",
+  description:
+    'When a person has asked for several writes as one job ("push the fix, then merge", "put everyone\'s budget back"), ask for them together: one card with the steps in plain words, each naming the tool it will use. Once approved, those tools run in this job without another card. Don\'t use it to bundle steps nobody asked for.',
   input_schema: object({
-    title: { type: "string", description: "The whole job in words, e.g. \"Push the guard to PR #1, then merge #1\"." },
-    steps: { type: "array", maxItems: 8, items: { type: "object", properties: { action: { type: "string", description: "The step in words: repo, branch, what changes." }, tool: { type: "string", description: "The exact tool name this step uses." } }, required: ["action", "tool"], additionalProperties: false } },
+    title: { type: "string", description: 'The whole job in words, e.g. "Push the guard to PR #1, then merge #1".' },
+    steps: {
+      type: "array",
+      maxItems: 8,
+      items: {
+        type: "object",
+        properties: {
+          action: { type: "string", description: "The step in words: repo, branch, what changes." },
+          tool: { type: "string", description: "The exact tool name this step uses." },
+        },
+        required: ["action", "tool"],
+        additionalProperties: false,
+      },
+    },
   }),
   kind: "write",
   describe(_ctx, a) {
-    return { kind: "plan", title: String(a.title), summary: (a.steps ?? []).map((x: any, i: number) => `${i + 1}. ${x.action}`).join("\n"), steps: a.steps };
+    return {
+      kind: "plan",
+      title: String(a.title),
+      summary: (a.steps ?? []).map((x: any, i: number) => `${i + 1}. ${x.action}`).join("\n"),
+      steps: a.steps,
+    };
   },
   async run(ctx, a) {
     const tools = [...new Set((a.steps ?? []).map((x: any) => String(x.tool)))];
     await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "plan.approved", data: { title: a.title, tools } });
-    return { text: `Approved: ${a.title}. Do the steps now, in order; the listed tools (${tools.join(", ")}) run in this job without another card.` };
+    return {
+      text: `Approved: ${a.title}. Do the steps now, in order; the listed tools (${tools.join(", ")}) run in this job without another card.`,
+    };
   },
 };
-

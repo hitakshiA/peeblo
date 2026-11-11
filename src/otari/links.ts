@@ -10,7 +10,8 @@ const q = (p: Record<string, string | undefined>) => {
 export const links = {
   request: (requestId: string) => `${DASH}/#/requests${q({ request: requestId })}`,
   session: (traceId: string, workspaceId?: string) => `${DASH}/#/sessions${q({ peek: traceId, peek_workspace: workspaceId })}`,
-  sessionsFor: (filter: { userId?: string; apiKeyId?: string; q?: string }) => `${DASH}/#/sessions${q({ user_id: filter.userId, api_key_id: filter.apiKeyId, q: filter.q })}`,
+  sessionsFor: (filter: { userId?: string; apiKeyId?: string; q?: string }) =>
+    `${DASH}/#/sessions${q({ user_id: filter.userId, api_key_id: filter.apiKeyId, q: filter.q })}`,
   usage: () => `${DASH}/#/organization/usage`,
   model: (id: string) => `${DASH}/#/models/${encodeURIComponent(id)}`,
   routing: () => `${DASH}/#/routing`,

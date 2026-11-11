@@ -2,7 +2,14 @@
 import { pool } from "../db.ts";
 import { newId } from "../ids.ts";
 
-export type Person = { id: string; slack_team: string | null; slack_user: string | null; email: string | null; display_name: string | null; end_user_id: string | null };
+export type Person = {
+  id: string;
+  slack_team: string | null;
+  slack_user: string | null;
+  email: string | null;
+  display_name: string | null;
+  end_user_id: string | null;
+};
 
 export async function personForSlack(team: string, user: string, extra: { email?: string; displayName?: string } = {}): Promise<Person> {
   const { rows } = await pool.query<Person>(

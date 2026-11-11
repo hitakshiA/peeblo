@@ -4,7 +4,13 @@ import { minorDigits } from "../src/slack/approval-card.ts";
 import { money } from "../src/slack/look.ts";
 
 test("money: cents above a cent, a few places below, one digit for tiny costs", () => {
-  const cases: [number, string][] = [[0, "$0"], [0.00007, "$0.00007"], [0.0012345, "$0.0012"], [0.01, "$0.01"], [12.5, "$12.50"]];
+  const cases: [number, string][] = [
+    [0, "$0"],
+    [0.00007, "$0.00007"],
+    [0.0012345, "$0.0012"],
+    [0.01, "$0.01"],
+    [12.5, "$12.50"],
+  ];
   for (const [usd, text] of cases) assert.equal(money(usd), text);
 });
 

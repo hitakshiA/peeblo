@@ -49,50 +49,115 @@ export function onSlackMessage(h: Handler): void {
 
 async function handleEvents(body: string, req: IncomingMessage): Promise<[number, string]> {
   let payload: any;
-  try { payload = JSON.parse(body); } catch { return [400, "bad body"]; }
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return [400, "bad body"];
+  }
   // Slack checks a new request URL before we could know the new app's secret, and this ping carries no app id.
   if (payload.type === "url_verification") return [200, String(payload.challenge ?? "")];
   const app = await getApp(String(payload.api_app_id ?? ""));
-  if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) return [401, "bad signature"];
+  if (
+    !app ||
+    !verifySlack(
+      app.secrets.signing_secret,
+      req.headers["x-slack-request-timestamp"] as string,
+      body,
+      req.headers["x-slack-signature"] as string,
+    )
+  )
+    return [401, "bad signature"];
   const ev = payload.event ?? {};
   if (ev.user && ev.user === app.bot_user_id) return [200, ""];
   if (ev.type === "message" || ev.type === "app_mention") {
-    if (ev.user === app.bot_user_id) return [200, ""];                       // our own post echoed back
+    if (ev.user === app.bot_user_id) return [200, ""]; // our own post echoed back
     const first = await claimMessage(payload.team_id, ev.channel, ev.ts ?? ev.event_ts, app.app_id, ev.type);
     if (!first) return [200, ""];
-    await appendEvent({ type: "slack.message", data: { app_id: app.app_id, team_id: payload.team_id, event_id: payload.event_id, event: ev } });
-    for (const h of handlers) await h({ appId: app.app_id, teammateId: app.teammate_id, teamId: payload.team_id, event: ev, payload }).catch((e) => console.error("slack handler:", e));
+    await appendEvent({
+      type: "slack.message",
+      data: { app_id: app.app_id, team_id: payload.team_id, event_id: payload.event_id, event: ev },
+    });
+    for (const h of handlers)
+      await h({ appId: app.app_id, teammateId: app.teammate_id, teamId: payload.team_id, event: ev, payload }).catch((e) =>
+        console.error("slack handler:", e),
+      );
     return [200, ""];
   }
-  await appendEvent({ type: `slack.${ev.type ?? payload.type}`, data: { app_id: app.app_id, team_id: payload.team_id, event_id: payload.event_id, event: ev } });
-  for (const h of otherHandlers) void h({ appId: app.app_id, teammateId: app.teammate_id, teamId: payload.team_id, event: ev }).catch((e) => console.error("slack event:", e));
+  await appendEvent({
+    type: `slack.${ev.type ?? payload.type}`,
+    data: { app_id: app.app_id, team_id: payload.team_id, event_id: payload.event_id, event: ev },
+  });
+  for (const h of otherHandlers)
+    void h({ appId: app.app_id, teammateId: app.teammate_id, teamId: payload.team_id, event: ev }).catch((e) =>
+      console.error("slack event:", e),
+    );
   return [200, ""];
 }
 
 async function handleInteraction(body: string, req: IncomingMessage): Promise<[number, string]> {
   let payload: any;
-  try { payload = JSON.parse(new URLSearchParams(body).get("payload") ?? ""); } catch { return [400, "bad body"]; }
+  try {
+    payload = JSON.parse(new URLSearchParams(body).get("payload") ?? "");
+  } catch {
+    return [400, "bad body"];
+  }
   let app = await getApp(String(payload.api_app_id ?? payload.view?.app_id ?? ""));
   // Some payloads (message shortcuts) can arrive without the app id: the app is the one whose secret signed it.
   if (!app) {
     const { listApps } = await import("./apps.ts");
     for (const a of await listApps()) {
       const full = await getApp(a.app_id);
-      if (full && verifySlack(full.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) { app = full; break; }
+      if (
+        full &&
+        verifySlack(
+          full.secrets.signing_secret,
+          req.headers["x-slack-request-timestamp"] as string,
+          body,
+          req.headers["x-slack-signature"] as string,
+        )
+      ) {
+        app = full;
+        break;
+      }
     }
   }
-  if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) { console.error(`slack interaction refused: type ${payload.type}, app ${payload.api_app_id ?? "none"}`); return [401, "bad signature"]; }
-  await appendEvent({ type: "slack.interaction", data: { app_id: app.app_id, type: payload.type, user: payload.user?.id, action: payload.actions?.[0]?.action_id, value: payload.actions?.[0]?.value, callback: payload.view?.callback_id } });
+  if (
+    !app ||
+    !verifySlack(
+      app.secrets.signing_secret,
+      req.headers["x-slack-request-timestamp"] as string,
+      body,
+      req.headers["x-slack-signature"] as string,
+    )
+  ) {
+    console.error(`slack interaction refused: type ${payload.type}, app ${payload.api_app_id ?? "none"}`);
+    return [401, "bad signature"];
+  }
+  await appendEvent({
+    type: "slack.interaction",
+    data: {
+      app_id: app.app_id,
+      type: payload.type,
+      user: payload.user?.id,
+      action: payload.actions?.[0]?.action_id,
+      value: payload.actions?.[0]?.value,
+      callback: payload.view?.callback_id,
+    },
+  });
   const { handleShortcut, handleSubmission } = await import("../slack/commands.ts");
   // Shortcuts (on a message, or anywhere): answered at once, the work happens after.
-  if (payload.type === "message_action" || payload.type === "shortcut") { void handleShortcut(app.app_id, payload).catch((e) => console.error("slack shortcut:", e)); return [200, ""]; }
+  if (payload.type === "message_action" || payload.type === "shortcut") {
+    void handleShortcut(app.app_id, payload).catch((e) => console.error("slack shortcut:", e));
+    return [200, ""];
+  }
   // Forms: a settings save answers with field errors, so it's checked before replying.
   if (payload.type === "view_submission" && ["teammate_settings", "new_job", "hire_form"].includes(payload.view?.callback_id)) {
     const errors = await handleSubmission(app.app_id, payload).catch((e) => ({ instructions: String((e as Error).message).slice(0, 150) }));
     return [200, errors ? JSON.stringify({ response_action: "errors", errors }) : ""];
   }
   // Answered at once (Slack wants a reply within 3 s); the work happens after.
-  for (const h of interactionHandlers) void h({ appId: app.app_id, teammateId: app.teammate_id, payload }).catch((e) => console.error("slack interaction:", e));
+  for (const h of interactionHandlers)
+    void h({ appId: app.app_id, teammateId: app.teammate_id, payload }).catch((e) => console.error("slack interaction:", e));
   return [200, ""];
 }
 
@@ -100,8 +165,20 @@ async function handleInteraction(body: string, req: IncomingMessage): Promise<[n
 async function handleCommand(body: string, req: IncomingMessage): Promise<[number, string]> {
   const f = new URLSearchParams(body);
   const app = await getApp(String(f.get("api_app_id") ?? ""));
-  if (!app || !verifySlack(app.secrets.signing_secret, req.headers["x-slack-request-timestamp"] as string, body, req.headers["x-slack-signature"] as string)) return [401, "bad signature"];
-  await appendEvent({ type: "slack.command", data: { app_id: app.app_id, user: f.get("user_id"), command: f.get("command"), text: f.get("text") } });
+  if (
+    !app ||
+    !verifySlack(
+      app.secrets.signing_secret,
+      req.headers["x-slack-request-timestamp"] as string,
+      body,
+      req.headers["x-slack-signature"] as string,
+    )
+  )
+    return [401, "bad signature"];
+  await appendEvent({
+    type: "slack.command",
+    data: { app_id: app.app_id, user: f.get("user_id"), command: f.get("command"), text: f.get("text") },
+  });
   const { handleCommand: run } = await import("../slack/commands.ts");
   void run(f).catch((e) => console.error("slack command:", e));
   return [200, ""];
@@ -119,8 +196,17 @@ async function handleOAuth(url: URL): Promise<[number, string]> {
     body: new URLSearchParams({ code, redirect_uri: `${config.publicUrl}/slack/oauth/callback` }),
   }).then((x) => x.json() as Promise<any>);
   if (!r.ok) return [400, page(`Slack said: ${r.error}. Try the link again.`)];
-  await saveApp({ app_id: app.app_id, teammate_id: app.teammate_id, team_id: r.team?.id, bot_user_id: r.bot_user_id, secrets: { ...app.secrets, bot_token: r.access_token } });
-  await appendEvent({ type: "slack.installed", data: { app_id: app.app_id, team_id: r.team?.id, bot_user_id: r.bot_user_id, installed_by: r.authed_user?.id } });
+  await saveApp({
+    app_id: app.app_id,
+    teammate_id: app.teammate_id,
+    team_id: r.team?.id,
+    bot_user_id: r.bot_user_id,
+    secrets: { ...app.secrets, bot_token: r.access_token },
+  });
+  await appendEvent({
+    type: "slack.installed",
+    data: { app_id: app.app_id, team_id: r.team?.id, bot_user_id: r.bot_user_id, installed_by: r.authed_user?.id },
+  });
   // Straight into Slack, on the new teammate's own Messages tab (its welcome is there).
   return [302, `https://slack.com/app_redirect?app=${encodeURIComponent(app.app_id)}&team=${encodeURIComponent(r.team?.id ?? "")}`];
 }
@@ -134,7 +220,8 @@ async function facePngFor(slug: string): Promise<Buffer | null> {
   return facePng((tm ? await faceOf(tm) : pickFace(slug)) as any, 256).catch(() => null);
 }
 
-const page = (text: string) => `<!doctype html><meta charset="utf-8"><title>Peeblo</title><body style="font:16px system-ui;padding:3rem"><p>${text.replace(/</g, "&lt;")}</p>`;
+const page = (text: string) =>
+  `<!doctype html><meta charset="utf-8"><title>Peeblo</title><body style="font:16px system-ui;padding:3rem"><p>${text.replace(/</g, "&lt;")}</p>`;
 
 export function startIngress(): Promise<Server> {
   const server = createServer(async (req, res) => {
@@ -143,36 +230,35 @@ export function startIngress(): Promise<Server> {
       let out: [number, string] = [404, "not found"];
       let type = "text/plain";
       if (req.method === "POST" && url.pathname === "/slack/events") out = await handleEvents(await rawBody(req), req);
-      else if (req.method === "POST" && url.pathname === "/slack/interactions") { out = await handleInteraction(await rawBody(req), req); if (out[1].startsWith("{")) type = "application/json"; }
-      else if (req.method === "POST" && url.pathname === "/slack/commands") out = await handleCommand(await rawBody(req), req);
-      else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") { out = await handleOAuth(url); type = "text/html"; }
-      else if (req.method === "POST" && /^\/hooks\/source\/(stripe|pagerduty)$/.test(url.pathname)) {
+      else if (req.method === "POST" && url.pathname === "/slack/interactions") {
+        out = await handleInteraction(await rawBody(req), req);
+        if (out[1].startsWith("{")) type = "application/json";
+      } else if (req.method === "POST" && url.pathname === "/slack/commands") out = await handleCommand(await rawBody(req), req);
+      else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") {
+        out = await handleOAuth(url);
+        type = "text/html";
+      } else if (req.method === "POST" && /^\/hooks\/source\/(stripe|pagerduty)$/.test(url.pathname)) {
         const { handleSourceHook } = await import("../runs/triggers.ts");
         out = await handleSourceHook(url.pathname.split("/")[3], req.headers, await rawBody(req));
-      }
-      else if (req.method === "POST" && /^\/hooks\/[a-z0-9-]{2,31}\/sc_[a-z0-9]+$/.test(url.pathname)) {
+      } else if (req.method === "POST" && /^\/hooks\/[a-z0-9-]{2,31}\/sc_[a-z0-9]+$/.test(url.pathname)) {
         const [, , slug, id] = url.pathname.split("/");
         const { handleHook } = await import("../runs/triggers.ts");
         out = await handleHook(slug, id, req.headers, await rawBody(req));
-      }
-      else if (req.method === "GET" && /^\/cards\/[0-9a-f]{32}\.png$/.test(url.pathname)) {
+      } else if (req.method === "GET" && /^\/cards\/[0-9a-f]{32}\.png$/.test(url.pathname)) {
         const { readFile } = await import("node:fs/promises");
         const png = await readFile(`${config.dataDir}/cards/${url.pathname.slice(7)}`).catch(() => null);
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
-      }
-      else if (req.method === "GET" && /^\/services\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
+      } else if (req.method === "GET" && /^\/services\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
         // A connected service's brand tile, for approval cards.
         const { readFile } = await import("node:fs/promises");
         const png = await readFile(new URL(`../../assets/services/${url.pathname.slice(10)}`, import.meta.url)).catch(() => null);
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
-      }
-      else if (req.method === "GET" && /^\/models\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
+      } else if (req.method === "GET" && /^\/models\/[a-z0-9-]{2,31}\.png$/.test(url.pathname)) {
         // A model maker's logo for the receipt chip (Slack images can't be SVG).
         const { readFile } = await import("node:fs/promises");
         const png = await readFile(new URL(`../../assets/models/${url.pathname.slice(8)}`, import.meta.url)).catch(() => null);
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);
-      }
-      else if (req.method === "GET" && /^\/faces\/[a-z0-9-]{2,31}\.png$/.test(url.pathname) /* ?v= busts Slack's image cache */) {
+      } else if (req.method === "GET" && /^\/faces\/[a-z0-9-]{2,31}\.png$/.test(url.pathname) /* ?v= busts Slack's image cache */) {
         // A teammate's face (public, like any Slack avatar): Slack fetches it for posts made before its own app exists.
         const png = await facePngFor(url.pathname.slice(7, -4));
         if (png) return void res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }).end(png);

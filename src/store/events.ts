@@ -4,7 +4,14 @@ import type pg from "pg";
 import { pool } from "../db.ts";
 import type { DataOf } from "./event-types.ts";
 
-export type EventRow = { id: string; session_id: string | null; run_id: string | null; type: string; data: Record<string, unknown>; at: Date };
+export type EventRow = {
+  id: string;
+  session_id: string | null;
+  run_id: string | null;
+  type: string;
+  data: Record<string, unknown>;
+  at: Date;
+};
 type Queryable = Pick<pg.Pool, "query"> | pg.PoolClient;
 
 // A known event type's data is checked against its shape (src/store/event-types.ts); others are open.
@@ -12,11 +19,20 @@ export async function appendEvent<T extends string>(
   e: { sessionId?: string | null; runId?: string | null; type: T; data?: DataOf<T> },
   db: Queryable = pool,
 ): Promise<EventRow> {
-  const { rows } = await db.query<EventRow>(
-    "INSERT INTO events (session_id, run_id, type, data) VALUES ($1, $2, $3, $4) RETURNING *",
-    [e.sessionId ?? null, e.runId ?? null, e.type, e.data ?? {}],
-  );
-  for (const l of listeners) queueMicrotask(() => { try { void Promise.resolve(l(rows[0])).catch(() => {}); } catch { /* a view never breaks the log */ } });
+  const { rows } = await db.query<EventRow>("INSERT INTO events (session_id, run_id, type, data) VALUES ($1, $2, $3, $4) RETURNING *", [
+    e.sessionId ?? null,
+    e.runId ?? null,
+    e.type,
+    e.data ?? {},
+  ]);
+  for (const l of listeners)
+    queueMicrotask(() => {
+      try {
+        void Promise.resolve(l(rows[0])).catch(() => {});
+      } catch {
+        /* a view never breaks the log */
+      }
+    });
   return rows[0];
 }
 

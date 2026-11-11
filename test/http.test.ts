@@ -6,7 +6,10 @@ test("Router matches method and path, and decodes params", async () => {
   const r = new Router().add("GET", "/teammates/:id", async (req) => req.params.id).add("POST", "/teammates", async () => "made");
   const m = r.match("GET", "/teammates/a%20b");
   assert.deepEqual(m?.params, { id: "a b" });
-  assert.equal(await m?.handler({ method: "GET", path: "/teammates/a%20b", params: m.params, query: new URLSearchParams(), body: {}, headers: {} }), "a b");
+  assert.equal(
+    await m?.handler({ method: "GET", path: "/teammates/a%20b", params: m.params, query: new URLSearchParams(), body: {}, headers: {} }),
+    "a b",
+  );
   assert.equal(r.match("DELETE", "/teammates/x"), null);
   assert.equal(r.match("GET", "/teammates/x/extra"), null);
 });

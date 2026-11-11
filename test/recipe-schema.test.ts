@@ -15,7 +15,12 @@ test("a v1 recipe (a list of commands) becomes run steps", () => {
 });
 
 test("values are normalized: step timeouts capped at 600 s, env values as strings", () => {
-  const { recipe, problems } = normalizeRecipe({ packages: { npm: ["typescript@5"] }, run: [{ name: "x", run: "true", timeout_s: 9999 }], secrets: ["API_KEY"], env: { A: 1 } });
+  const { recipe, problems } = normalizeRecipe({
+    packages: { npm: ["typescript@5"] },
+    run: [{ name: "x", run: "true", timeout_s: 9999 }],
+    secrets: ["API_KEY"],
+    env: { A: 1 },
+  });
   assert.deepEqual(problems, []);
   assert.deepEqual(recipe.packages.npm, ["typescript@5"]);
   assert.deepEqual(recipe.run, [{ name: "x", run: "true", timeout_s: 600 }]);

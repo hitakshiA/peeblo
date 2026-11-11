@@ -6,10 +6,31 @@ import type { SlackPlace } from "../slack/inbound.ts";
 import { appendEvent } from "./events.ts";
 
 export type SessionKind = "desk" | "channel" | "thread" | "dm" | "api";
-export type Session = { id: string; teammate_id: string; kind: SessionKind; place_key: string; place: Record<string, unknown>; status: string };
-export type Run = { id: string; submission_id: string; session_id: string; status: string; error: string | null; created_at: Date; started_at: Date | null; finished_at: Date | null };
+export type Session = {
+  id: string;
+  teammate_id: string;
+  kind: SessionKind;
+  place_key: string;
+  place: Record<string, unknown>;
+  status: string;
+};
+export type Run = {
+  id: string;
+  submission_id: string;
+  session_id: string;
+  status: string;
+  error: string | null;
+  created_at: Date;
+  started_at: Date | null;
+  finished_at: Date | null;
+};
 
-export async function openSession(teammateId: string, kind: SessionKind, placeKey: string, place: Record<string, unknown> = {}): Promise<Session> {
+export async function openSession(
+  teammateId: string,
+  kind: SessionKind,
+  placeKey: string,
+  place: Record<string, unknown> = {},
+): Promise<Session> {
   const { rows } = await pool.query<Session>(
     `INSERT INTO sessions (id, teammate_id, kind, place_key, place) VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (teammate_id, kind, place_key) DO UPDATE SET last_active_at = now()
@@ -31,7 +52,14 @@ export async function slackPlaceOf(sessionId: string | null): Promise<SlackPlace
 }
 
 // Records the submission and its run in one transaction. A repeated request_id returns the first run.
-export async function submit(s: { sessionId: string; personId: string | null; requestId: string; text: string; source: string; chainId?: string | null }): Promise<{ submissionId: string; run: Run; created: boolean }> {
+export async function submit(s: {
+  sessionId: string;
+  personId: string | null;
+  requestId: string;
+  text: string;
+  source: string;
+  chainId?: string | null;
+}): Promise<{ submissionId: string; run: Run; created: boolean }> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -49,8 +77,22 @@ export async function submit(s: { sessionId: string; personId: string | null; re
       return { submissionId: rows[0].submission_id, run: rows[0], created: false };
     }
     const submissionId = ins.rows[0].id;
-    const run = (await client.query<Run>("INSERT INTO runs (id, submission_id, session_id) VALUES ($1, $2, $3) RETURNING *", [newId("ru"), submissionId, s.sessionId])).rows[0];
-    await appendEvent({ sessionId: s.sessionId, runId: run.id, type: "submission.received", data: { submission_id: submissionId, person_id: s.personId, source: s.source, text: s.text } }, client);
+    const run = (
+      await client.query<Run>("INSERT INTO runs (id, submission_id, session_id) VALUES ($1, $2, $3) RETURNING *", [
+        newId("ru"),
+        submissionId,
+        s.sessionId,
+      ])
+    ).rows[0];
+    await appendEvent(
+      {
+        sessionId: s.sessionId,
+        runId: run.id,
+        type: "submission.received",
+        data: { submission_id: submissionId, person_id: s.personId, source: s.source, text: s.text },
+      },
+      client,
+    );
     await client.query("UPDATE sessions SET last_active_at = now() WHERE id = $1", [s.sessionId]);
     await client.query("COMMIT");
     return { submissionId, run, created: true };

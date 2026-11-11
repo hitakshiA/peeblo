@@ -5,14 +5,14 @@ import type { Teammate } from "../store/teammates.ts";
 import type { Schema } from "./schema.ts";
 
 export type ToolContext = {
-  teammate: Teammate;           // the session's pinned config
-  person: Person | null;        // who asked (the run's submitter)
+  teammate: Teammate; // the session's pinned config
+  person: Person | null; // who asked (the run's submitter)
   sessionId: string;
   runId: string | null;
-  endUser: string | null;       // who pays
+  endUser: string | null; // who pays
   toolCallId: string;
   otariKey: { keyId: string; secret: string } | null; // the teammate's own Otari key, if it has one
-  subagent: boolean;            // a read-only subagent session
+  subagent: boolean; // a read-only subagent session
 };
 
 // `endTurn`: the turn stops after this tool batch (a reply posted, a job handed off); no extra model call.
@@ -35,7 +35,10 @@ export type AgentTool = {
   // Own tools that act outside the conversation (push, hand a job on, set up a schedule): the risk class for this call,
   // or null when this call doesn't (a list, a pause). The gate then treats it like a connector write: the mode
   // rule, the reviewer in Auto, a card (src/proxy/tools.ts).
-  outward?: (ctx: ToolContext, args: any) => Promise<"write" | "shipping" | "outside_thread" | null> | "write" | "shipping" | "outside_thread" | null;
+  outward?: (
+    ctx: ToolContext,
+    args: any,
+  ) => Promise<"write" | "shipping" | "outside_thread" | null> | "write" | "shipping" | "outside_thread" | null;
   // Found with find_tools and called through use_tool, instead of declared at session start (fewer than 20 up front).
   deferred?: boolean;
 };

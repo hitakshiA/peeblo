@@ -14,14 +14,30 @@ export function summarize(text: string): string {
   const t = text.trim();
   try {
     const j = JSON.parse(t);
-    const list = Array.isArray(j) ? j : Array.isArray(j?.results) ? j.results : Array.isArray(j?.items) ? j.items : Array.isArray(j?.issues) ? j.issues : Array.isArray(j?.data) ? j.data : Array.isArray(j?.nodes) ? j.nodes : null;
+    const list = Array.isArray(j)
+      ? j
+      : Array.isArray(j?.results)
+        ? j.results
+        : Array.isArray(j?.items)
+          ? j.items
+          : Array.isArray(j?.issues)
+            ? j.issues
+            : Array.isArray(j?.data)
+              ? j.data
+              : Array.isArray(j?.nodes)
+                ? j.nodes
+                : null;
     if (list) return `${list.length} result${list.length === 1 ? "" : "s"}`;
     // One record: its id and title, the way a person would name it ("GRO-331 · Pricing page footer…").
     if (j && typeof j === "object") {
-      const name = [j.identifier ?? j.id ?? j.number ?? j.key, j.title ?? j.name ?? j.subject ?? j.summary].filter((x) => typeof x === "string" || typeof x === "number").join(" · ");
+      const name = [j.identifier ?? j.id ?? j.number ?? j.key, j.title ?? j.name ?? j.subject ?? j.summary]
+        .filter((x) => typeof x === "string" || typeof x === "number")
+        .join(" · ");
       if (name) return name.length > 80 ? `${name.slice(0, 79)}…` : name;
     }
-  } catch { /* not JSON */ }
+  } catch {
+    /* not JSON */
+  }
   const first = t.split(/\n/).find((l) => l.trim()) ?? "";
   return first.length > 80 ? `${first.slice(0, 79)}…` : first;
 }
@@ -46,9 +62,12 @@ export const MAX_RESULT = 1_000_000;
 // Where a vendor tool is the wrong road for a common question, the right one, in front of the model: in the tool's
 // description and in its error. (Stripe's analytics needs Sigma access many accounts don't have.)
 const TOOL_HINTS: Record<string, string> = {
-  "apify:apify--web-search": "For a plain web search, web_search is cheaper and screened; use this only for what it can't do (many results, a specific engine).",
-  "apify:apify--web-fetch": "For one public page, web_fetch is cheaper and screened; use this only to scrape many pages or a page web_fetch can't read.",
-  "stripe:stripe_analytics": "For MRR, active customers or subscription counts, don't wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id \"GetSubscriptions\", parameters {\"status\": \"active\", \"limit\": 40, \"starting_after\": \"<last id>\"}, every page until has_more is false) and add them up on your computer.",
+  "apify:apify--web-search":
+    "For a plain web search, web_search is cheaper and screened; use this only for what it can't do (many results, a specific engine).",
+  "apify:apify--web-fetch":
+    "For one public page, web_fetch is cheaper and screened; use this only to scrape many pages or a page web_fetch can't read.",
+  "stripe:stripe_analytics":
+    'For MRR, active customers or subscription counts, don\'t wait on this tool: list active subscriptions with stripe_api_read (stripe_api_operation_id "GetSubscriptions", parameters {"status": "active", "limit": 40, "starting_after": "<last id>"}, every page until has_more is false) and add them up on your computer.',
 };
 // Connection facts per server: ids the model would otherwise guess (vendors answer a wrong id with a misleading
 // auth error), plan limits, and the query shapes that work.
@@ -56,7 +75,15 @@ const TOOL_HINTS: Record<string, string> = {
 // (config/connections/<server>.md, generic quirks), this workspace's company memory (connections/<server>.md: ids,
 // plan limits, lessons the crew learned; changed by talking, approved by an admin).
 let notes: { at: number; v: Record<string, string> } = { at: 0, v: {} };
-const body = (file: string) => { try { return readFileSync(file, "utf8").replace(/^---[\s\S]*?---\n/, "").trim(); } catch { return ""; } };
+const body = (file: string) => {
+  try {
+    return readFileSync(file, "utf8")
+      .replace(/^---[\s\S]*?---\n/, "")
+      .trim();
+  } catch {
+    return "";
+  }
+};
 export function serverNote(server: string): string {
   if (Date.now() - notes.at > 60_000) notes = { at: Date.now(), v: {} };
   if (notes.v[server] !== undefined) return notes.v[server];
@@ -65,7 +92,14 @@ export function serverNote(server: string): string {
   notes.v[server] = [shipped, company].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   return notes.v[server];
 }
-export const hintFor = (server: string, tool: string) => [serverNote(server) && `About this connection: ${serverNote(server)} Use any ids given here exactly, never a guess; if you learn something lasting about it, propose it for company memory connections/${server}.`, TOOL_HINTS[`${server}:${tool}`]].filter(Boolean).join(" ");
+export const hintFor = (server: string, tool: string) =>
+  [
+    serverNote(server) &&
+      `About this connection: ${serverNote(server)} Use any ids given here exactly, never a guess; if you learn something lasting about it, propose it for company memory connections/${server}.`,
+    TOOL_HINTS[`${server}:${tool}`],
+  ]
+    .filter(Boolean)
+    .join(" ");
 
 // A JSON list cut mid-record (a result over MAX_RESULT): the complete records before the cut,
 // as {"data": [...], "has_more": true}. Null when the text isn't the start of a JSON list.
@@ -73,14 +107,31 @@ export function salvageList(text: string): { data: any[]; has_more: true } | nul
   const at = text.search(/\[\s*\{/);
   if (at < 0) return null;
   const out: any[] = [];
-  let depth = 0, start = -1, inStr = false, esc = false;
+  let depth = 0,
+    start = -1,
+    inStr = false,
+    esc = false;
   for (let i = at + 1; i < text.length; i++) {
     const c = text[i];
-    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
     if (c === '"') inStr = true;
-    else if (c === "{") { if (depth++ === 0) start = i; }
-    else if (c === "}") { if (--depth === 0 && start >= 0) { try { out.push(JSON.parse(text.slice(start, i + 1))); } catch { break; } start = -1; } }
-    else if (c === "]" && depth === 0) break;
+    else if (c === "{") {
+      if (depth++ === 0) start = i;
+    } else if (c === "}") {
+      if (--depth === 0 && start >= 0) {
+        try {
+          out.push(JSON.parse(text.slice(start, i + 1)));
+        } catch {
+          break;
+        }
+        start = -1;
+      }
+    } else if (c === "]" && depth === 0) break;
   }
   return out.length ? { data: out, has_more: true } : null;
 }
@@ -91,17 +142,52 @@ export function recordCount(text: string): number | null {
     const v = JSON.parse(text);
     const arrays = Array.isArray(v) ? [v] : v && typeof v === "object" ? Object.values(v).filter(Array.isArray) : [];
     return arrays.length ? Math.max(...arrays.map((a) => (a as unknown[]).length)) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // The key fields of each record, one line each (up to 40), so the summary is usually enough to answer from.
-const KEY_FIELDS = ["identifier", "key", "number", "id", "full_name", "name", "title", "subject", "state", "status", "email", "amount", "currency", "created_at", "createdAt", "updated_at", "html_url", "url"];
+const KEY_FIELDS = [
+  "identifier",
+  "key",
+  "number",
+  "id",
+  "full_name",
+  "name",
+  "title",
+  "subject",
+  "state",
+  "status",
+  "email",
+  "amount",
+  "currency",
+  "created_at",
+  "createdAt",
+  "updated_at",
+  "html_url",
+  "url",
+];
 export function compactList(text: string): string | null {
   let v: any;
-  try { v = JSON.parse(text); } catch { return null; }
-  const arr: any[] | undefined = Array.isArray(v) ? v : v && typeof v === "object" ? (Object.values(v).filter(Array.isArray) as any[][]).sort((a, b) => b.length - a.length)[0] : undefined;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const arr: any[] | undefined = Array.isArray(v)
+    ? v
+    : v && typeof v === "object"
+      ? (Object.values(v).filter(Array.isArray) as any[][]).sort((a, b) => b.length - a.length)[0]
+      : undefined;
   if (!arr?.length || typeof arr[0] !== "object") return null;
-  const meta = v && !Array.isArray(v) ? Object.entries(v).filter(([, x]) => typeof x !== "object").map(([k, x]) => `${k}: ${x}`).join(", ") : "";
+  const meta =
+    v && !Array.isArray(v)
+      ? Object.entries(v)
+          .filter(([, x]) => typeof x !== "object")
+          .map(([k, x]) => `${k}: ${x}`)
+          .join(", ")
+      : "";
   const money = (o: any) => {
     const item = o?.items?.data?.[0];
     const price = item?.price ?? o?.price ?? o?.plan;
@@ -109,21 +195,38 @@ export function compactList(text: string): string | null {
     if (price?.unit_amount ?? price?.amount) bits.push(`price=${price.unit_amount ?? price.amount}`);
     if (price?.currency && !o?.currency) bits.push(`currency=${price.currency}`);
     const iv = price?.recurring?.interval ?? price?.interval;
-    if (iv) bits.push(`interval=${iv}${(price?.recurring?.interval_count ?? price?.interval_count ?? 1) > 1 ? `×${price.recurring?.interval_count ?? price.interval_count}` : ""}`);
+    if (iv)
+      bits.push(
+        `interval=${iv}${(price?.recurring?.interval_count ?? price?.interval_count ?? 1) > 1 ? `×${price.recurring?.interval_count ?? price.interval_count}` : ""}`,
+      );
     const q = item?.quantity ?? o?.quantity;
     if (q !== undefined && q !== null) bits.push(`quantity=${q}`);
-    if (o?.discount?.coupon?.percent_off ?? o?.discounts?.[0]?.coupon?.percent_off) bits.push(`percent_off=${o.discount?.coupon?.percent_off ?? o.discounts[0].coupon.percent_off}`);
+    if (o?.discount?.coupon?.percent_off ?? o?.discounts?.[0]?.coupon?.percent_off)
+      bits.push(`percent_off=${o.discount?.coupon?.percent_off ?? o.discounts[0].coupon.percent_off}`);
     if (typeof o?.customer === "string") bits.push(`customer=${o.customer}`);
     return bits;
   };
-  const line = (o: any) => [...KEY_FIELDS.filter((f) => o?.[f] !== undefined && o[f] !== null && typeof o[f] !== "object").map((f) => `${f}=${String(o[f]).slice(0, 90)}`), ...money(o)].join(" · ").slice(0, 320);
+  const line = (o: any) =>
+    [
+      ...KEY_FIELDS.filter((f) => o?.[f] !== undefined && o[f] !== null && typeof o[f] !== "object").map(
+        (f) => `${f}=${String(o[f]).slice(0, 90)}`,
+      ),
+      ...money(o),
+    ]
+      .join(" · ")
+      .slice(0, 320);
   const lines = arr.slice(0, 40).map((o, i) => `${i + 1}. ${line(o)}`);
   return `${meta ? `${meta}\n` : ""}${lines.join("\n")}${arr.length > 40 ? `\n… and ${arr.length - 40} more` : ""}`;
 }
 
 // A long connector result goes to a file on the agent's own computer. The model reads the
 // start, the record count and the path, and works on the file there with computer_bash when it needs the rest.
-export async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResult, callId: string): Promise<ToolResult & { chars: number; saved?: string }> {
+export async function capResult(
+  ctx: ToolContext,
+  t: ConnectorTool,
+  r: ToolResult,
+  callId: string,
+): Promise<ToolResult & { chars: number; saved?: string }> {
   const chars = r.text.length;
   // Otari's web firewall answers some request shapes with a bare nginx 403 page (no request id): a filter, not a
   // permission problem. Seen on SQL with comments or a sub-select inside the select list.
@@ -147,11 +250,27 @@ export async function capResult(ctx: ToolContext, t: ConnectorTool, r: ToolResul
     // Say when the result was too big to keep whole, or the model works on half a list without knowing.
     const max = MAX_RESULT.toLocaleString("en-US");
     let cut = "";
-    if (salvaged) cut = ` This result was over ${max} characters, so Peeblo kept only the start: the ${n} complete records in it are below and in the file (valid JSON), the rest are missing. Before you total anything, get the rest: ask for smaller pages (a lower limit, then its cursor or starting_after the last id), and add them up together.`;
-    else if (over && n === null) { try { JSON.parse(r.text); } catch { cut = ` This result was over ${max} characters, so Peeblo kept only the start and the file ends mid-record. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything.`; } }
-    return { ...r, chars, saved: path, text: `${head}\n…\n[peeblo:${cut} ${over ? "what was kept" : "the full result"} is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]` };
+    if (salvaged)
+      cut = ` This result was over ${max} characters, so Peeblo kept only the start: the ${n} complete records in it are below and in the file (valid JSON), the rest are missing. Before you total anything, get the rest: ask for smaller pages (a lower limit, then its cursor or starting_after the last id), and add them up together.`;
+    else if (over && n === null) {
+      try {
+        JSON.parse(r.text);
+      } catch {
+        cut = ` This result was over ${max} characters, so Peeblo kept only the start and the file ends mid-record. Ask again for fewer records or only the fields you need (a limit, a page, a properties list) before you count anything.`;
+      }
+    }
+    return {
+      ...r,
+      chars,
+      saved: path,
+      text: `${head}\n…\n[peeblo:${cut} ${over ? "what was kept" : "the full result"} is ${chars.toLocaleString("en-US")} characters${n !== null ? `, ${n} records` : ""}, saved on your computer at ${path}. The lines above are every record's key fields; answer from them when they're enough, and open the file (computer_bash with jq) only for a field they don't show.]`,
+    };
   } catch {
-    return { ...r, chars, text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]` };
+    return {
+      ...r,
+      chars,
+      text: `${r.text.slice(0, RESULT_CAP)}\n…\n[peeblo: cut at ${RESULT_CAP.toLocaleString("en-US")} of ${chars.toLocaleString("en-US")} characters${n !== null ? ` (${n} records)` : ""}. Ask for fewer fields or a smaller page.]`,
+    };
   }
 }
 
@@ -170,11 +289,19 @@ export async function githubVisible(tools: ConnectorTool[]): Promise<string> {
     const who = JSON.parse(mcpText((await executeTool(me, {})).data).text);
     const login = String(who.login ?? who.user?.login ?? "");
     if (!login) return "";
-    const found = JSON.parse(mcpText((await executeTool(search, { query: `user:${login} fork:true`, sort: "updated", perPage: 30 })).data).text);
-    const names = (found.items ?? found.repositories ?? found ?? []).map((x: any) => x.full_name ?? x.fullName ?? (x.owner?.login && x.name ? `${x.owner.login}/${x.name}` : null)).filter(Boolean);
+    const found = JSON.parse(
+      mcpText((await executeTool(search, { query: `user:${login} fork:true`, sort: "updated", perPage: 30 })).data).text,
+    );
+    const names = (found.items ?? found.repositories ?? found ?? [])
+      .map((x: any) => x.full_name ?? x.fullName ?? (x.owner?.login && x.name ? `${x.owner.login}/${x.name}` : null))
+      .filter(Boolean);
     ghSeen = { at: Date.now(), text: names.slice(0, 30).join(", ") };
     return ghSeen.text;
-  })().catch(() => ghSeen?.text ?? "").finally(() => { ghLoading = null; });
+  })()
+    .catch(() => ghSeen?.text ?? "")
+    .finally(() => {
+      ghLoading = null;
+    });
   return ghSeen?.text ?? "";
 }
 export async function warmGithubVisible(): Promise<void> {
@@ -191,4 +318,5 @@ export function firewallHint(t: { server: string; tool: string }): string {
 // Sources whose text comes from outside the company, so a guard model checks it for injected instructions.
 // GitHub issues and comments, Jira service-desk tickets and Sentry error payloads are written by people outside the
 // team too, so they count as outside text.
-export const OUTSIDE = /^(web:|file:|computer:network|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot|github|atlassian|sentry)\.)/;
+export const OUTSIDE =
+  /^(web:|file:|computer:network|slack:|mcp:(intercom|freshdesk|zendesk|apify|exa|deepwiki|context7|gmail|hubspot|github|atlassian|sentry)\.)/;

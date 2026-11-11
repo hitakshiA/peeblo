@@ -9,7 +9,8 @@ import { config } from "../config.ts";
 function durableDatabaseUrl(url: string): string {
   const u = new URL(url);
   const opts = u.searchParams.get("options") ?? "";
-  if (!opts.includes("idle_in_transaction_session_timeout")) u.searchParams.set("options", `${opts} -c idle_in_transaction_session_timeout=60000`.trim());
+  if (!opts.includes("idle_in_transaction_session_timeout"))
+    u.searchParams.set("options", `${opts} -c idle_in_transaction_session_timeout=60000`.trim());
   return u.toString();
 }
 

@@ -26,7 +26,17 @@ async function budgetCeiling(p: Person | null): Promise<number> {
   return Math.round(t.max_budget * Math.max(1, MONTH / per) * 100) / 100;
 }
 
-export async function configProblems(p: Person | null, c: { mode?: string | null; model?: string | null; fallback?: string | null; budget_usd?: number | null; tools?: string[]; connectors?: string[] }): Promise<string | null> {
+export async function configProblems(
+  p: Person | null,
+  c: {
+    mode?: string | null;
+    model?: string | null;
+    fallback?: string | null;
+    budget_usd?: number | null;
+    tools?: string[];
+    connectors?: string[];
+  },
+): Promise<string | null> {
   if (c.mode === "yolo" && !isOtariAdmin(p)) return "Only an admin can give a teammate YOLO mode; pick auto or ask.";
   for (const m of [c.model, c.fallback]) {
     if (!m) continue;
@@ -35,7 +45,8 @@ export async function configProblems(p: Person | null, c: { mode?: string | null
   }
   if (c.budget_usd != null) {
     const cap = await budgetCeiling(p);
-    if (c.budget_usd > cap) return `A teammate's budget can be at most $${cap} a month for you (your own Otari limit); pick that or less, or ask an admin.`;
+    if (c.budget_usd > cap)
+      return `A teammate's budget can be at most $${cap} a month for you (your own Otari limit); pick that or less, or ask an admin.`;
   }
   const badTools = (c.tools ?? []).filter((t) => !TOOLS.includes(t));
   if (badTools.length) return `Unknown tools: ${badTools.join(", ")} (use web, code or computer).`;

@@ -9,7 +9,16 @@ import { config } from "../config.ts";
 import { seal, unseal } from "../crypto.ts";
 import { pool } from "../db.ts";
 import type { Teammate } from "../store/teammates.ts";
-import { createBudget, createKeyCeiling, createServiceKey, deleteBudget, deleteCeiling, deleteKey, session, updateBudget } from "./admin.ts";
+import {
+  createBudget,
+  createKeyCeiling,
+  createServiceKey,
+  deleteBudget,
+  deleteCeiling,
+  deleteKey,
+  session,
+  updateBudget,
+} from "./admin.ts";
 import { otari, type OtariError, usageSummary } from "./client.ts";
 import { tiers } from "./people.ts";
 
@@ -28,7 +37,9 @@ export async function teammateKey(tm: Teammate): Promise<{ keyId: string; secret
   if ((await spendMode()) !== "key") {
     // No admin session now (it expired, or was never made): a teammate that already has its own key keeps using it,
     // with the ceiling Otari already holds. Only making a key or changing its ceiling needs the session.
-    const { rows } = await pool.query<KeyRow>("SELECT key_id, secret FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [tm.id]);
+    const { rows } = await pool.query<KeyRow>("SELECT key_id, secret FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [
+      tm.id,
+    ]);
     if (rows[0] && config.teammateSpend !== "tag") return { keyId: rows[0].key_id, secret: unseal<string>(rows[0].secret) };
     return null;
   }
@@ -40,7 +51,10 @@ export async function teammateKey(tm: Teammate): Promise<{ keyId: string; secret
 }
 
 async function teammateKeyOnce(tm: Teammate): Promise<{ keyId: string; secret: string } | null> {
-  const { rows } = await pool.query<KeyRow>("SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [tm.id]);
+  const { rows } = await pool.query<KeyRow>(
+    "SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL",
+    [tm.id],
+  );
   const want = tm.config.budget.monthly_usd;
   if (rows[0]) {
     if (rows[0].budget_id && Number(rows[0].monthly_usd) !== want) {
@@ -53,19 +67,29 @@ async function teammateKeyOnce(tm: Teammate): Promise<{ keyId: string; secret: s
   // People keep the tiers they have on Peeblo's main key.
   const t = await tiers();
   const budget = await createBudget(name, want);
-  const key = await createServiceKey(name, t.map((x) => x.budget_id), t.find((x) => x.is_default)?.budget_id);
+  const key = await createServiceKey(
+    name,
+    t.map((x) => x.budget_id),
+    t.find((x) => x.is_default)?.budget_id,
+  );
   const ceiling = await createKeyCeiling(key.id, budget.id, name);
   await pool.query(
     "INSERT INTO teammate_keys (teammate_id, key_id, secret, budget_id, ceiling_id, monthly_usd) VALUES ($1, $2, $3, $4, $5, $6)",
     [tm.id, key.id, seal(key.key), budget.id, ceiling.id, want],
   );
-  await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'otari.teammate_key.create', $1, $2)", [tm.id, { key_id: key.id, budget_id: budget.id, ceiling_id: ceiling.id, monthly_usd: want }]);
+  await pool.query("INSERT INTO audit (actor, action, target, data) VALUES ('peeblo', 'otari.teammate_key.create', $1, $2)", [
+    tm.id,
+    { key_id: key.id, budget_id: budget.id, ceiling_id: ceiling.id, monthly_usd: want },
+  ]);
   return { keyId: key.id, secret: key.key };
 }
 
 // Removes the teammate's key, ceiling and budget from Otari (on fire, or when switching modes).
 export async function retireTeammateKey(teammateId: string): Promise<void> {
-  const { rows } = await pool.query<KeyRow>("SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [teammateId]);
+  const { rows } = await pool.query<KeyRow>(
+    "SELECT key_id, secret, budget_id, ceiling_id, monthly_usd FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL",
+    [teammateId],
+  );
   if (!rows[0]) return;
   if (rows[0].ceiling_id) await deleteCeiling(rows[0].ceiling_id);
   await deleteKey(rows[0].key_id);
@@ -73,7 +97,10 @@ export async function retireTeammateKey(teammateId: string): Promise<void> {
   await pool.query("UPDATE teammate_keys SET retired_at = now() WHERE teammate_id = $1", [teammateId]);
 }
 
-const monthStart = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); };
+const monthStart = () => {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+};
 export const usd = (v: number) => (v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
 
 // Spend readers. Otari is the record; Peeblo reads it at most every 30 s and adds what this core has spent
@@ -89,12 +116,16 @@ export function noteSpend(teammateId: string, endUser: string | null, usdSpent: 
     list.push({ at: Date.now(), usd: usdSpent });
     while (list.length > 500) list.shift();
     notes.set(k, list);
-    if (!spentBefore.has(k)) spentBefore.set(k, (t) => {
-      const l = notes.get(k) ?? [];
-      const before = l.filter((x) => x.at < t).reduce((a, x) => a + x.usd, 0);
-      notes.set(k, l.filter((x) => x.at >= t));
-      return before;
-    });
+    if (!spentBefore.has(k))
+      spentBefore.set(k, (t) => {
+        const l = notes.get(k) ?? [];
+        const before = l.filter((x) => x.at < t).reduce((a, x) => a + x.usd, 0);
+        notes.set(
+          k,
+          l.filter((x) => x.at >= t),
+        );
+        return before;
+      });
   }
 }
 // A stale reading is still used (plus what was spent since) while a fresh one loads in the background, so no
@@ -106,19 +137,24 @@ async function reading(key: string, read: () => Promise<Omit<Reading, "at">>): P
     let p = loading.get(key);
     if (!p) {
       const started = Date.now();
-      p = read().then((x) => {
-        const fresh = { ...x, at: Date.now() };
-        readings.set(key, fresh);
-        // Spend noted after the read started stays counted on top of it.
-        sinceRead.set(key, Math.max(0, (sinceRead.get(key) ?? 0) - (spentBefore.get(key)?.(started) ?? 0)));
-        return fresh;
-      }).finally(() => loading.delete(key));
+      p = read()
+        .then((x) => {
+          const fresh = { ...x, at: Date.now() };
+          readings.set(key, fresh);
+          // Spend noted after the read started stays counted on top of it.
+          sinceRead.set(key, Math.max(0, (sinceRead.get(key) ?? 0) - (spentBefore.get(key)?.(started) ?? 0)));
+          return fresh;
+        })
+        .finally(() => loading.delete(key));
       loading.set(key, p);
     }
     return p;
   };
   if (r && Date.now() - r.at < FRESH_MS) return { ...r, spent: r.spent + (sinceRead.get(key) ?? 0) };
-  if (r) { void load().catch(() => {}); return { ...r, spent: r.spent + (sinceRead.get(key) ?? 0) }; }
+  if (r) {
+    void load().catch(() => {});
+    return { ...r, spent: r.spent + (sinceRead.get(key) ?? 0) };
+  }
   const fresh = await load();
   return { ...fresh, spent: fresh.spent + (sinceRead.get(key) ?? 0) };
 }
@@ -138,7 +174,11 @@ export async function teammateSpend(tm: Teammate): Promise<{ spent: number; cap:
         return { spent: Number(b.limits?.[0]?.used_usd ?? 0), cap, label: tm.config.name };
       }
     }
-    return { spent: (await usageSummary({ start: monthStart(), tag: `teammate:${tm.slug}` })).totals.cost ?? 0, cap, label: tm.config.name };
+    return {
+      spent: (await usageSummary({ start: monthStart(), tag: `teammate:${tm.slug}` })).totals.cost ?? 0,
+      cap,
+      label: tm.config.name,
+    };
   });
   return { spent: r.spent, cap, mode };
 }
@@ -162,21 +202,41 @@ export async function personSpend(externalId: string): Promise<{ spent: number; 
     // Counted from the start of the tier's own period (a $2-a-day tier counts today, not the month).
     if (await session().catch(() => null)) {
       const t = await tiers();
-      const u = await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`).then((x) => x.data, () => null);
+      const u = await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`).then(
+        (x) => x.data,
+        () => null,
+      );
       const tier = t.find((x) => x.budget_id === u?.budget_id) ?? t.find((x) => x.is_default);
       const org = await orgUsage(periodStart(tier).toISOString()).catch(() => null);
-      if (org) return { spent: org.by_user.filter((g) => g.label === externalId).reduce((a, g) => a + g.cost, 0), cap: tier?.max_budget ?? null, label: tier?.name ?? "" };
+      if (org)
+        return {
+          spent: org.by_user.filter((g) => g.label === externalId).reduce((a, g) => a + g.cost, 0),
+          cap: tier?.max_budget ?? null,
+          label: tier?.name ?? "",
+        };
     }
-    const { rows } = await pool.query<{ key_id: string; secret: Buffer }>("SELECT key_id, secret FROM teammate_keys WHERE retired_at IS NULL");
+    const { rows } = await pool.query<{ key_id: string; secret: Buffer }>(
+      "SELECT key_id, secret FROM teammate_keys WHERE retired_at IS NULL",
+    );
     const auths = [undefined, ...rows.map((x) => ({ authorization: `Bearer ${unseal<string>(x.secret)}` }))];
     let spent = 0;
     let budgetId: string | null = null;
     // Every key at once (one by one took ~12 s with 44 keys).
-    const users = await Promise.all(auths.map(async (auth) => {
-      try { return (await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`, undefined, { auth })).data; }
-      catch (e) { if ((e as OtariError).status !== 404) throw e; return null; }
-    }));
-    for (const u of users) if (u) { spent += Number(u.spend ?? 0); budgetId ??= u.budget_id ?? null; }
+    const users = await Promise.all(
+      auths.map(async (auth) => {
+        try {
+          return (await otari<any>("GET", `/end-users/${encodeURIComponent(externalId)}`, undefined, { auth })).data;
+        } catch (e) {
+          if ((e as OtariError).status !== 404) throw e;
+          return null;
+        }
+      }),
+    );
+    for (const u of users)
+      if (u) {
+        spent += Number(u.spend ?? 0);
+        budgetId ??= u.budget_id ?? null;
+      }
     const t = await tiers();
     const tier = t.find((x) => x.budget_id === budgetId) ?? t.find((x) => x.is_default);
     return { spent, cap: tier?.max_budget ?? null, label: tier?.name ?? "" };
@@ -189,10 +249,24 @@ export async function personSpend(externalId: string): Promise<{ spent: number; 
 export type CapRefusal = { scope: "teammate" | "user" | "unchecked"; spent: number; cap: number; estimate: number; message: string };
 export async function capCheck(tm: Teammate, endUser: string | null, model: string, estimate: number): Promise<CapRefusal | null> {
   const t = await teammateSpend(tm);
-  if (t.spent + estimate > t.cap) return { scope: "teammate", spent: t.spent, cap: t.cap, estimate, message: `${tm.config.name} has ${usd(Math.max(0, t.cap - t.spent))} of its ${usd(t.cap)} monthly budget left, less than this call's estimated cost of ${usd(estimate)} (${model}).` };
+  if (t.spent + estimate > t.cap)
+    return {
+      scope: "teammate",
+      spent: t.spent,
+      cap: t.cap,
+      estimate,
+      message: `${tm.config.name} has ${usd(Math.max(0, t.cap - t.spent))} of its ${usd(t.cap)} monthly budget left, less than this call's estimated cost of ${usd(estimate)} (${model}).`,
+    };
   if (endUser) {
     const p = await personSpend(endUser);
-    if (p.cap !== null && p.spent + estimate > p.cap) return { scope: "user", spent: p.spent, cap: p.cap, estimate, message: `This person has ${usd(Math.max(0, p.cap - p.spent))} of budget remaining across Peeblo's teammates, less than this call's estimated cost of ${usd(estimate)}.` };
+    if (p.cap !== null && p.spent + estimate > p.cap)
+      return {
+        scope: "user",
+        spent: p.spent,
+        cap: p.cap,
+        estimate,
+        message: `This person has ${usd(Math.max(0, p.cap - p.spent))} of budget remaining across Peeblo's teammates, less than this call's estimated cost of ${usd(estimate)}.`,
+      };
   }
   return null;
 }
@@ -207,13 +281,26 @@ export function raiseOptions(budget: number, spent: number): number[] {
 // Otari's own usage for the whole org (admin session): by teammate tag, model, key and end user, plus a daily series.
 // One read replaces a read per key; cached a minute.
 type Group = { key: string | null; label: string | null; cost: number; tokens: number; requests: number };
-export type OrgUsage = { by_tag: Group[]; by_model: Group[]; by_user: Group[]; by_api_key: Group[]; series: { bucket_start: string; cost: number; requests: number }[]; totals: { cost: number; request_count: number } };
+export type OrgUsage = {
+  by_tag: Group[];
+  by_model: Group[];
+  by_user: Group[];
+  by_api_key: Group[];
+  series: { bucket_start: string; cost: number; requests: number }[];
+  totals: { cost: number; request_count: number };
+};
 let orgCache: { at: number; start: string; data: OrgUsage } | null = null;
 export async function orgUsage(start = monthStart().toISOString()): Promise<OrgUsage | null> {
   const { admin, session } = await import("./admin.ts");
   if (!(await session())) return null;
   if (orgCache && orgCache.start === start && Date.now() - orgCache.at < 60_000) return orgCache.data;
-  const data = await admin<OrgUsage>("GET", `/organizations/me/usage/summary?start_date=${encodeURIComponent(start)}&group_by_tag=teammate`, undefined, "reading usage", "");
+  const data = await admin<OrgUsage>(
+    "GET",
+    `/organizations/me/usage/summary?start_date=${encodeURIComponent(start)}&group_by_tag=teammate`,
+    undefined,
+    "reading usage",
+    "",
+  );
   orgCache = { at: Date.now(), start, data };
   return data;
 }

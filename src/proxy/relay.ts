@@ -17,7 +17,24 @@ import { capCheck, noteSpend, type CapRefusal } from "../otari/spend.ts";
 import { teammateAt } from "../store/teammates.ts";
 
 type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
-export type Binding = { teammateId: string; teammateVersion: number; personId: string | null; teammateSlug: string; sessionId: string; runId: string | null; endUser: string | null; fallbackModel: string | null; turn: number; web: WebPolicy | null; code: boolean; otariKey: string | null; keyId: string | null; finalStatus?: { runId: string | null; calls: number }; stuck?: { runId: string | null; reason: string }; blocked?: { runId: string | null; turn: number; status: number; body: string } };
+export type Binding = {
+  teammateId: string;
+  teammateVersion: number;
+  personId: string | null;
+  teammateSlug: string;
+  sessionId: string;
+  runId: string | null;
+  endUser: string | null;
+  fallbackModel: string | null;
+  turn: number;
+  web: WebPolicy | null;
+  code: boolean;
+  otariKey: string | null;
+  keyId: string | null;
+  finalStatus?: { runId: string | null; calls: number };
+  stuck?: { runId: string | null; reason: string };
+  blocked?: { runId: string | null; turn: number; status: number; body: string };
+};
 const tokens = new Map<string, Binding>();
 
 export function issueToken(b: Omit<Binding, "runId" | "endUser" | "turn" | "personId">): string {
@@ -42,7 +59,13 @@ export const toolsBaseUrl = () => `http://127.0.0.1:${config.proxyPort}/peeblo`;
 
 const INFERENCE = new Set(["/chat/completions", "/messages", "/responses"]);
 const DROP = new Set(["content-encoding", "content-length", "transfer-encoding", "connection"]);
-const RETRYABLE_CODES = new Set(["invalid_model", "pricing_required", "provider_not_configured", "provider_unavailable", "provider_credential_rejected"]);
+const RETRYABLE_CODES = new Set([
+  "invalid_model",
+  "pricing_required",
+  "provider_not_configured",
+  "provider_unavailable",
+  "provider_credential_rejected",
+]);
 
 async function body(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -54,7 +77,14 @@ async function body(req: IncomingMessage): Promise<Buffer> {
 // be the model's own limit (384k on some): a teammate near its budget would be refused a one-line answer.
 const MAX_OUT = config.maxOutputTokens;
 
-function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?: string, label?: string): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
+function prepare(
+  path: string,
+  raw: Buffer,
+  b: Binding,
+  model?: string,
+  sandbox?: string,
+  label?: string,
+): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
   if (typeof j.model === "string") j.model = modelFor(j.model);
@@ -63,14 +93,23 @@ function prepare(path: string, raw: Buffer, b: Binding, model?: string, sandbox?
   // Name the paying person the way each API shape expects; drop any user the agent tried to set itself.
   if (path === "/messages") {
     j.metadata = { ...(j.metadata ?? {}) };
-    if (b.endUser && config.otariKeyKind === "service") j.metadata.user_id = b.endUser; else delete j.metadata.user_id;
-  } else if (b.endUser && config.otariKeyKind === "service") j.user = b.endUser; else delete j.user;
-  for (const k of ["max_tokens", "max_completion_tokens", "max_output_tokens"]) if (typeof j[k] === "number" && j[k] > MAX_OUT) j[k] = MAX_OUT;
+    if (b.endUser && config.otariKeyKind === "service") j.metadata.user_id = b.endUser;
+    else delete j.metadata.user_id;
+  } else if (b.endUser && config.otariKeyKind === "service") j.user = b.endUser;
+  else delete j.user;
+  for (const k of ["max_tokens", "max_completion_tokens", "max_output_tokens"])
+    if (typeof j[k] === "number" && j[k] > MAX_OUT) j[k] = MAX_OUT;
   if (Array.isArray(j.tools)) j.tools = gatewayTools(j.tools, b.web);
   // Code runs in Otari's sandbox, inside the model call. One sandbox per session, held between calls.
-  if (path === "/chat/completions" && b.code && sandbox) j.tools = [...(j.tools ?? []), { type: "otari_code_execution", container: sandbox }];
+  if (path === "/chat/completions" && b.code && sandbox)
+    j.tools = [...(j.tools ?? []), { type: "otari_code_execution", container: sandbox }];
   if (path === "/chat/completions" && j.stream) j.stream_options = { ...(j.stream_options ?? {}), include_usage: true };
-  return { buf: Buffer.from(JSON.stringify(j)), model: typeof j.model === "string" ? j.model : null, stream: Boolean(j.stream), tools: Array.isArray(j.tools) ? j.tools.length : 0 };
+  return {
+    buf: Buffer.from(JSON.stringify(j)),
+    model: typeof j.model === "string" ? j.model : null,
+    stream: Boolean(j.stream),
+    tools: Array.isArray(j.tools) ? j.tools.length : 0,
+  };
 }
 
 // What Pi learns about each model from /models (pi-otari reads it at start). Otari's catalog puts input types under
@@ -82,7 +121,8 @@ export function modelsForPi(list: any[], roles: Record<string, { default: string
   return list.map((m) => {
     const src = m.context_window || !roles[m.id] ? m : (byId.get(roles[m.id].default) ?? m);
     const params: string[] = src.supported_parameters ?? [];
-    const cw = Number(src.context_window) || 0, out = Number(src.max_output_tokens) || 0;
+    const cw = Number(src.context_window) || 0,
+      out = Number(src.max_output_tokens) || 0;
     return {
       ...m,
       reasoning: params.includes("reasoning"),
@@ -99,7 +139,9 @@ const sandboxes = new Map<string, { id: string; expiresAt: number }>();
 async function sandboxFor(sessionId: string): Promise<string> {
   let s = sandboxes.get(sessionId);
   if (!s) {
-    const { rows } = await pool.query("SELECT data FROM events WHERE session_id = $1 AND type = 'code.sandbox' ORDER BY id DESC LIMIT 1", [sessionId]);
+    const { rows } = await pool.query("SELECT data FROM events WHERE session_id = $1 AND type = 'code.sandbox' ORDER BY id DESC LIMIT 1", [
+      sessionId,
+    ]);
     if (rows[0]) s = { id: rows[0].data.id, expiresAt: Date.parse(rows[0].data.expires_at) };
   }
   return s && s.expiresAt - Date.now() > 15_000 ? s.id : "auto";
@@ -110,7 +152,8 @@ async function noteSandbox(b: Binding, h: Headers): Promise<void> {
   if (!id || !expires) return;
   const prev = sandboxes.get(b.sessionId);
   sandboxes.set(b.sessionId, { id, expiresAt: Date.parse(expires) });
-  if (prev?.id !== id) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "code.sandbox", data: { id, expires_at: expires } }).catch(() => {});
+  if (prev?.id !== id)
+    await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "code.sandbox", data: { id, expires_at: expires } }).catch(() => {});
 }
 
 // Otari runs web search and fetch itself. A teammate without the web tool gets neither, whatever Pi declares;
@@ -124,8 +167,10 @@ function gatewayTools(tools: any[], web: WebPolicy | null): any[] {
     if (t?.type !== "otari_web_search") return [t];
     if (!web) return [];
     const d: any = { ...t };
-    if (web.allowed_domains.length) d.allowed_domains = web.allowed_domains; else delete d.allowed_domains;
-    if (web.blocked_domains.length) d.blocked_domains = web.blocked_domains; else delete d.blocked_domains;
+    if (web.allowed_domains.length) d.allowed_domains = web.allowed_domains;
+    else delete d.allowed_domains;
+    if (web.blocked_domains.length) d.blocked_domains = web.blocked_domains;
+    else delete d.blocked_domains;
     return [d];
   });
 }
@@ -140,7 +185,8 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
   if (!tm) return unchecked("its teammate's setup couldn't be found");
   const sent = typeof j.model === "string" ? j.model : tm.config.model.default;
   const model = sent in ROLES ? ROLES[sent].default : sent;
-  const promptChars = JSON.stringify(j.messages ?? j.input ?? "").length + JSON.stringify(j.tools ?? []).length + String(j.system ?? "").length;
+  const promptChars =
+    JSON.stringify(j.messages ?? j.input ?? "").length + JSON.stringify(j.tools ?? []).length + String(j.system ?? "").length;
   // Agents send the model's whole output limit as max_tokens; a turn rarely writes more than 8k, so the estimate
   // uses the smaller of the two (Otari's own caps still count the full allowance).
   const out = Math.min(Number(j.max_tokens ?? j.max_completion_tokens ?? j.max_output_tokens ?? 1000), 8192);
@@ -160,19 +206,39 @@ async function budgetGate(b: Binding, raw: Buffer): Promise<CapRefusal | null> {
 }
 
 // A call whose cost can't be checked doesn't run.
-const unchecked = (why: string): CapRefusal => ({ scope: "unchecked", spent: 0, cap: 0, estimate: 0, message: `Peeblo couldn't check this call against the budget (${why}), so it didn't run.` });
+const unchecked = (why: string): CapRefusal => ({
+  scope: "unchecked",
+  spent: 0,
+  cap: 0,
+  estimate: 0,
+  message: `Peeblo couldn't check this call against the budget (${why}), so it didn't run.`,
+});
 
 // A scheduled or triggered run has its own budget; a run a person started has only the teammate's and theirs.
 async function runBudget(runId: string | null, est: number): Promise<CapRefusal | null> {
   if (!runId) return null;
   const { rows } = await pool.query(
     `SELECT sc.budget_usd FROM runs r JOIN submissions s ON s.id = r.submission_id JOIN schedules sc ON sc.id = split_part(s.request_id, ':', 2)
-      WHERE r.id = $1 AND s.source IN ('schedule', 'webhook')`, [runId]);
+      WHERE r.id = $1 AND s.source IN ('schedule', 'webhook')`,
+    [runId],
+  );
   if (!rows[0]) return null;
   const budget = Number(rows[0].budget_usd);
-  const spent = Number((await pool.query("SELECT coalesce(sum((data->>'cost_usd')::numeric), 0) AS c FROM events WHERE run_id = $1 AND type = 'model.call'", [runId])).rows[0].c);
+  const spent = Number(
+    (
+      await pool.query("SELECT coalesce(sum((data->>'cost_usd')::numeric), 0) AS c FROM events WHERE run_id = $1 AND type = 'model.call'", [
+        runId,
+      ])
+    ).rows[0].c,
+  );
   if (spent + est <= budget) return null;
-  return { scope: "teammate", spent, cap: budget, estimate: est, message: `This scheduled run has a budget of $${budget.toFixed(2)} and has spent $${spent.toFixed(4)}; the next call (about $${est.toFixed(4)}) would go over.` };
+  return {
+    scope: "teammate",
+    spent,
+    cap: budget,
+    estimate: est,
+    message: `This scheduled run has a budget of $${budget.toFixed(2)} and has spent $${spent.toFixed(4)}; the next call (about $${est.toFixed(4)}) would go over.`,
+  };
 }
 
 // Reads the response as it passes: the usage block (last chunk) and Otari's own tool calls (web, code).
@@ -181,7 +247,8 @@ function usageWatcher(stream: boolean) {
   let line = "";
   const toolCalls = new Map<string, any>();
   const takeTools = (j: any) => {
-    for (const c of j?.otari_tool_calls ?? j?.choices?.[0]?.delta?.otari_tool_calls ?? []) if (c?.id) toolCalls.set(c.id, { ...toolCalls.get(c.id), ...c });
+    for (const c of j?.otari_tool_calls ?? j?.choices?.[0]?.delta?.otari_tool_calls ?? [])
+      if (c?.id) toolCalls.set(c.id, { ...toolCalls.get(c.id), ...c });
   };
   return {
     push(chunk: Uint8Array) {
@@ -190,16 +257,40 @@ function usageWatcher(stream: boolean) {
       if (!stream) return;
       const parts = (line + text).split("\n");
       line = parts.pop()!;
-      for (const l of parts) if (l.startsWith("data:") && l.includes("otari_tool_calls")) { try { takeTools(JSON.parse(l.slice(5))); } catch { /* not JSON */ } }
+      for (const l of parts)
+        if (l.startsWith("data:") && l.includes("otari_tool_calls")) {
+          try {
+            takeTools(JSON.parse(l.slice(5)));
+          } catch {
+            /* not JSON */
+          }
+        }
     },
     toolCalls(): any[] {
-      if (!stream) { try { takeTools(JSON.parse(tail)); } catch { /* larger than the tail */ } }
+      if (!stream) {
+        try {
+          takeTools(JSON.parse(tail));
+        } catch {
+          /* larger than the tail */
+        }
+      }
       return [...toolCalls.values()];
     },
     usage(): any {
-      const lines = stream ? tail.split("\n").filter((l) => l.startsWith("data:") && l.includes('"usage"')).map((l) => l.slice(5).trim()) : [tail];
+      const lines = stream
+        ? tail
+            .split("\n")
+            .filter((l) => l.startsWith("data:") && l.includes('"usage"'))
+            .map((l) => l.slice(5).trim())
+        : [tail];
       for (const l of lines.reverse()) {
-        try { const j = JSON.parse(l); const u = j.usage ?? j.response?.usage ?? j.message?.usage; if (u) return u; } catch { /* partial */ }
+        try {
+          const j = JSON.parse(l);
+          const u = j.usage ?? j.response?.usage ?? j.message?.usage;
+          if (u) return u;
+        } catch {
+          /* partial */
+        }
       }
       return null;
     },
@@ -232,9 +323,13 @@ export function startProxy(): Promise<Server> {
         const up = await fetch(config.otariBaseUrl + url.slice("/api/v1".length), { headers, redirect: "error" });
         if (!up.ok) return void res.writeHead(up.status, { "content-type": "application/json" }).end(await up.text());
         const j: any = await up.json();
-        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ...j, data: modelsForPi(j.data ?? [], ROLES, { context: config.contextTokens, output: MAX_OUT }) }));
+        return void res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ ...j, data: modelsForPi(j.data ?? [], ROLES, { context: config.contextTokens, output: MAX_OUT }) }));
       } catch (e) {
-        return void res.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ detail: `Otari unreachable: ${(e as Error).message}` }));
+        return void res
+          .writeHead(502, { "content-type": "application/json" })
+          .end(JSON.stringify({ detail: `Otari unreachable: ${(e as Error).message}` }));
       }
     }
     if (isInference) {
@@ -253,38 +348,91 @@ export function startProxy(): Promise<Server> {
         try {
           const msgs = (JSON.parse(raw.toString()) as any).messages ?? [];
           const lastCalls = ([...msgs].reverse().find((m: any) => m.role === "assistant")?.tool_calls ?? []) as any[];
-          if (msgs.at(-1)?.role === "tool" && lastCalls.some((c) => c.function?.name === "find_tools")) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.local", data: {} }).catch(() => {});
-        } catch { /* not JSON */ }
+          if (msgs.at(-1)?.role === "tool" && lastCalls.some((c) => c.function?.name === "find_tools"))
+            await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.local", data: {} }).catch(() => {});
+        } catch {
+          /* not JSON */
+        }
       }
       // three model turns in a row with nothing visible in between (no tool ran, nothing posted) stop the run.
-      const silent = b.runId ? Number((await pool.query(
-        // Only answers count: a failed attempt, a retry or Pi's own compaction call (no tools declared) isn't a turn.
-        `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
+      const silent = b.runId
+        ? Number(
+            (
+              await pool
+                .query(
+                  // Only answers count: a failed attempt, a retry or Pi's own compaction call (no tools declared) isn't a turn.
+                  `SELECT count(*)::int AS n FROM events WHERE run_id = $1 AND type = 'model.call' AND coalesce(data->>'role', '') NOT IN ('guard', 'vision', 'judge')
            AND (data->>'status')::int = 200 AND NOT coalesce((data->>'failed')::boolean, false) AND coalesce((data->>'tools_declared')::int, 1) > 0
-           AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'tool.local')), 0)`, [b.runId]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n) : 0;
+           AND id > coalesce((SELECT max(id) FROM events WHERE run_id = $1 AND type IN ('tool.call', 'slack.post', 'tool.local')), 0)`,
+                  [b.runId],
+                )
+                .catch(() => ({ rows: [{ n: 0 }] }))
+            ).rows[0].n,
+          )
+        : 0;
       // No count or per-job spend limit: a job runs on its budget. Only a stuck run (the same call over and over, or
       // turns with nothing to show) is stopped.
       const finalTurn = b.finalStatus?.runId === b.runId && b.finalStatus.calls < 3;
       if (finalTurn) b.finalStatus!.calls++;
-      const why = finalTurn ? null : b.stuck?.runId === b.runId ? b.stuck.reason : silent >= 3 ? "3 turns in a row with no visible output" : null;
+      const why = finalTurn
+        ? null
+        : b.stuck?.runId === b.runId
+          ? b.stuck.reason
+          : silent >= 3
+            ? "3 turns in a row with no visible output"
+            : null;
       if (why) {
-        if (b.stuck?.runId !== b.runId) { b.stuck = { runId: b.runId, reason: why }; await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: why } }).catch(() => {}); }
-        return void res.writeHead(429, { "content-type": "application/json", "otari-error-code": "loop_limit", "peeblo-refused": "loop_limit" }).end(JSON.stringify({ detail: `Peeblo stopped this run: ${why}.`, code: "loop_limit" }));
+        if (b.stuck?.runId !== b.runId) {
+          b.stuck = { runId: b.runId, reason: why };
+          await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "run.stuck", data: { reason: why } }).catch(() => {});
+        }
+        return void res
+          .writeHead(429, { "content-type": "application/json", "otari-error-code": "loop_limit", "peeblo-refused": "loop_limit" })
+          .end(JSON.stringify({ detail: `Peeblo stopped this run: ${why}.`, code: "loop_limit" }));
       }
     }
-    if (isInference && b.blocked && b.blocked.runId === b.runId && b.blocked.turn === b.turn) return void res.writeHead(b.blocked.status, { "content-type": "application/json" }).end(b.blocked.body);
+    if (isInference && b.blocked && b.blocked.runId === b.runId && b.blocked.turn === b.turn)
+      return void res.writeHead(b.blocked.status, { "content-type": "application/json" }).end(b.blocked.body);
 
     // Money is code: a call whose estimate would take the teammate or the person over their budget is
     // refused here, before it reaches Otari, in Otari's own refusal shape.
     if (isInference && raw) {
       // A budget check that fails refuses the call (fail closed).
       const t1 = Date.now();
-      const refusal = await budgetGate(b, raw).finally(() => { if (Date.now() - t1 > 1000) console.error(`slow: budget gate ${Date.now() - t1} ms`); }).catch((e) => { console.error("proxy: budget check failed:", (e as Error).message); return unchecked(`the check failed: ${(e as Error).message.slice(0, 120)}`); });
+      const refusal = await budgetGate(b, raw)
+        .finally(() => {
+          if (Date.now() - t1 > 1000) console.error(`slow: budget gate ${Date.now() - t1} ms`);
+        })
+        .catch((e) => {
+          console.error("proxy: budget check failed:", (e as Error).message);
+          return unchecked(`the check failed: ${(e as Error).message.slice(0, 120)}`);
+        });
       if (refusal) {
         const text = JSON.stringify({ detail: refusal.message, code: "budget_exceeded" });
         b.blocked = { runId: b.runId, turn: b.turn, status: 403, body: text };
-        await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "budget.blocked", data: { by: "peeblo", scope: refusal.scope, spent: refusal.spent, cap: refusal.cap, estimate: refusal.estimate, message: refusal.message, end_user: b.endUser, turn: b.turn } }).catch(() => {});
-        return void res.writeHead(403, { "content-type": "application/json", "otari-error-code": "budget_exceeded", "otari-budget-scope": refusal.scope, "peeblo-refused": "budget" }).end(text);
+        await appendEvent({
+          sessionId: b.sessionId,
+          runId: b.runId,
+          type: "budget.blocked",
+          data: {
+            by: "peeblo",
+            scope: refusal.scope,
+            spent: refusal.spent,
+            cap: refusal.cap,
+            estimate: refusal.estimate,
+            message: refusal.message,
+            end_user: b.endUser,
+            turn: b.turn,
+          },
+        }).catch(() => {});
+        return void res
+          .writeHead(403, {
+            "content-type": "application/json",
+            "otari-error-code": "budget_exceeded",
+            "otari-budget-scope": refusal.scope,
+            "peeblo-refused": "budget",
+          })
+          .end(text);
       }
     }
 
@@ -292,11 +440,17 @@ export function startProxy(): Promise<Server> {
     res.on("close", () => abort.abort());
     const attempt = async (model?: string, sandbox?: string) => {
       sandbox ??= isInference && b.code ? await sandboxFor(b.sessionId) : undefined;
-      const p = isInference && raw ? prepare(path, raw, b, model, sandbox, await sessionLabel(b).catch(() => undefined)) : { buf: raw, model: null, stream: false };
+      const p =
+        isInference && raw
+          ? prepare(path, raw, b, model, sandbox, await sessionLabel(b).catch(() => undefined))
+          : { buf: raw, model: null, stream: false };
       const t0 = Date.now();
       const upstream = await fetch(config.otariBaseUrl + url.slice("/api/v1".length), {
-        method: req.method, headers: { ...headers, ...(isInference ? { "idempotency-key": randomUUID() } : {}) },
-        body: p.buf ? new Uint8Array(p.buf) : undefined, signal: abort.signal, redirect: "error",
+        method: req.method,
+        headers: { ...headers, ...(isInference ? { "idempotency-key": randomUUID() } : {}) },
+        body: p.buf ? new Uint8Array(p.buf) : undefined,
+        signal: abort.signal,
+        redirect: "error",
       });
       return { upstream, model: p.model, stream: p.stream, t0, sandbox, tools: "tools" in p ? p.tools : 0 };
     };
@@ -318,13 +472,19 @@ export function startProxy(): Promise<Server> {
         const detail = await a.upstream.clone().text();
         if (/sandbox temporarily unavailable/i.test(detail)) {
           await record(b, path, a, null, { failed: true, error: detail.slice(0, 300) });
-          await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "code.unavailable", data: { request_id: a.upstream.headers.get("otari-request-id") } }).catch(() => {});
+          await appendEvent({
+            sessionId: b.sessionId,
+            runId: b.runId,
+            type: "code.unavailable",
+            data: { request_id: a.upstream.headers.get("otari-request-id") },
+          }).catch(() => {});
           a = await attempt(undefined, "");
         }
       }
       // Peeblo's own cross-model fallback, before any output reached Pi: on a failure a different model can fix.
       const code = a.upstream.headers.get("otari-error-code");
-      const retryable = a.upstream.status === 429 || a.upstream.status >= 500 || a.upstream.status === 424 || (code !== null && RETRYABLE_CODES.has(code));
+      const retryable =
+        a.upstream.status === 429 || a.upstream.status >= 500 || a.upstream.status === 424 || (code !== null && RETRYABLE_CODES.has(code));
       if (isInference && retryable && b.fallbackModel && a.model !== b.fallbackModel) {
         const detail = (await a.upstream.text()).slice(0, 300);
         await record(b, path, a, null, { failed: true, error: detail });
@@ -344,27 +504,91 @@ export function startProxy(): Promise<Server> {
       const money = budgetRefusal(a.upstream.status, a.upstream.headers, text);
       if (money) {
         b.blocked = { runId: b.runId, turn: b.turn, status: a.upstream.status, body: text };
-        await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "budget.blocked", data: { by: "otari", ...money, request_id: a.upstream.headers.get("otari-request-id"), key: b.keyId ?? "core", end_user: b.endUser, turn: b.turn } }).catch(() => {});
+        await appendEvent({
+          sessionId: b.sessionId,
+          runId: b.runId,
+          type: "budget.blocked",
+          data: {
+            by: "otari",
+            ...money,
+            request_id: a.upstream.headers.get("otari-request-id"),
+            key: b.keyId ?? "core",
+            end_user: b.endUser,
+            turn: b.turn,
+          },
+        }).catch(() => {});
       }
       const refusal = guardrailRefusal(a.upstream.status, text);
       if (refusal) b.blocked = { runId: b.runId, turn: b.turn, status: a.upstream.status, body: text };
-      if (refusal) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "guard.blocked", data: { checked_by: "lakera", via: "otari_org_guardrail", ...refusal, request_id: a.upstream.headers.get("otari-request-id"), turn: b.turn } }).catch(() => {});
+      if (refusal)
+        await appendEvent({
+          sessionId: b.sessionId,
+          runId: b.runId,
+          type: "guard.blocked",
+          data: {
+            checked_by: "lakera",
+            via: "otari_org_guardrail",
+            ...refusal,
+            request_id: a.upstream.headers.get("otari-request-id"),
+            turn: b.turn,
+          },
+        }).catch(() => {});
     }
-    if (isInference) await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "model.call.opened", data: { turn: b.turn, request_id: a.upstream.headers.get("otari-request-id"), status: a.upstream.status, requested_model: a.model } }).catch(() => {});
+    if (isInference)
+      await appendEvent({
+        sessionId: b.sessionId,
+        runId: b.runId,
+        type: "model.call.opened",
+        data: { turn: b.turn, request_id: a.upstream.headers.get("otari-request-id"), status: a.upstream.status, requested_model: a.model },
+      }).catch(() => {});
     const out: Record<string, string> = {};
-    a.upstream.headers.forEach((v, k) => { if (!DROP.has(k)) out[k] = v; });
+    a.upstream.headers.forEach((v, k) => {
+      if (!DROP.has(k)) out[k] = v;
+    });
     res.writeHead(a.upstream.status, out);
     const watch = usageWatcher(a.stream);
     let firstChunkMs: number | null = null;
     try {
-      if (a.upstream.body) for await (const chunk of a.upstream.body) { firstChunkMs ??= Date.now() - a.t0; if (isInference) watch.push(chunk); res.write(chunk); }
-    } catch { /* client went away; we still record what we know */ }
+      if (a.upstream.body)
+        for await (const chunk of a.upstream.body) {
+          firstChunkMs ??= Date.now() - a.t0;
+          if (isInference) watch.push(chunk);
+          res.write(chunk);
+        }
+    } catch {
+      /* client went away; we still record what we know */
+    }
     res.end();
     if (isInference) {
       const requestId = a.upstream.headers.get("otari-request-id");
       for (const c of watch.toolCalls()) {
-        await appendEvent({ sessionId: b.sessionId, runId: b.runId, type: "tool.call", data: { turn: b.turn, by: "otari", request_id: requestId, id: c.id, tool: c.type, status: c.status, query: c.query ?? null, url: c.url ?? null, sources: (c.sources ?? []).map((s: any) => s.url).slice(0, 10), error: c.error ?? null,
-          ...(c.type === "code_execution" ? { code: String(c.code ?? "").slice(0, 4000), exit_code: c.exit_code ?? null, stdout: String(c.stdout ?? "").slice(-2000), stderr: String(c.stderr ?? "").slice(-1000), files: c.file_ids ?? c.files ?? [], sandbox: a.upstream.headers.get("otari-container-id") } : {}) } }).catch(() => {});
+        await appendEvent({
+          sessionId: b.sessionId,
+          runId: b.runId,
+          type: "tool.call",
+          data: {
+            turn: b.turn,
+            by: "otari",
+            request_id: requestId,
+            id: c.id,
+            tool: c.type,
+            status: c.status,
+            query: c.query ?? null,
+            url: c.url ?? null,
+            sources: (c.sources ?? []).map((s: any) => s.url).slice(0, 10),
+            error: c.error ?? null,
+            ...(c.type === "code_execution"
+              ? {
+                  code: String(c.code ?? "").slice(0, 4000),
+                  exit_code: c.exit_code ?? null,
+                  stdout: String(c.stdout ?? "").slice(-2000),
+                  stderr: String(c.stderr ?? "").slice(-1000),
+                  files: c.file_ids ?? c.files ?? [],
+                  sandbox: a.upstream.headers.get("otari-container-id"),
+                }
+              : {}),
+          },
+        }).catch(() => {});
       }
       const usage = watch.usage();
       await record(b, path, a, usage, { firstChunkMs, peebloFallback: Boolean((a as any).peebloFallback) });
@@ -376,17 +600,41 @@ export function startProxy(): Promise<Server> {
   return new Promise((resolve) => server.listen(config.proxyPort, "127.0.0.1", () => resolve(server)));
 }
 
-async function record(b: Binding, path: string, a: { upstream: Response; model: string | null; t0: number }, usage: any, extra: Record<string, unknown>): Promise<void> {
+async function record(
+  b: Binding,
+  path: string,
+  a: { upstream: Response; model: string | null; t0: number },
+  usage: any,
+  extra: Record<string, unknown>,
+): Promise<void> {
   const h = a.upstream.headers;
   const n = (v: unknown) => (v === undefined || v === null || v === "" ? null : Number(v));
   await appendEvent({
-    sessionId: b.sessionId, runId: b.runId, type: "model.call",
+    sessionId: b.sessionId,
+    runId: b.runId,
+    type: "model.call",
     data: {
-      turn: b.turn, path, status: a.upstream.status, request_id: h.get("otari-request-id"), requested_model: a.model,
-      served_model: h.get("otari-model"), provider: h.get("otari-provider"), attempts: n(h.get("otari-attempt-count")),
-      otari_fallback: h.get("otari-fallback") === "true", error_code: h.get("otari-error-code"), guardrails: h.get("otari-guardrails"),
-      cost_usd: n(usage?.cost_usd), prompt_tokens: n(usage?.prompt_tokens ?? usage?.input_tokens), cached_tokens: n(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens),
-      completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens), end_user: b.endUser, key: b.keyId ?? "core", guard_mandate: await freshLakeraState(), tools_declared: (a as { tools?: number }).tools ?? null, ms: Date.now() - a.t0, ...extra,
+      turn: b.turn,
+      path,
+      status: a.upstream.status,
+      request_id: h.get("otari-request-id"),
+      requested_model: a.model,
+      served_model: h.get("otari-model"),
+      provider: h.get("otari-provider"),
+      attempts: n(h.get("otari-attempt-count")),
+      otari_fallback: h.get("otari-fallback") === "true",
+      error_code: h.get("otari-error-code"),
+      guardrails: h.get("otari-guardrails"),
+      cost_usd: n(usage?.cost_usd),
+      prompt_tokens: n(usage?.prompt_tokens ?? usage?.input_tokens),
+      cached_tokens: n(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens),
+      completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens),
+      end_user: b.endUser,
+      key: b.keyId ?? "core",
+      guard_mandate: await freshLakeraState(),
+      tools_declared: (a as { tools?: number }).tools ?? null,
+      ms: Date.now() - a.t0,
+      ...extra,
     },
   }).catch((e) => console.error("proxy: could not record model call:", (e as Error).message));
 }
@@ -396,15 +644,22 @@ const labels = new Map<string, string>();
 async function sessionLabel(b: Binding): Promise<string | undefined> {
   const hit = labels.get(b.sessionId);
   if (hit) return hit;
-  const { rows } = await pool.query(
-    `SELECT t.config->>'name' AS name, s.kind, s.place->'slack'->>'channel' AS channel,
+  const { rows } = await pool
+    .query(
+      `SELECT t.config->>'name' AS name, s.kind, s.place->'slack'->>'channel' AS channel,
             (SELECT left(data->>'text', 120) FROM events WHERE session_id = s.id AND type = 'submission.received' ORDER BY id LIMIT 1) AS ask
        FROM sessions s JOIN teammate_versions t ON t.teammate_id = s.teammate_id AND t.version = (SELECT max(version) FROM teammate_versions WHERE teammate_id = s.teammate_id)
-      WHERE s.id = $1`, [b.sessionId]).catch(() => ({ rows: [] as any[] }));
+      WHERE s.id = $1`,
+      [b.sessionId],
+    )
+    .catch(() => ({ rows: [] as any[] }));
   const r = rows[0];
   if (!r) return undefined;
   const where = r.kind === "dm" ? "DM" : r.channel ? await channelName(r.channel) : r.kind;
-  const ask = String(r.ask ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  const ask = String(r.ask ?? "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const label = [r.name ?? b.teammateSlug, where, ask].filter(Boolean).join(" · ").slice(0, 255);
   labels.set(b.sessionId, label);
   return label;
@@ -413,7 +668,8 @@ const channelNames = new Map<string, string>();
 async function channelName(id: string): Promise<string> {
   if (channelNames.has(id)) return channelNames.get(id)!;
   const { slack } = await import("../slack/api.ts");
-  const app = (await pool.query("SELECT app_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1")).rows[0]?.app_id;
+  const app = (await pool.query("SELECT app_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE t.slug = 'peeblo' LIMIT 1"))
+    .rows[0]?.app_id;
   const info: any = app ? await slack(app, "conversations.info", { channel: id }).catch(() => null) : null;
   const name = info?.channel?.name ? `#${info.channel.name}` : id;
   channelNames.set(id, name);

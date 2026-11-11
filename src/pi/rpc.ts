@@ -7,9 +7,17 @@ export type PiEvent = { type: string; [k: string]: any };
 
 // The turn timer fired. Pi is still working: the caller decides whether to abort it.
 export class TurnTimeout extends Error {
-  constructor() { super("turn timed out"); }
+  constructor() {
+    super("turn timed out");
+  }
 }
-export type DialogRequest = { id: string; method: "select" | "confirm" | "input" | "editor"; title: string; options?: string[]; timeout?: number };
+export type DialogRequest = {
+  id: string;
+  method: "select" | "confirm" | "input" | "editor";
+  title: string;
+  options?: string[];
+  timeout?: number;
+};
 
 export class PiRpc {
   private pending = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>();
@@ -20,7 +28,11 @@ export class PiRpc {
   private stdin: Writable;
   private onDialog: (r: DialogRequest) => Promise<string | boolean | undefined>;
 
-  constructor(stdin: Writable, stdout: Readable, onDialog: (r: DialogRequest) => Promise<string | boolean | undefined> = async () => undefined) {
+  constructor(
+    stdin: Writable,
+    stdout: Readable,
+    onDialog: (r: DialogRequest) => Promise<string | boolean | undefined> = async () => undefined,
+  ) {
     this.stdin = stdin;
     this.onDialog = onDialog;
     let buf = "";
@@ -56,7 +68,12 @@ export class PiRpc {
     }
     if (r.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(r.method)) {
       void this.onDialog(r as unknown as DialogRequest).then((ans) =>
-        this.write({ type: "extension_ui_response", id: r.id, ...(ans === undefined ? { cancelled: true } : r.method === "confirm" ? { confirmed: Boolean(ans) } : { value: ans }) }));
+        this.write({
+          type: "extension_ui_response",
+          id: r.id,
+          ...(ans === undefined ? { cancelled: true } : r.method === "confirm" ? { confirmed: Boolean(ans) } : { value: ans }),
+        }),
+      );
     }
     for (const l of this.listeners) l(r);
   }
@@ -85,14 +102,25 @@ export class PiRpc {
   settled(timeoutMs: number, waiting?: () => Promise<boolean>): Promise<PiEvent> {
     return new Promise((resolve, reject) => {
       let t: ReturnType<typeof setTimeout>;
-      const arm = () => { t = setTimeout(async () => {
-        if (waiting && await waiting().catch(() => false)) return arm();
-        off(); reject(new TurnTimeout());
-      }, timeoutMs); };
+      const arm = () => {
+        t = setTimeout(async () => {
+          if (waiting && (await waiting().catch(() => false))) return arm();
+          off();
+          reject(new TurnTimeout());
+        }, timeoutMs);
+      };
       arm();
       const off = this.on((e) => {
-        if (e.type === "agent_settled") { clearTimeout(t); off(); resolve(e); }
-        if (e.type === "pi_exit") { clearTimeout(t); off(); reject(new Error(e.error)); }
+        if (e.type === "agent_settled") {
+          clearTimeout(t);
+          off();
+          resolve(e);
+        }
+        if (e.type === "pi_exit") {
+          clearTimeout(t);
+          off();
+          reject(new Error(e.error));
+        }
       });
     });
   }

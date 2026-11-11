@@ -5,7 +5,21 @@ import { friendly, get } from "./api";
 export function useLoad<T>(path: string | null, every = 0): { data: T | null; error: string | null; reload: () => void } {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const reload = useCallback(() => { if (path) get<T>(path).then((d) => { setData(d); setError(null); }, (e) => setError(friendly(e))); }, [path]);
-  useEffect(() => { reload(); if (!every) return; const t = setInterval(reload, every); return () => clearInterval(t); }, [reload, every]);
+  const reload = useCallback(() => {
+    if (path)
+      get<T>(path).then(
+        (d) => {
+          setData(d);
+          setError(null);
+        },
+        (e) => setError(friendly(e)),
+      );
+  }, [path]);
+  useEffect(() => {
+    reload();
+    if (!every) return;
+    const t = setInterval(reload, every);
+    return () => clearInterval(t);
+  }, [reload, every]);
   return { data, error, reload };
 }
