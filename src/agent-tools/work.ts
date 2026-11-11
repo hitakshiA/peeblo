@@ -58,8 +58,10 @@ export const subagentTool: AgentTool = {
     for (;;) {
       const run = await getRun(sub.run.id);
       if (run && ["done", "failed", "cancelled"].includes(run.status)) {
+        // Its answer is what it posted (agents answer with slack_post), else its final text.
+        const posts = (await pool.query("SELECT data->>'text' AS t FROM events WHERE run_id = $1 AND type = 'slack.post' ORDER BY id", [sub.run.id])).rows.map((x) => String(x.t ?? ""));
         const { rows } = await pool.query("SELECT data FROM events WHERE run_id = $1 AND type = 'turn.finished' ORDER BY id DESC LIMIT 1", [sub.run.id]);
-        const answer = rows[0]?.data?.text ?? "";
+        const answer = [...posts, String(rows[0]?.data?.text ?? "")].filter((x) => x.trim()).join("\n\n").slice(0, 20_000) || "(the subagent finished without an answer)";
         if (run.status !== "done") return { text: `The subagent stopped (${run.status}${run.error ? `: ${run.error}` : ""}).`, isError: true, data: { run_id: sub.run.id } };
         return { text: answer, untrusted: "subagent", data: { run_id: sub.run.id, session_id: s.id } };
       }
