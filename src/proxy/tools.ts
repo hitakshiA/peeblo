@@ -26,7 +26,7 @@ import {
 import { pool } from "../db.ts";
 import { askApproval, fingerprint } from "../durable/approvals.ts";
 import { argClass, modeRule, NEVER_WITHOUT_ASKING, review, riskOf } from "../rules/reviewer.ts";
-import { screen, wrapUntrusted } from "../rules/guard.ts";
+import { screen, screenListItems, wrapUntrusted } from "../rules/guard.ts";
 import { newId } from "../ids.ts";
 import { appendEvent } from "../store/events.ts";
 import { getPerson } from "../store/people.ts";
@@ -295,6 +295,14 @@ export async function handleTools(
       screened = OUTSIDE.test(source)
         ? await screen(text, b.endUser).catch(async () => (await import("../rules/guard.ts")).unchecked())
         : null;
+      // A flagged list holds back only the items that are flagged on their own; the rest of the page goes on.
+      if (screened?.flagged) {
+        const part = await screenListItems(text, b.endUser).catch(() => null);
+        if (part) {
+          text = part.text;
+          screened = { ...screened, flagged: false, heldBack: { items: part.items, of: part.of } };
+        }
+      }
       // On the receipt: which guard checked this outside text, and what it said.
       if (screened?.checked_by)
         await appendEvent({
@@ -303,8 +311,9 @@ export async function handleTools(
           type: "guard.checked",
           data: {
             checked_by: screened.checked_by,
-            safe: !screened.flagged,
+            safe: !screened.flagged && !screened.heldBack,
             source,
+            ...(screened.heldBack ? { held_back: screened.heldBack } : {}),
             score: screened.score,
             request_id: screened.requestId ?? null,
             ...(screened.disputed ? { disputed: screened.disputed } : {}),
