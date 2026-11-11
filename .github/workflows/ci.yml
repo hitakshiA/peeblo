@@ -27,6 +27,8 @@ jobs:
         run: pnpm typecheck
       - name: Lint
         run: pnpm lint
+      - name: Formatting
+        run: pnpm format:check
       # Unit tests: pure rules only, no database or network.
       - name: Test
         run: pnpm test
