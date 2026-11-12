@@ -105,8 +105,9 @@ export async function personWords(runId: string): Promise<{ asks: string[]; agen
 
 // The approvals map (rail): company memory's company/approvals note says who must click for which kind of write,
 // before a reviewer's allow counts. Lines like "- money: <name>", "- merges, flags, deploys: <name>", "- marketing
-// sends: <name>", "- account <customer name>: <name>". An admin sets it by telling Peeblo (company memory). A person
-// who said "I'll approve" or "ask me first" in this job gets the card. With no map, the teammate's owner or an admin.
+// sends: <name>", "- account <customer name>: <name>". A line may also name "whoever asked" (the person who started
+// the job). An admin sets it by telling Peeblo (company memory). A person who said "I'll approve" or "ask me first" in
+// this job gets the card. With no map, the teammate's owner or an admin.
 export async function policyApprovers(
   runId: string,
   call: { server?: string; tool?: string; risk?: string; arguments?: unknown },
@@ -134,7 +135,8 @@ export async function policyApprovers(
   }));
   const tool = String(call.tool ?? "").toLowerCase();
   const args = JSON.stringify(call.arguments ?? {}).toLowerCase();
-  const ids = async (names: string[]) => uniq(await Promise.all(names.map(personIdByName)));
+  const o = await runOrigin(runId);
+  const ids = async (names: string[]) => uniq(await Promise.all(names.map((n) => (ASKER.test(n) ? o.personId : personIdByName(n)))));
   const pick = async (pred: (k: string) => boolean, why: string) => {
     const r = rules.find((x) => pred(x.key));
     if (!r) return null;
@@ -143,7 +145,6 @@ export async function policyApprovers(
   };
   // The requester's own words in this job ("I'll approve", "ask me first") pick who gets an ordinary write's card,
   // never a money, delete or shipping card: those follow the map, else go to an admin (below).
-  const o = await runOrigin(runId);
   const high = ["money", "destructive", "shipping", "outside_thread"].includes(String(call.risk ?? ""));
   if (o.personId && !high) {
     const said = (
@@ -187,6 +188,8 @@ export async function policyApprovers(
   }
   return null;
 }
+
+const ASKER = /^(whoever asked|whoever asks|the person who asked|the asker)$/i;
 
 // A person named in the approvals map, by name. Someone who has never talked to a teammate isn't in Peeblo yet: they
 // are found among the workspace's Slack members (real or display name, first name enough) and added, so their card

@@ -63,6 +63,15 @@ export type Tier = {
   is_default: boolean;
   end_user_count: number;
 };
+// A tier's period in seconds. Otari keeps it one of two ways: a calendar reset (midnight UTC, Mondays, the 1st) or a
+// rolling duration. null: no reset at all.
+export function tierSeconds(t: Pick<Tier, "budget_duration_sec" | "reset_alignment">): number | null {
+  const a = t.reset_alignment ?? "";
+  if (/day/.test(a)) return 86400;
+  if (/week/.test(a)) return 604800;
+  if (/month/.test(a)) return 30 * 86400;
+  return t.budget_duration_sec ?? null;
+}
 // The tiers this service key may put people on.
 export async function tiers(): Promise<Tier[]> {
   return (await otari<Tier[]>("GET", "/end-user-budgets")).data;

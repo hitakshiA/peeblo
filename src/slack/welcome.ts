@@ -144,12 +144,12 @@ async function peebloFacts(who: string, why: Why, budget?: string | null): Promi
 async function joinBudget(person: { end_user_id: string | null; display_name: string | null }): Promise<string | null> {
   const { config } = await import("../config.ts");
   if (!person.end_user_id || config.otariKeyKind !== "service") return null;
-  const { ensureEndUser, endUser, tiers } = await import("../otari/people.ts");
+  const { ensureEndUser, endUser, tiers, tierSeconds } = await import("../otari/people.ts");
   await ensureEndUser(person.end_user_id, person.display_name, config.otariEndUserBudget || undefined);
   const mine = await endUser(person.end_user_id);
   const t = (await tiers()).find((x) => x.budget_id === mine?.budget_id);
   if (!t?.max_budget) return null;
-  const per = t.budget_duration_sec ?? 0;
+  const per = tierSeconds(t) ?? 0;
   const span =
     per === 86400
       ? "a day"

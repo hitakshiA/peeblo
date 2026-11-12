@@ -7,7 +7,7 @@
 import { isOtariAdmin } from "./authority.ts";
 import { serverList } from "../connectors/mcp.ts";
 import { checkModel } from "../crew/model-change.ts";
-import { endUser, tiers } from "../otari/people.ts";
+import { endUser, tierSeconds, tiers } from "../otari/people.ts";
 import type { Person } from "../store/people.ts";
 
 const TOOLS = ["web", "code", "computer"];
@@ -22,7 +22,7 @@ async function budgetCeiling(p: Person | null): Promise<number> {
   const mine = await endUser(p.end_user_id).catch(() => null);
   const t = all.find((x) => x.budget_id === mine?.budget_id) ?? all.find((x) => x.is_default);
   if (!t?.max_budget) return 0;
-  const per = t.budget_duration_sec ?? MONTH;
+  const per = tierSeconds(t) ?? MONTH;
   return Math.round(t.max_budget * Math.max(1, MONTH / per) * 100) / 100;
 }
 
