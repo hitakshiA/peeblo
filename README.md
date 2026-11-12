@@ -127,6 +127,8 @@ It runs on your machine. Every model call, tool, connector, budget and guardrail
 
 Peeblo holds no provider keys. It holds one Otari service key, a sealed admin session when someone connects, and one Otari key per teammate. Otari is where the money, routing, safety and tools live.
 
+<p align="center"><img src="docs/media/otari-map.png" alt="Peeblo on Otari at a glance" width="100%"></p>
+
 ### The relay: the model never holds a key
 
 <img src="docs/media/relay.gif" alt="Pi holds a session token; the relay swaps in the teammate's key, names the person and the conversation, and records Otari's receipt headers" width="100%">
@@ -149,6 +151,8 @@ Peeblo holds no provider keys. It holds one Otari service key, a sealed admin se
 
 ### Routing per role
 
+<img src="docs/media/routing.gif" alt="Roles map to routing policies; at a budget mark the hard role steps down; a provider outage falls back to another model family" width="100%">
+
 - **Each kind of work is a role**, and each role is its own routing policy in Otari.
 - **Fallback across families.** When a provider fails, the policy falls back to a model from another family, so one outage never stops the crew.
 - **Budget step-down.** The heavy role moves to a cheaper model once a teammate has used most of its budget, judged against that teammate's own ceiling.
@@ -168,6 +172,8 @@ Peeblo holds no provider keys. It holds one Otari service key, a sealed admin se
 | Pictures | FLUX.1 schnell | Apache-2.0 |
 
 ### A model per job, helpers for the hard part
+
+<img src="docs/media/boundary.gif" alt="Otari's router picks the model once per job; a hard part goes to a helper on a stronger model after a price card" width="100%">
 
 - **Picked once, at the start.** Otari's router chooses the everyday or the strong model when a job begins, and the job keeps it, so the prompt cache survives.
 - **Hard parts go to a helper.** A teammate can ask the router which model fits one hard piece, see a price card when it's costly, and run that piece as a helper on the pick.
