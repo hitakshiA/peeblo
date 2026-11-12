@@ -288,6 +288,8 @@ Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget p
 
 ### Teammates working together
 
+<img src="docs/media/handoffs.gif" alt="A teammate hands work to another in the same thread; helpers run side work in parallel" width="100%">
+
 - **Hand-offs in the open.** One teammate @mentions another in the thread; it joins with its own app and posts its own result and receipt there.
 - **Billed to the person who asked**, with limits on depth and spend.
 - **Helpers in parallel** take side work on their own sessions and hand back what they found.
