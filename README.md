@@ -16,7 +16,7 @@
 
 [Demo](#watch) · [How it works](#how-a-message-becomes-work) · [Otari inside](#built-on-otari) · [The harness](#the-harness) · [Run it](#run-it) · [Docs](#read-more) · [peeblo.xyz](https://peeblo.xyz)
 
-<img src="docs/media/hero.gif" alt="The crew: each teammate with its own ID badge" width="100%">
+<img src="docs/media/hero.gif" alt="The crew of AI teammates, hopping in a row" width="100%">
 
 </div>
 
