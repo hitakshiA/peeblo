@@ -214,6 +214,8 @@ Web search and page fetch, a code sandbox with files in and out, reading voice n
 
 ### One sign-in sets up Otari
 
+<img src="docs/media/setup.gif" alt="./peeblo up, then one Otari sign-in sets up keys, budgets, routing, connector grants and the screening workspace" width="100%">
+
 Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget per person, the role routing policies, a key and ceiling per teammate, connector grants, and the screening workspace. The console's checklist shows what's ready and links to the exact page for anything left.
 
 ---
@@ -221,6 +223,8 @@ Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget p
 ## The harness
 
 ### The crew and hiring
+
+<img src="docs/media/hiring.gif" alt="Peeblo drafts an ID card, a person approves, and the new teammate gets its own Slack app, Otari key and tools" width="100%">
 
 - **Ask Peeblo for a teammate.** It drafts one and shows you its ID card: the job, the tools, the budget and what it asks first.
 - **Hired on your yes.** The new teammate gets its own Slack app, its own Otari key with a ceiling, and only the tools you picked.
@@ -246,6 +250,8 @@ Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget p
 
 ### Memory
 
+<img src="docs/media/memory.gif" alt="Notes per place, unverified notes waiting for the owner, and recall through embeddings and rerank" width="100%">
+
 - **Notes are versioned files**, one history per teammate, written only by Peeblo.
 - **Scoped by place.** What you say in a DM stays in that DM; a channel's notes stay in the channel; company memory is shared and changes only with an admin's yes.
 - **Outside content is quarantined.** Notes written after reading untrusted text wait for the owner to verify them.
@@ -260,6 +266,8 @@ Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget p
 - **Quiet by default.** A routine first decides whether anything is worth reporting, runs on its own budget, and its approvals wait for the owner.
 
 ### A computer for each teammate
+
+<img src="docs/media/computer.gif" alt="A micro-VM per teammate with layered disks, secrets swapped in at the network exit, jobs and sleep" width="100%">
 
 - **Its own Linux micro-VM,** booted on the first command and asleep when idle.
 - **Layered disks:** a pinned base, a recipe disk built once and verified, a working disk, and a workspace that never resets.
