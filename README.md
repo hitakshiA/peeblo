@@ -260,6 +260,8 @@ Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget p
 
 ### Routines and triggers
 
+<img src="docs/media/schedules.gif" alt="Cron in your time zone, one-time promises, signed webhooks and watches feed durable runs that decide whether to report" width="100%">
+
 - **Teammates set their own routines:** "every Monday at 9", "remind me at 6", "when a dispute comes in".
 - **In your time zone**, daylight saving included.
 - **Webhooks and watches.** Signed webhooks from services, or a watch that wakes only when a result changes.
@@ -276,6 +278,8 @@ Paste a service key, sign in to Otari once, and Peeblo sets the rest: a budget p
 - **Rule checks on every command**, evaluated by Otari.
 
 ### Shipping code without a key
+
+<img src="docs/media/shipping.gif" alt="Work leaves the VM as a bundle, is checked on the host, and is pushed from a mirror after the repo's guardrails pass and a person approves" width="100%">
 
 - **The VM never holds a write credential.** Work leaves as a git bundle and is checked on the host: its own branch, fast-forward only.
 - **Pushed from a mirror** the agent can't write, with the token held on the host.
