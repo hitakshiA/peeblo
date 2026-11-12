@@ -79,7 +79,12 @@ async function serverTools(id: string, fresh = false, as?: KeyView) {
     }
     return hit;
   }
-  const { data } = await otari<{ server_revision: string; tools: any[] }>("GET", `/mcp/servers/${id}/tools`, undefined, as ? { auth: as.auth } : {});
+  const { data } = await otari<{ server_revision: string; tools: any[] }>(
+    "GET",
+    `/mcp/servers/${id}/tools`,
+    undefined,
+    as ? { auth: as.auth } : {},
+  );
   const entry = { at: Date.now(), revision: data.server_revision, tools: data.tools ?? [] };
   toolCache.set(cacheId, entry);
   saveCache();
@@ -128,7 +133,18 @@ export async function catalogFor(
   // Servers are read in parallel (Peeblo's "all" is ~28 servers; one by one took ~40 s cold).
   const found = c.connectors.map((name) => ({ name, s: list.find((x) => x.name === name) }));
   for (const f of found) if (!f.s) missing.push(f.name);
-  const loaded = await Promise.all(found.filter((f) => f.s).map(async (f) => ({ f, t: await serverTools(f.s!.id, false, own?.servers.has(f.name) ? { keyId: own.keyId, auth: { authorization: `Bearer ${own.secret}` } } : undefined).catch(() => null) })));
+  const loaded = await Promise.all(
+    found
+      .filter((f) => f.s)
+      .map(async (f) => ({
+        f,
+        t: await serverTools(
+          f.s!.id,
+          false,
+          own?.servers.has(f.name) ? { keyId: own.keyId, auth: { authorization: `Bearer ${own.secret}` } } : undefined,
+        ).catch(() => null),
+      })),
+  );
   for (const { f, t } of loaded) {
     const s = f.s!;
     if (!t) {

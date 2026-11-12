@@ -467,10 +467,11 @@ export async function publish(
     if (!token) {
       const v = await publishViaConnector(tm, m, r, w, incoming, pr);
       hostGit(["--git-dir", m, "update-ref", "-d", `refs/peeblo/incoming/${sessionId}`]);
-      await pool.query(
-        "UPDATE session_worktrees SET published = true, pr_url = coalesce($3, pr_url) WHERE session_id = $1 AND repo = $2",
-        [sessionId, repo, v.prUrl],
-      );
+      await pool.query("UPDATE session_worktrees SET published = true, pr_url = coalesce($3, pr_url) WHERE session_id = $1 AND repo = $2", [
+        sessionId,
+        repo,
+        v.prUrl,
+      ]);
       await appendEvent({
         sessionId,
         runId: null,
@@ -534,14 +535,19 @@ async function publishViaConnector(
     .map((l) => l.split("\t"));
   const deleted = changes.filter(([st]) => st === "D").map(([, f]) => f);
   if (deleted.length)
-    throw new Error(`this repo has no push credential, and the GitHub connector can't delete files (${deleted.join(", ")}); keep them, or ask an admin for a repo credential`);
+    throw new Error(
+      `this repo has no push credential, and the GitHub connector can't delete files (${deleted.join(", ")}); keep them, or ask an admin for a repo credential`,
+    );
   const files = changes.map(([, f]) => ({
     path: f,
     content: execFileSync("git", ["--git-dir", m, "show", `${incoming}:${f}`], { encoding: "utf8", maxBuffer: 20_000_000 }),
   }));
   const binary = files.filter((f) => f.content.includes("\u0000")).map((f) => f.path);
-  if (binary.length) throw new Error(`this repo has no push credential, and the GitHub connector can't push binary files (${binary.join(", ")})`);
-  const subjects = hostGit(["--git-dir", m, "log", "--reverse", "--format=%s", `${from}..${incoming}`]).split("\n").filter(Boolean);
+  if (binary.length)
+    throw new Error(`this repo has no push credential, and the GitHub connector can't push binary files (${binary.join(", ")})`);
+  const subjects = hostGit(["--git-dir", m, "log", "--reverse", "--format=%s", `${from}..${incoming}`])
+    .split("\n")
+    .filter(Boolean);
   const message =
     subjects.length === 1 ? hostGit(["--git-dir", m, "log", "-1", "--format=%B", incoming]) : subjects.map((x) => `- ${x}`).join("\n");
 
@@ -575,7 +581,8 @@ async function publishViaConnector(
       base: w.base,
       draft: true,
     }).catch((e) => {
-      if (/already exists/i.test((e as Error).message)) return `https://github.com/${owner}/${name}/pulls?q=head:${encodeURIComponent(w.branch)}`;
+      if (/already exists/i.test((e as Error).message))
+        return `https://github.com/${owner}/${name}/pulls?q=head:${encodeURIComponent(w.branch)}`;
       throw new Error(`pushed ${w.branch}, but the draft PR failed: ${(e as Error).message}`);
     });
     prUrl = /https:\/\/github\.com\/[^\s"'<>)]+\/(pull\/\d+|pulls\?[^\s"'<>)]+)/.exec(text)?.[0] ?? null;

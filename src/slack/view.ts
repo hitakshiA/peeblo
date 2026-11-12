@@ -199,18 +199,23 @@ function planBlock(v: View, title: string): any {
     const over = entries.length - (MAX_TASKS - 1);
     const old = entries.slice(0, over);
     entries = entries.slice(over);
-    folded = [{ task_id: "earlier", title: `${old.length} earlier steps`, status: old.some((x) => x[1].status === "error") ? "error" : "complete" }];
+    folded = [
+      { task_id: "earlier", title: `${old.length} earlier steps`, status: old.some((x) => x[1].status === "error") ? "error" : "complete" },
+    ];
   }
   return {
     type: "plan",
     title: title.slice(0, 120),
-    tasks: [...folded, ...entries.map(([id, t]) => ({
-      task_id: id,
-      title: t.title.slice(0, 120),
-      status: t.status,
-      ...(t.output ? { output: rich(t.output.slice(0, 200)) } : {}),
-      ...(t.sources?.length ? { sources: t.sources.map((s) => ({ type: "url", url: s.url, text: s.text })) } : {}),
-    }))],
+    tasks: [
+      ...folded,
+      ...entries.map(([id, t]) => ({
+        task_id: id,
+        title: t.title.slice(0, 120),
+        status: t.status,
+        ...(t.output ? { output: rich(t.output.slice(0, 200)) } : {}),
+        ...(t.sources?.length ? { sources: t.sources.map((s) => ({ type: "url", url: s.url, text: s.text })) } : {}),
+      })),
+    ],
   };
 }
 

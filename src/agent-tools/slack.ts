@@ -132,7 +132,12 @@ export const slackTools: AgentTool[] = [
         }).catch((e) => ({ ok: false, error: (e as Error).message }));
         if (r.ok === false) return { text: `Slack refused the post in #${ch.name} (${r.error}).`, isError: true };
         const link: any = await slack(place.app_id, "chat.getPermalink", { channel: ch.id, message_ts: r.ts }).catch(() => null);
-        await appendEvent({ sessionId: ctx.sessionId, runId: ctx.runId, type: "slack.post.elsewhere", data: { text, channel: ch.id, ts: r.ts } });
+        await appendEvent({
+          sessionId: ctx.sessionId,
+          runId: ctx.runId,
+          type: "slack.post.elsewhere",
+          data: { text, channel: ch.id, ts: r.ts },
+        });
         return { text: `Posted in #${ch.name}${link?.permalink ? `: ${link.permalink}` : ""}. Now answer here.` };
       }
       // Outside Slack (the API, a test) the post is the reply: recorded the same way, so nothing is retried.
