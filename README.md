@@ -39,7 +39,7 @@ A real Slack company, real teammates, real Otari: hiring, an incident, a bug fix
 
 ### ▶ Building on Otari: feedback
 
-<a href="https://www.youtube.com/watch?v=-bHsLXCcfUE"><img src="docs/media/feedback-video.jpg" alt="Watch the feedback video" width="100%"></a>
+<a href="https://www.youtube.com/watch?v=-bHsLXCcfUE"><img src="docs/media/feedback-cover.jpg" alt="Watch the feedback video" width="100%"></a>
 
 What worked, what we'd add, and the fixes we sent upstream.<br>
 📄 [Read the written feedback](https://docs.google.com/document/d/15EANmt49EhVH9HPJUV121e9xmLIztXdngivCmpCgIjo/edit)
