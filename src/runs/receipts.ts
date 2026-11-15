@@ -9,6 +9,7 @@ export type Receipt = {
   run_id: string;
   calls: number;
   cost_usd: number;
+  tool_cost_usd: number | null; // the part of cost_usd Otari billed as tool fees (search, fetch, code), null when it didn't say
   prompt_tokens: number;
   cached_tokens: number;
   completion_tokens: number;
@@ -80,6 +81,9 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
     // Model calls, calls a crash cut off, and tools Otari bills on their own (code execution, the file reader).
     cost_usd:
       Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0) + toolCosts(events)) * 1e6) / 1e6,
+    tool_cost_usd: calls.some((c) => c.tool_cost_usd != null)
+      ? Math.round(calls.reduce((a, c) => a + (Number(c.tool_cost_usd) || 0), 0) * 1e6) / 1e6
+      : null,
     prompt_tokens: sum("prompt_tokens"),
     cached_tokens: sum("cached_tokens"),
     completion_tokens: sum("completion_tokens"),
@@ -129,7 +133,7 @@ export function receiptLine(r: Receipt): string {
   if (!r.models.length && r.guard.blocked)
     return `blocked by the guardrail (${r.guard.checked_by}) before the teammate ran · ${money(r.cost_usd)}`;
   const via = r.providers.length ? ` via ${r.providers.join(", ")}` : "";
-  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${Object.entries(
+  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${r.tool_cost_usd ? ` (incl. ${money(r.tool_cost_usd)} tool fees)` : ""}${Object.entries(
     r.otari_tools,
   )
     .map(([t, n]) => ` · ${n} ${t.replace("_", " ")}`)

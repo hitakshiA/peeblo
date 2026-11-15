@@ -631,6 +631,7 @@ async function record(
       error_code: h.get("otari-error-code"),
       guardrails: h.get("otari-guardrails"),
       cost_usd: n(usage?.cost_usd),
+      tool_cost_usd: n(usage?.tool_cost_usd), // the part of cost_usd that is Otari's per-call tool fees
       prompt_tokens: n(usage?.prompt_tokens ?? usage?.input_tokens),
       cached_tokens: n(usage?.prompt_tokens_details?.cached_tokens ?? usage?.cache_read_input_tokens),
       completion_tokens: n(usage?.completion_tokens ?? usage?.output_tokens),

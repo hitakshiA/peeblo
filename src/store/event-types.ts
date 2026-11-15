@@ -9,6 +9,7 @@ export type ModelCallEvent = Open & {
   requested_model: string | null;
   served_model?: string | null;
   cost_usd: number | null;
+  tool_cost_usd?: number | null;
   ms: number;
   turn?: number;
   path?: string;
