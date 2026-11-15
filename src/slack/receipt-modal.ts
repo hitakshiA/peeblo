@@ -25,6 +25,9 @@ async function personBudget(runId: string): Promise<string | null> {
   return `${String(p.display_name ?? "You").split(" ")[0]} · ${money(s.spent)} of ${money(tier.max_budget)} ${period}`;
 }
 
+// Cents hide the split when a tool fee is most of a small job ($0.01 incl. $0.01), so the split shows four places.
+const fine = (usd: number) => (usd >= 1 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4)}`);
+
 export async function receiptModal(runId: string): Promise<any> {
   const r = await buildReceipt(runId).catch(() => null);
   const budget = await personBudget(runId).catch(() => null);
@@ -55,7 +58,7 @@ export async function receiptModal(runId: string): Promise<any> {
         fact("Calls", `${r.calls}${r.failed_attempts ? ` (${r.failed_attempts} retried)` : ""}`),
         ...(r.fallbacks && models[1] ? [fact("Fell back to", models[1])] : []),
         fact("Checked by", r.guard.checked_by ? r.guard.checked_by.replace(/ \(.*\)$/, "") : "nothing from outside the company to screen"),
-        fact("Cost", r.tool_cost_usd ? `${money(r.cost_usd)}\nincl. ${money(r.tool_cost_usd)} in tool fees` : money(r.cost_usd)),
+        fact("Cost", r.tool_cost_usd ? `${fine(r.cost_usd)}\nincl. ${fine(r.tool_cost_usd)} in tool fees` : money(r.cost_usd)),
         ...(budget ? [fact("Budget used", budget)] : []),
       ]
     : [];
