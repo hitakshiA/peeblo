@@ -96,7 +96,13 @@ export async function keyBudget(): Promise<{ budgets_enforced: boolean; remainin
 export async function requestUsage(
   requestId: string,
   auth?: Record<string, string>,
-): Promise<{ cost_usd: string; prompt_tokens: number; completion_tokens: number; row_count: number } | null> {
+): Promise<{
+  cost_usd: string;
+  tool_cost_usd?: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  row_count: number;
+} | null> {
   try {
     return (await otari("GET", `/usage/requests/${encodeURIComponent(requestId)}`, undefined, auth ? { auth } : {})).data;
   } catch (e) {

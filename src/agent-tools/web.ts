@@ -48,6 +48,7 @@ export const webFetch: AgentTool = {
       const after = siteRefusal(ctx, final);
       if (after) return { text: `The page redirected to ${final}. ${after}`, isError: true };
       const text = `${r.data.title ? `# ${r.data.title}\n` : ""}${r.data.text ?? ""}${r.data.truncated ? `\n[truncated at ${(a.max_characters ?? 20_000).toLocaleString("en-US")} characters; ask for more with max_characters]` : ""}`;
+      if (r.requestId) void settleToolCost(ctx, "web_fetch", r.requestId);
       return { text, untrusted: `web:${final}`, data: { request_id: r.requestId, final_url: final, chars: text.length } };
     } catch (e) {
       const o = e as OtariError;
@@ -93,6 +94,7 @@ export const webSearchTool: AgentTool = {
                   .slice(0, 500)}`,
             )
             .join("\n") || "No results.";
+        if (r.requestId) void settleToolCost(ctx, "web_search", r.requestId);
         return { text, untrusted: "web:search", data: { request_id: r.requestId, via: "otari /search" } };
       } catch (e) {
         if (!/No search tools are configured/i.test((e as Error).message))
@@ -124,6 +126,7 @@ export const webSearchTool: AgentTool = {
         ],
       });
       const text = String(r.data?.choices?.[0]?.message?.content ?? "").trim() || "No results.";
+      if (r.requestId) void settleToolCost(ctx, "web_search", r.requestId, undefined, false);
       return { text, untrusted: "web:search", data: { request_id: r.requestId, cost_usd: r.data?.usage?.cost_usd ?? null } };
     } catch (e) {
       const o = e as OtariError;
@@ -237,12 +240,14 @@ async function saveReturned(ctx: ToolContext, fileId: string, name: string, auth
 }
 const sandboxes = new Map<string, string>(); // session → Otari container id
 
-// A tool call Otari bills outside a model call (code execution): its settled cost goes on the run's receipt.
+// A tool call Otari bills outside a model call (code execution, search, fetch): its settled cost goes on the run's
+// receipt. A direct tool call is all tool fee; a search inside a small model call has Otari's tool_cost_usd split.
 async function settleToolCost(
   ctx: { sessionId: string; runId: string | null },
   tool: string,
   requestId: string,
   auth?: Record<string, string>,
+  direct = true,
 ): Promise<void> {
   const { requestUsage } = await import("../otari/client.ts");
   const { appendEvent } = await import("../store/events.ts");
@@ -254,7 +259,12 @@ async function settleToolCost(
         sessionId: ctx.sessionId,
         runId: ctx.runId,
         type: "tool.cost",
-        data: { tool, request_id: requestId, cost_usd: Number(u.cost_usd) },
+        data: {
+          tool,
+          request_id: requestId,
+          cost_usd: Number(u.cost_usd),
+          tool_cost_usd: u.tool_cost_usd != null ? Number(u.tool_cost_usd) : direct ? Number(u.cost_usd) : null,
+        },
       }).catch(() => {});
       return;
     }

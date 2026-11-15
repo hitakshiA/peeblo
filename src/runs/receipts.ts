@@ -75,15 +75,16 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
         }
       : { checked_by: null, checks: 0, blocked: 0 };
   const tools = events.filter((e) => e.type === "tool.call").map((e) => dataOf(e, "tool.call"));
+  const billed = toolCosts(events);
   return {
     run_id: runId,
     calls: ok.length,
     // Model calls, calls a crash cut off, and tools Otari bills on their own (code execution, the file reader).
-    cost_usd:
-      Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0) + toolCosts(events)) * 1e6) / 1e6,
-    tool_cost_usd: calls.some((c) => c.tool_cost_usd != null)
-      ? Math.round(calls.reduce((a, c) => a + (Number(c.tool_cost_usd) || 0), 0) * 1e6) / 1e6
-      : null,
+    cost_usd: Math.round((sum("cost_usd") + interrupted.reduce((a, i) => a + (i.settled_cost_usd ?? 0), 0) + billed.cost) * 1e6) / 1e6,
+    tool_cost_usd:
+      calls.some((c) => c.tool_cost_usd != null) || billed.fees !== null
+        ? Math.round((calls.reduce((a, c) => a + (Number(c.tool_cost_usd) || 0), 0) + (billed.fees ?? 0)) * 1e6) / 1e6
+        : null,
     prompt_tokens: sum("prompt_tokens"),
     cached_tokens: sum("cached_tokens"),
     completion_tokens: sum("completion_tokens"),
@@ -147,16 +148,21 @@ export function receiptLine(r: Receipt): string {
 // Small runs cost fractions of a cent; show enough digits that a real cost never reads as $0.
 const money = (usd: number) => (usd === 0 ? "$0" : usd < 0.01 ? `$${usd.toFixed(6)}` : `$${usd.toFixed(4)}`);
 
-// What Otari billed outside the run's model calls: settled code-execution requests (tool.cost) and the file
-// reader's own model call (its cost comes back on the tool's result).
-function toolCosts(events: { type: string; data: unknown }[]): number {
-  let n = 0;
+// What Otari billed outside the run's model calls: settled tool requests (tool.cost: code execution, web search
+// and fetch) and the file reader's own model call (its cost comes back on the tool's result). Fees are the tool
+// part of those, null when no settled request said.
+function toolCosts(events: { type: string; data: unknown }[]): { cost: number; fees: number | null } {
+  let cost = 0,
+    fees: number | null = null;
   for (const e of events) {
-    if (e.type === "tool.cost") n += Number(dataOf(e, "tool.cost").cost_usd) || 0;
-    else if (e.type === "tool.call") {
+    if (e.type === "tool.cost") {
+      const d = dataOf(e, "tool.cost");
+      cost += Number(d.cost_usd) || 0;
+      if (d.tool_cost_usd != null) fees = (fees ?? 0) + (Number(d.tool_cost_usd) || 0);
+    } else if (e.type === "tool.call") {
       const d = dataOf(e, "tool.call");
-      if (d.tool === "understand_file" && d.status === "completed") n += Number(d.result?.cost_usd) || 0;
+      if (d.tool === "understand_file" && d.status === "completed") cost += Number(d.result?.cost_usd) || 0;
     }
   }
-  return n;
+  return { cost, fees };
 }

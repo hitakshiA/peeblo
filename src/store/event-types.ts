@@ -52,7 +52,7 @@ export type EventMap = {
   "model.call": ModelCallEvent;
   "model.call.opened": Open & { turn?: number; request_id: string | null; status: number; requested_model: string | null };
   "tool.call": ToolCallEvent;
-  "tool.cost": Open & { cost_usd: number | string | null };
+  "tool.cost": Open & { cost_usd: number | string | null; tool_cost_usd?: number | string | null };
   "slack.post": Open & { text: string; private?: boolean; outside_slack?: boolean };
   "turn.started": Open & { turn: number };
   "turn.finished": Open & { turn: number; text: string; stop_reason: string | null };
