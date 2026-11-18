@@ -234,6 +234,42 @@ export async function setIcon(tm: Teammate, appId: string): Promise<boolean> {
   return Boolean(icon.ok);
 }
 
+// An app made before Peeblo listened for an event (team_join, say) keeps its old subscriptions: Slack only changes them
+// on a manifest update. So at start each live app's events are compared with this version's, and a short one is
+// updated. Bot events need no reinstall when their scopes are already granted (staleApps covers scopes).
+export const missingEvents = (live: string[] | undefined, want: string[]) => want.filter((e) => !(live ?? []).includes(e));
+
+export async function syncStaleEvents(): Promise<string[]> {
+  const { configToken } = await import("./admin.ts");
+  const token = await configToken().catch(() => null);
+  if (!token) return [];
+  const rows = (
+    await pool.query(
+      "SELECT a.app_id, a.teammate_id FROM slack_apps a JOIN teammates t ON t.id = a.teammate_id WHERE a.bot_user_id IS NOT NULL AND t.archived_at IS NULL AND NOT t.hidden",
+    )
+  ).rows;
+  const updated: string[] = [];
+  for (const r of rows) {
+    const tm = await getTeammate(r.teammate_id);
+    if (!tm) continue;
+    const j: any = await (
+      await fetch("https://slack.com/api/apps.manifest.export", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: new URLSearchParams({ app_id: r.app_id }),
+      })
+    )
+      .json()
+      .catch(() => null);
+    if (!j?.ok) continue;
+    const want = tm.slug === "peeblo" ? [...EVENTS, "team_join"] : EVENTS;
+    if (!missingEvents(j.manifest?.settings?.event_subscriptions?.bot_events, want).length) continue;
+    const res = await syncManifest(tm.id);
+    if (res.ok) updated.push(tm.slug);
+  }
+  return updated;
+}
+
 export function installProfileSync(): void {
   onEvent(async (e) => {
     if (e.type !== "teammate.updated") return;

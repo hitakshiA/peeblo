@@ -60,9 +60,10 @@ async function firstContact(tm: Teammate, appId: string, team: string, slackUser
     direct: true,
   };
   const person = await personForSlack(team, slackUser, { displayName: (await displayName(appId, slackUser)) ?? undefined });
-  // Someone new to the workspace gets their Otari budget now, so the welcome can say what it is.
+  // Someone new to the workspace gets their Otari budget now, so the welcome can say what it is. Peeblo's first words
+  // to someone count too: a join Slack never reported (an app made before it listened for team_join) still gets it.
   const budget =
-    why === "joined"
+    why === "joined" || tm.slug === "peeblo"
       ? await joinBudget(person).catch((e) => {
           console.error("join budget:", (e as Error).message);
           return null;

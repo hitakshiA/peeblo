@@ -164,3 +164,10 @@ test("rankCatalog: servers named for the search first, the vendor's own first, p
     ["Linear", "SmartCut", "Linear by Someone"],
   );
 });
+
+test("missingEvents: an app made before an event was added is found short", async () => {
+  const { missingEvents } = await import("../src/slack/profile.ts");
+  assert.deepEqual(missingEvents(["app_mention", "message.im"], ["app_mention", "message.im", "team_join"]), ["team_join"]);
+  assert.deepEqual(missingEvents(["app_mention", "team_join"], ["app_mention", "team_join"]), []);
+  assert.deepEqual(missingEvents(undefined, ["app_mention"]), ["app_mention"]);
+});

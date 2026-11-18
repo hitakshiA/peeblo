@@ -54,6 +54,10 @@ installPiExecutor();
   await ensureManager().catch((e) => console.error("peeblo manager:", (e as Error).message));
   installHireWelcome();
   (await import("./slack/profile.ts")).installProfileSync();
+  void import("./slack/profile.ts")
+    .then((p) => p.syncStaleEvents())
+    .then((u) => u.length && console.log(`slack events brought up to date: ${u.join(", ")}`))
+    .catch((e) => console.error("slack events:", (e as Error).message));
   (await import("./connectors/mcp.ts")).warmCatalog();
   // Warm what the first model call would otherwise wait for: catalog prices.
   void import("./otari/catalog.ts")
