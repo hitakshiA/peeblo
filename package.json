@@ -29,10 +29,10 @@
     "yaml": "2.9.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.4",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
-    "knip": "6.43.0",
+    "knip": "6.44.1",
     "typescript": "5.9.3"
   }
 }
