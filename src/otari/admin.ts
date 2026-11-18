@@ -152,6 +152,25 @@ export const deleteBudget = (id: string) =>
   admin("DELETE", `/organizations/me/budgets/${id}`, undefined, "deleting a budget", links.budgets());
 
 export type CreatedKey = { id: string; key: string; key_name: string | null };
+// What a teammate's key calls: models, files, batches, web and code tools, connectors, its own usage (receipts) and
+// the people it works for. Otari gives a key created without scopes only 'inference:run', so they are always named.
+export const TEAMMATE_KEY_SCOPES = [
+  "inference:run",
+  "files:read",
+  "files:write",
+  "batches:read",
+  "batches:write",
+  "web:search",
+  "web:fetch",
+  "code:execute",
+  "mcp:read",
+  "mcp:execute",
+  "usage:read",
+  "usage:write",
+  "end-users:read",
+  "end-users:write",
+  "end-users:delete",
+];
 export const createServiceKey = (name: string, endUserBudgetIds: string[] | null, defaultEndUserBudget?: string) =>
   admin<CreatedKey>(
     "POST",
@@ -159,6 +178,7 @@ export const createServiceKey = (name: string, endUserBudgetIds: string[] | null
     {
       key_name: name,
       is_service_key: true,
+      scopes: TEAMMATE_KEY_SCOPES,
       end_user_budget_ids: endUserBudgetIds,
       ...(defaultEndUserBudget ? { end_user_budget_id: defaultEndUserBudget } : {}),
       metadata: { app: "peeblo" },

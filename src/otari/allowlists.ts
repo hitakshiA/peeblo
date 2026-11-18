@@ -77,24 +77,28 @@ const same = (a: string[] | null | undefined, b: string[] | null) =>
 // Sets one teammate key's lists when they differ from what Otari holds.
 export async function syncKeyAllowList(
   tm: Teammate,
-  current?: { allowed_models?: string[] | null; allowed_tools?: string[] | null },
+  current?: { allowed_models?: string[] | null; allowed_tools?: string[] | null; scopes?: string[] | null },
 ): Promise<"set" | "same" | "skipped"> {
   const { rows } = await pool.query<{ key_id: string }>("SELECT key_id FROM teammate_keys WHERE teammate_id = $1 AND retired_at IS NULL", [
     tm.id,
   ]);
   if (!rows[0]) return "skipped";
-  const { admin, session } = await import("./admin.ts");
+  const { admin, session, TEAMMATE_KEY_SCOPES } = await import("./admin.ts");
   if (!(await session())) return "skipped";
   const models = await modelAllowList();
   const tools = toolAllowList(tm);
-  if (current && same(current.allowed_models, models) && same(current.allowed_tools, tools)) return "same";
+  // A key missing a scope Peeblo calls (one made before keys were scoped, or by hand) gets it added. With Otari's copy at
+  // hand the key keeps every scope it holds; without it (a hire, a config change) it is set to Peeblo's list.
+  const missing = current?.scopes ? TEAMMATE_KEY_SCOPES.filter((x) => !current.scopes!.includes(x)) : TEAMMATE_KEY_SCOPES;
+  const scopes = [...new Set([...(current?.scopes ?? []), ...TEAMMATE_KEY_SCOPES])];
+  if (current && same(current.allowed_models, models) && same(current.allowed_tools, tools) && !missing.length) return "same";
   // An entry Otari won't take (a provider it no longer knows) is dropped from the list and the list sent again.
   for (let tries = 0; ; tries++) {
     try {
       await admin(
         "PATCH",
         `/organizations/me/keys/${rows[0].key_id}`,
-        { allowed_models: models, allowed_tools: tools },
+        { allowed_models: models, allowed_tools: tools, scopes },
         `limiting ${tm.config.name}'s key to open models`,
         "",
       );
