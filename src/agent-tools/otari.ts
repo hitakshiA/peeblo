@@ -3,7 +3,7 @@
 import { isOtariAdmin } from "../rules/authority.ts";
 import { config } from "../config.ts";
 import { guardMode, lakeraMandate, lakeraProject, setLakera } from "../rules/guard.ts";
-import { routingPolicies, session, setWebSearch, upsertRoutingPolicy, webSearch, mcpServers } from "../otari/admin.ts";
+import { routingPolicies, session, setWebSearch, upsertRoutingPolicy, webSearch } from "../otari/admin.ts";
 import { estimateCost, isOpenWeight, modelFacts, models, openWeightModels, tierFile, tierOf } from "../otari/catalog.ts";
 import { otari } from "../otari/client.ts";
 import { links } from "../otari/links.ts";
@@ -297,15 +297,21 @@ export const otariTools: AgentTool[] = [
         }
         case "mcp_servers": {
           const listed = (await otari<{ servers: { name: string; purpose_hint?: string }[] }>("GET", "/mcp/servers")).data.servers;
-          let health = new Map<string, string>();
-          if (s) health = new Map(((await mcpServers()).data ?? []).map((x: any) => [x.name, x.health?.status ?? "unknown"]));
+          if (!s) return { text: listed.map((x) => `${x.name}${x.purpose_hint ? `: ${x.purpose_hint}` : ""}`).join("\n") };
+          // With a session: every connector in the workspace (one needing a sign-in isn't listed to keys), its
+          // health as Otari last saw it, and what people have asked for.
+          const { servers, healthLine, pendingRequests } = await import("../otari/connectors.ts");
+          const asked = await pendingRequests().catch(() => []);
           return {
-            text: listed
-              .map(
-                (x) =>
-                  `${x.name}${health.size ? ` (${health.get(x.name) ?? "unknown"})` : ""}${x.purpose_hint ? `: ${x.purpose_hint}` : ""}`,
-              )
-              .join("\n"),
+            text: [
+              ...(await servers()).map((x) => healthLine(x)),
+              ...(asked.length
+                ? [
+                    "Asked for, not added yet:",
+                    ...asked.map((r) => `- ${r.title} (${r.catalog_name}), ${r.requester_count} ask${r.requester_count === 1 ? "" : "s"}`),
+                  ]
+                : []),
+            ].join("\n"),
           };
         }
         case "fallbacks": {

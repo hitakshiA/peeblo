@@ -95,6 +95,7 @@ void import("./environment/recipes.ts").then((r) => r.queueMissingBuilds()).catc
   const m = await import("./otari/mcp-access.ts");
   m.followTeammateChanges();
   void m.syncAllAccess().catch(() => null);
+  (await import("./otari/connector-watch.ts")).watchConnectors();
 }
 // Worktrees of closed or long-idle sessions are cleaned up while their teammate is awake and idle.
 setInterval(

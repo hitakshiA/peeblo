@@ -41,7 +41,13 @@ export async function defaultApprovers(runId: string, action: Record<string, any
   const admins = await adminIds();
   const o = await runOrigin(runId);
   const tool = String(action.tool ?? action.setting ?? "");
-  if (tool.startsWith("otari_set") || action.kind === "company_memory") return admins;
+  if (
+    tool.startsWith("otari_set") ||
+    tool === "otari_add_connector" ||
+    tool === "otari_connector_sign_in" ||
+    action.kind === "company_memory"
+  )
+    return admins;
   if (tool === "teammate_update") {
     const name = String(action.arguments?.teammate ?? "");
     const t = (await pool.query("SELECT owner_person FROM teammates WHERE (slug = $1 OR id = $1) AND archived_at IS NULL", [name])).rows[0];

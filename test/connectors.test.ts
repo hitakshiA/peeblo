@@ -96,3 +96,71 @@ test("withoutEmptyOptionals: optional arguments written as null in words are lef
   });
   assert.deepEqual(withoutEmptyOptionals(schema, { query: "null" }), { query: "null" });
 });
+
+test("parseCallback: reads a sign-in's return address, and nothing else", async () => {
+  const { parseCallback } = await import("../src/otari/connectors.ts");
+  // Where otari.ai sends the browser today (the dashboard address), and the gateway's own form.
+  assert.deepEqual(
+    parseCallback("https://otari.ai/dashboard/api/v1/mcp-connections/callback?code=c1&state=s1&iss=https%3A%2F%2Fmcp.linear.app"),
+    { code: "c1", state: "s1", iss: "https://mcp.linear.app" },
+  );
+  assert.deepEqual(parseCallback("https://otari.ai/dashboard/?region=us#/mcp-connections/callback?code=c2&state=s2"), {
+    code: "c2",
+    state: "s2",
+  });
+  assert.equal(parseCallback("https://otari.ai/dashboard/api/v1/mcp-connections/callback?error=access_denied&state=s"), null);
+  assert.equal(parseCallback("https://evil.example/?code=c&state=s"), null);
+  assert.equal(parseCallback("not a url"), null);
+});
+
+test("connector watch: tells admins on the second failing look, once, and when it recovers", async () => {
+  const { compare } = await import("../src/otari/connector-watch.ts");
+  const s = (status: string) => ({
+    id: "1",
+    name: "apify",
+    url: "https://mcp.apify.com",
+    credential_mode: "shared" as const,
+    has_token: true,
+    shared_account: null,
+    needs_setup: false,
+    health: { status, error: status === "failing" ? "unauthorized" : null, http_status: status === "failing" ? 401 : null, tool_count: 15 },
+  });
+  let r = compare({}, [s("failing")]);
+  assert.equal(r.news.length, 0); // one bad look can be a slow first answer
+  r = compare(r.seen, [s("failing")]);
+  assert.equal(r.news.length, 1);
+  assert.match(r.news[0], /apify.*unauthorized.*401/);
+  r = compare(r.seen, [s("failing")]);
+  assert.equal(r.news.length, 0); // told once
+  r = compare(r.seen, [s("healthy")]);
+  assert.equal(r.news.length, 1);
+  assert.match(r.news[0], /works again/);
+});
+
+test("rankCatalog: servers named for the search first, the vendor's own first, probes left out", async () => {
+  const { rankCatalog } = await import("../src/otari/connectors.ts");
+  const e = (title: string, kind: string, url = `https://${title.toLowerCase().replace(/\W+/g, "-")}.example/mcp`) => ({
+    name: title,
+    title,
+    description: null,
+    url,
+    requires_token: false,
+    publisher_kind: kind,
+    website_url: null,
+  });
+  const found = [
+    e("Linear by Someone", "community"),
+    e("Linear ID Shape", "community", "https://observatory.example/s/linear-id-shape/mcp"),
+    e("Linear", "vendor"),
+    e("SmartCut", "vendor"), // mentions "linear" only in its description
+  ];
+  assert.deepEqual(
+    rankCatalog("linear", found).map((x) => x.title),
+    ["Linear", "Linear by Someone"],
+  );
+  // Nothing named for it: whatever matched, vendors first.
+  assert.deepEqual(
+    rankCatalog("cutlist", found).map((x) => x.title),
+    ["Linear", "SmartCut", "Linear by Someone"],
+  );
+});

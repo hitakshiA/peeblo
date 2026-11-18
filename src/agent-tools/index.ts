@@ -2,6 +2,7 @@
 // session starts, from its pinned config; modes change what the gate allows, never which tools exist.
 import type { Teammate } from "../store/teammates.ts";
 import { otariTools } from "./otari.ts";
+import { connectorTools } from "./connectors.ts";
 import type { AgentTool } from "./types.ts";
 import { runCodeTool, webFetch, webSearchTool } from "./web.ts";
 import { batchResultsTool, batchRunTool } from "./batch.ts";
@@ -41,6 +42,7 @@ export function peebloTools(tm: Teammate, opts: { subagent?: boolean } = {}): Ag
     askTeammateTool,
     ...scheduleTools,
     ...otariTools,
+    ...connectorTools,
     ...(tm.config.tools.includes("web") ? [webSearchTool, ...(config.webFetch ? [webFetch] : [])] : []),
     ...(config.otariCode && tm.config.tools.includes("code") ? [runCodeTool] : []),
     ...(tm.config.tools.includes("computer") ? [understandFileTool, shareFileTool, makeImageTool, batchRunTool, batchResultsTool] : []),
