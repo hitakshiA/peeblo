@@ -76,7 +76,7 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
     show_data: "Drew it up",
     skill_save: "Saved a skill",
     channel_watch: "Changed what it watches",
-    own_otari_account: "Checked your Otari account",
+    own_otari_account: "Your Otari account",
     check_text: "Checked it with the guardrail",
     connector_find: "Looked for a connector",
     connector_request: "Asked an admin for a connector",
