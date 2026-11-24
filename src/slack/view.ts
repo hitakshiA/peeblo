@@ -376,6 +376,14 @@ function step(
 // icon, so the Receipt button is a small button on its own row, just above the feedback row).
 async function ending(runId: string, ok: boolean): Promise<any[]> {
   const r = await buildReceipt(runId, { links: false }).catch(() => null);
+  // Stopped by the person's own Otari account (its credit or limit): theirs to fix on otari.ai, not the owner's.
+  const ownStop =
+    !ok &&
+    (
+      await pool
+        .query("SELECT 1 FROM events WHERE run_id = $1 AND type = 'budget.blocked' AND data->>'by' = 'own_account' LIMIT 1", [runId])
+        .catch(() => ({ rows: [] as any[] }))
+    ).rows.length > 0;
   return [
     ...(ok
       ? []
@@ -385,7 +393,9 @@ async function ending(runId: string, ok: boolean): Promise<any[]> {
             block_id: `recover:${runId}`,
             elements: [
               { type: "button", style: "primary", text: { type: "plain_text", text: "Try again" }, action_id: "retry_run", value: runId },
-              { type: "button", text: { type: "plain_text", text: "Ask the owner" }, action_id: "ask_owner", value: runId },
+              ...(ownStop
+                ? []
+                : [{ type: "button", text: { type: "plain_text", text: "Ask the owner" }, action_id: "ask_owner", value: runId }]),
             ],
           },
         ]),
