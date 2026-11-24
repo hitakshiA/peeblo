@@ -14,6 +14,8 @@ import { budgetRefusal } from "../otari/people.ts";
 import { estimateCost, roughTokens } from "../otari/catalog.ts";
 import { modelFor, ROLES } from "../otari/routing.ts";
 import { capCheck, noteSpend, type CapRefusal } from "../otari/spend.ts";
+import { keyStopped, markBroken, ownKeyForRun } from "../otari/own-account.ts";
+import { otariDetail } from "../otari/errors.ts";
 import { teammateAt } from "../store/teammates.ts";
 
 type WebPolicy = { allowed_domains: string[]; blocked_domains: string[] };
@@ -88,25 +90,28 @@ function prepare(
   model?: string,
   sandbox?: string,
   label?: string,
+  own = false,
 ): { buf: Buffer; model: string | null; stream: boolean; tools: number } {
   const j = JSON.parse(raw.toString("utf8"));
   if (model) j.model = model;
   const role = typeof j.model === "string" ? ROLES[j.model] : undefined;
-  if (typeof j.model === "string") j.model = modelFor(j.model);
+  // A role's routing policy lives in the team's Otari org; on a person's own account it is the role's model.
+  if (typeof j.model === "string") j.model = own && role ? role.default : modelFor(j.model);
   // Otari's Sessions view names the job the way people know it ("Rivet · #incidents · checkout timeouts").
   if (label && (path === "/chat/completions" || path === "/messages" || path === "/responses")) j.session_label = label;
   // Name the paying person the way each API shape expects; drop any user the agent tried to set itself.
   if (path === "/messages") {
     j.metadata = { ...(j.metadata ?? {}) };
-    if (b.endUser && config.otariKeyKind === "service") j.metadata.user_id = b.endUser;
+    if (b.endUser && config.otariKeyKind === "service" && !own) j.metadata.user_id = b.endUser;
     else delete j.metadata.user_id;
-  } else if (b.endUser && config.otariKeyKind === "service") j.user = b.endUser;
+  } else if (b.endUser && config.otariKeyKind === "service" && !own) j.user = b.endUser;
   else delete j.user;
   for (const k of ["max_tokens", "max_completion_tokens", "max_output_tokens"])
     if (typeof j[k] === "number" && j[k] > (role?.step_down ? STEP_OUT : MAX_OUT)) j[k] = role?.step_down ? STEP_OUT : MAX_OUT;
   if (Array.isArray(j.tools)) j.tools = gatewayTools(j.tools, b.web);
   // Code runs in Otari's sandbox, inside the model call. One sandbox per session, held between calls.
-  if (path === "/chat/completions" && b.code && sandbox)
+  // The session's sandbox is the team's; a call on a person's own account runs without code execution.
+  if (path === "/chat/completions" && b.code && sandbox && !own)
     j.tools = [...(j.tools ?? []), { type: "otari_code_execution", container: sandbox }];
   if (path === "/chat/completions" && j.stream) j.stream_options = { ...(j.stream_options ?? {}), include_usage: true };
   return {
@@ -321,7 +326,12 @@ export function startProxy(): Promise<Server> {
     const isInference = req.method === "POST" && INFERENCE.has(path);
     const raw = req.method === "GET" || req.method === "HEAD" ? undefined : await body(req);
 
-    const headers: Record<string, string> = { authorization: `Bearer ${b.otariKey ?? config.otariKey}`, "user-agent": "peeblo/0.1 (pi)" };
+    // A person who connected their own Otari account pays for the model calls of the work they asked for.
+    const own = isInference ? await ownKeyForRun(b.personId, b.runId) : null;
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${own ?? b.otariKey ?? config.otariKey}`,
+      "user-agent": "peeblo/0.1 (pi)",
+    };
     for (const h of ["content-type", "accept"]) if (typeof req.headers[h] === "string") headers[h] = req.headers[h] as string;
     if (req.method === "GET" && path === "/models") {
       try {
@@ -401,7 +411,8 @@ export function startProxy(): Promise<Server> {
 
     // Money is code: a call whose estimate would take the teammate or the person over their budget is
     // refused here, before it reaches Otari, in Otari's own refusal shape.
-    if (isInference && raw) {
+    // Not on a person's own account: Otari holds that to the limits the person set when they connected it.
+    if (isInference && raw && !own) {
       // A budget check that fails refuses the call (fail closed).
       const t1 = Date.now();
       const refusal = await budgetGate(b, raw)
@@ -444,10 +455,10 @@ export function startProxy(): Promise<Server> {
     const abort = new AbortController();
     res.on("close", () => abort.abort());
     const attempt = async (model?: string, sandbox?: string) => {
-      sandbox ??= isInference && b.code ? await sandboxFor(b.sessionId) : undefined;
+      sandbox ??= isInference && b.code && !own ? await sandboxFor(b.sessionId) : undefined;
       const p =
         isInference && raw
-          ? prepare(path, raw, b, model, sandbox, await sessionLabel(b).catch(() => undefined))
+          ? prepare(path, raw, b, model, sandbox, await sessionLabel(b).catch(() => undefined), Boolean(own))
           : { buf: raw, model: null, stream: false };
       const t0 = Date.now();
       const upstream = await fetch(config.otariBaseUrl + url.slice("/api/v1".length), {
@@ -492,7 +503,7 @@ export function startProxy(): Promise<Server> {
         a.upstream.status === 429 || a.upstream.status >= 500 || a.upstream.status === 424 || (code !== null && RETRYABLE_CODES.has(code));
       if (isInference && retryable && b.fallbackModel && a.model !== b.fallbackModel) {
         const detail = (await a.upstream.text()).slice(0, 300);
-        await record(b, path, a, null, { failed: true, error: detail });
+        await record(b, path, a, null, { failed: true, error: detail, ...(own ? ownMarks : {}) });
         a = await attempt(b.fallbackModel);
         (a as any).peebloFallback = true;
       }
@@ -503,10 +514,38 @@ export function startProxy(): Promise<Server> {
 
     // Written as soon as Otari answers, so a call cut off by a crash still shows on the receipt (and is reconciled).
     if (isInference && b.code) await noteSandbox(b, a.upstream.headers);
+    // The person's own account refused: a key Otari stopped accepting is set aside (their next calls go on the
+    // team's budget, and they're told once); a refusal of money on their account is theirs to fix, said as such.
+    if (isInference && own && [401, 402, 403, 429].includes(a.upstream.status)) {
+      const text = await a.upstream.clone().text();
+      if (keyStopped(a.upstream.status, text)) {
+        await markBroken(b.personId!, otariDetail(text) ?? `HTTP ${a.upstream.status}`);
+        const { dmFromPeeblo } = await import("../otari/connector-watch.ts");
+        await dmFromPeeblo(
+          b.personId!,
+          "Otari stopped accepting the key for your own Otari account (it was revoked or it expired), so your requests are paid from the team's budget again. Ask me to connect your Otari account to set up a new one.",
+        ).catch(() => {});
+      } else if (!guardrailRefusal(a.upstream.status, text)) {
+        b.blocked = { runId: b.runId, turn: b.turn, status: a.upstream.status, body: text };
+        await appendEvent({
+          sessionId: b.sessionId,
+          runId: b.runId,
+          type: "budget.blocked",
+          data: {
+            by: "own_account",
+            scope: "own_account",
+            status: a.upstream.status,
+            message: (otariDetail(text) ?? text).slice(0, 400),
+            request_id: a.upstream.headers.get("otari-request-id"),
+            turn: b.turn,
+          },
+        }).catch(() => {});
+      }
+    }
     // A refusal that a retry can't fix (guardrail, budget): record it once and answer Pi's retries locally.
     if (isInference && [402, 403, 429].includes(a.upstream.status)) {
       const text = await a.upstream.clone().text();
-      const money = budgetRefusal(a.upstream.status, a.upstream.headers, text);
+      const money = own ? null : budgetRefusal(a.upstream.status, a.upstream.headers, text);
       if (money) {
         b.blocked = { runId: b.runId, turn: b.turn, status: a.upstream.status, body: text };
         await appendEvent({
@@ -596,14 +635,17 @@ export function startProxy(): Promise<Server> {
         }).catch(() => {});
       }
       const usage = watch.usage();
-      await record(b, path, a, usage, { firstChunkMs, peebloFallback: Boolean((a as any).peebloFallback) });
-      if (usage?.cost_usd !== undefined) {
+      await record(b, path, a, usage, { firstChunkMs, peebloFallback: Boolean((a as any).peebloFallback), ...(own ? ownMarks : {}) });
+      if (usage?.cost_usd !== undefined && !own) {
         noteSpend(b.teammateId, b.endUser, Number(usage.cost_usd) || 0);
       }
     }
   });
   return new Promise((resolve) => server.listen(config.proxyPort, "127.0.0.1", () => resolve(server)));
 }
+
+// Marks a model call that went out on the person's own Otari account: their money, and no team guardrail mandate.
+const ownMarks = { paid_by: "own_account", key: "own", guard_mandate: false };
 
 async function record(
   b: Binding,

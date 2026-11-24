@@ -20,7 +20,7 @@ Most changes need a restart: `./peeblo down && ./peeblo up`.
 |---|---|---|
 | `OTARI_SERVICE_KEY` | empty | Peeblo's Otari service key. Empty: core runs only the console, in setup mode. |
 | `OTARI_API_KEY` | empty | A plain Otari key, used when there is no service key. No per-person billing. |
-| `PEEBLO_PUBLIC_URL` | empty | The public HTTPS origin that reaches the ingress port (Slack events, OAuth, card images). |
+| `PEEBLO_PUBLIC_URL` | empty | The public HTTPS origin that reaches the ingress port (Slack events, OAuth, card images, and the return address of a person's own Otari sign-in). |
 | `PEEBLO_SLACK_CONFIG_FILE` | empty | A JSON file with a Slack app configuration token: `{"access_token", "refresh_token", "exp"}`. |
 | `PEEBLO_CONSOLE_PASSWORD` | empty | The console's password. |
 | `PEEBLO_ADMINS` | empty | Slack user ids of the admins, comma-separated. Empty: whoever adds Peeblo to Slack becomes the first admin. |

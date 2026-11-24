@@ -127,7 +127,7 @@ export const otariTools: AgentTool[] = [
   {
     name: "usage_report",
     description:
-      'Who and what spent money this month (or since a date), straight from Otari\'s usage: each teammate, each model, each person (admins only), and spend per day. For "how much has everyone spent", "who\'s the most expensive", a spend chart (pass the daily rows to show_data).',
+      'Who and what spent money this month (or since a date), straight from Otari\'s usage: each teammate, each model, each provider, each person (admins only), and spend per day. For "how much has everyone spent", "who\'s the most expensive", a spend chart (pass the daily rows to show_data).',
     input_schema: object({ since: { type: ["string", "null"], description: "ISO date; empty for this month." } }),
     kind: "read",
     async run(ctx, a) {
@@ -194,6 +194,11 @@ export const otariTools: AgentTool[] = [
         m.requests += g.requests;
         models.set(n, m);
       }
+      // Which provider served the org's calls (Otari's own Home breaks spend down the same way).
+      const providers = top(
+        (u.by_provider ?? []).map((g) => ({ label: String(g.label ?? g.key ?? "unknown"), cost: g.cost, requests: g.requests })),
+        6,
+      );
       let people = "";
       if (isOtariAdmin(ctx.person)) {
         const { pool } = await import("../db.ts");
@@ -219,7 +224,7 @@ export const otariTools: AgentTool[] = [
         .filter((d) => d.cost > 0)
         .map((d) => ({ day: d.bucket_start.slice(0, 10), usd: Number(d.cost.toFixed(4)), calls: d.requests }));
       return {
-        text: `From Otari's usage since ${(since ?? "the start of the month").slice(0, 10)}. Peeblo's crew: ${usd(crewTotal)} (by each teammate's own Otari key). The whole Otari org, including keys that aren't Peeblo's: ${usd(u.totals.cost)}, ${u.totals.request_count} calls; report the crew's number unless asked about the org.\nBy teammate:\n${crew || "- none yet"}\nBy model:\n${top([...models.values()], 6)}${people}\nPer day (for show_data): ${JSON.stringify(days.slice(-31))}`,
+        text: `From Otari's usage since ${(since ?? "the start of the month").slice(0, 10)}. Peeblo's crew: ${usd(crewTotal)} (by each teammate's own Otari key). The whole Otari org, including keys that aren't Peeblo's: ${usd(u.totals.cost)}, ${u.totals.request_count} calls; report the crew's number unless asked about the org.\nBy teammate:\n${crew || "- none yet"}\nBy model:\n${top([...models.values()], 6)}${providers ? `\nBy provider (whole org):\n${providers}` : ""}${people}\nPer day (for show_data): ${JSON.stringify(days.slice(-31))}`,
         data: { days },
       };
     },

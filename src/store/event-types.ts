@@ -24,6 +24,7 @@ export type ModelCallEvent = Open & {
   end_user?: string | null;
   key?: string;
   guard_mandate?: boolean | null;
+  paid_by?: "own_account"; // set when the call went out on the asking person's own Otari account
   tools_declared?: number | null;
   failed?: boolean;
   error?: string;
@@ -59,7 +60,8 @@ export type EventMap = {
   "guard.checked": Open & { checked_by: string | null; safe: boolean; source?: string; score?: number | null };
   "guard.blocked": Open & { checked_by?: string };
   "budget.blocked": Open & {
-    by: "peeblo" | "otari";
+    by: "peeblo" | "otari" | "own_account"; // own_account: the person's own Otari account refused
+
     scope?: string | null;
     spent?: number | null;
     cap?: number | null;

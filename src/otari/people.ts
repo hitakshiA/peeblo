@@ -2,6 +2,7 @@
 // service key, so Otari bills and caps each person. Budget tiers are made by an admin (dashboard or
 // admin.ts); Peeblo only assigns them. When Otari refuses a call for budget, the person gets a plain
 // sentence built from Otari's own numbers.
+import { config } from "../config.ts";
 import { otari, type OtariError } from "./client.ts";
 
 const known = new Map<string, string | null>();
@@ -129,7 +130,7 @@ export function budgetReply(r: BudgetRefusal, teammate: string): string {
   const nums = r.remaining !== null && r.estimate !== null ? ` (${fmt(r.remaining)} left, this would cost about ${fmt(r.estimate)})` : "";
   const fix =
     r.scope === "user"
-      ? "It resets on its own (daily budgets at midnight UTC); an admin can move you to a bigger budget in Otari → Budgets."
+      ? `It resets on its own (daily budgets at midnight UTC); an admin can move you to a bigger budget in Otari → Budgets.${config.publicUrl ? ' Or say "connect my Otari account" to keep going on your own Otari credits.' : ""}`
       : "An admin can raise the limit, or try again when it resets.";
   return `I can't run this: it would go over ${who}${nums}. ${fix}`;
 }

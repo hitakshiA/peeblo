@@ -320,6 +320,7 @@ export type OrgUsage = {
   by_model: Group[];
   by_user: Group[];
   by_api_key: Group[];
+  by_provider?: Group[]; // Otari 0.52+
   series: { bucket_start: string; cost: number; requests: number }[];
   totals: { cost: number; request_count: number };
 };

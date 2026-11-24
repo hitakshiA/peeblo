@@ -24,6 +24,22 @@ export async function tellAdmins(text: string): Promise<number> {
   return n;
 }
 
+// A direct message to one person, from Peeblo's own app.
+export async function dmFromPeeblo(personId: string, text: string): Promise<boolean> {
+  const { pool } = await import("../db.ts");
+  const user = (await pool.query<{ slack_user: string | null }>("SELECT slack_user FROM people WHERE id = $1", [personId])).rows[0]
+    ?.slack_user;
+  if (!user) return false;
+  const { getTeammate } = await import("../store/teammates.ts");
+  const { ownApp } = await import("../ingress/apps.ts");
+  const { slack } = await import("../slack/api.ts");
+  const peeblo = await getTeammate("peeblo");
+  const app = peeblo ? await ownApp(peeblo.id) : null;
+  if (!app) return false;
+  await slack(app, "chat.postMessage", { channel: user, text });
+  return true;
+}
+
 type Seen = Record<string, { bad: number; told: boolean }>;
 const file = () => join(config.dataDir, "connector-health.json");
 const load = (): Seen => {

@@ -7,6 +7,7 @@
 // can't put buttons inside a live stream, so at the first approval the stream stops with the card attached and the
 // message is redrawn with chat.update from then on (the stopped stream is a plan block, which chat.update accepts).
 // Approval cards come from the harness, never from the model's prose. The server checks who clicked.
+import { explainError } from "../otari/errors.ts";
 import { config } from "../config.ts";
 import { pool } from "../db.ts";
 import { buildReceipt } from "../runs/receipts.ts";
@@ -1007,7 +1008,7 @@ export function installSlackView(): void {
           (e.type === "run.failed"
             ? /pi exited|turn timed out|ECONN|socket/i.test(String(d.error ?? ""))
               ? "I was interrupted before I could finish (a restart or a stall on my side). Press Try again and I'll pick up from here."
-              : `I hit a problem and stopped: ${String(d.error ?? "").slice(0, 300)}`
+              : `I hit a problem and stopped. ${explainError(String(d.error ?? ""))} Press Try again to run it again.`
             : null);
       }
       // A run that ended on a typed stop (budget, a stuck loop, the guard, a model error) gets the recovery buttons.

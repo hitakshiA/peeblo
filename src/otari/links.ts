@@ -1,4 +1,4 @@
-// Links into the Otari dashboard (hash routes), for receipts and for every admin task Peeblo can't do
+// Links into the Otari dashboard (each page has its own path since Otari 0.50), for receipts and for every admin task Peeblo can't do
 // without a dashboard session. A link opens in whatever org and workspace the person last used.
 import { config } from "../config.ts";
 const DASH = config.otariDashboardUrl;
@@ -8,21 +8,21 @@ const q = (p: Record<string, string | undefined>) => {
 };
 
 export const links = {
-  request: (requestId: string) => `${DASH}/#/requests${q({ request: requestId })}`,
-  session: (traceId: string, workspaceId?: string) => `${DASH}/#/sessions${q({ peek: traceId, peek_workspace: workspaceId })}`,
+  request: (requestId: string) => `${DASH}/requests${q({ request: requestId })}`,
+  session: (traceId: string, workspaceId?: string) => `${DASH}/sessions${q({ peek: traceId, peek_workspace: workspaceId })}`,
   sessionsFor: (filter: { userId?: string; apiKeyId?: string; q?: string }) =>
-    `${DASH}/#/sessions${q({ user_id: filter.userId, api_key_id: filter.apiKeyId, q: filter.q })}`,
-  usage: () => `${DASH}/#/organization/usage`,
-  model: (id: string) => `${DASH}/#/models/${encodeURIComponent(id)}`,
-  routing: () => `${DASH}/#/routing`,
-  routingPolicy: (name: string) => `${DASH}/#/routing/${encodeURIComponent(name)}`,
-  keys: () => `${DASH}/#/keys`,
-  setPassword: () => `${DASH}/#/recover-password`,
-  budgets: () => `${DASH}/#/budgets`,
-  billing: () => `${DASH}/#/organization/billing`,
-  guardrails: () => `${DASH}/#/organization/guardrails`,
-  webSearch: () => `${DASH}/#/tools/web-search`,
-  codeExecution: () => `${DASH}/#/tools/code-execution`,
-  mcpServers: () => `${DASH}/#/tools/mcp-servers`,
-  mcpServer: (id: string) => `${DASH}/#/tools/mcp-servers/${encodeURIComponent(id)}`,
+    `${DASH}/sessions${q({ user_id: filter.userId, api_key_id: filter.apiKeyId, q: filter.q })}`,
+  usage: () => `${DASH}/budgets`,
+  model: (id: string) => `${DASH}/models/${id.split("/").map(encodeURIComponent).join("/")}`,
+  routing: () => `${DASH}/routing`,
+  routingPolicy: (name: string) => `${DASH}/routing/${encodeURIComponent(name)}`,
+  keys: () => `${DASH}/keys`,
+  setPassword: () => `${DASH}/recover-password`,
+  budgets: () => `${DASH}/budgets`,
+  billing: () => `${DASH}/organization/billing`,
+  guardrails: () => `${DASH}/tools/guardrails`,
+  webSearch: () => `${DASH}/tools/web-search`,
+  codeExecution: () => `${DASH}/tools/code-execution`,
+  mcpServers: () => `${DASH}/tools/mcp-servers`,
+  mcpServer: (id: string) => `${DASH}/tools/mcp-servers/${encodeURIComponent(id)}`,
 };

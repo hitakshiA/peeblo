@@ -16,7 +16,7 @@ import { TurnTimeout } from "./rpc.ts";
 import { live, personSteers, piFor, touch, type Live } from "./sessions.ts";
 import { feedbackNote, liveThreadsNote, otariToolNote, personNote, rosterNote } from "./notes.ts";
 import { stopCheck } from "./stop-check.ts";
-import { blockedReply, freshLakeraState, guardMode, screenOpen } from "../rules/guard.ts";
+import { blockedReply, freshLakeraState, guardMode, screen, screenOpen } from "../rules/guard.ts";
 
 // A session keeps the config version it started with: instructions, model and tools don't change under a
 // running conversation. A person can move a session onto a newer version now (a takeover); the next turn
@@ -256,7 +256,29 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
         text: `I couldn't get this message checked by the guardrail (${config.guardModel} didn't answer), so I haven't acted on it. Please try again in a moment.`,
         stopReason: "guard_unavailable",
       };
-    if (!g.safe) return { text: blockedReply(config.guardModel), stopReason: "guard_blocked" };
+    if (!g.safe) return { text: blockedReply(config.guardModel, g.categories), stopReason: "guard_blocked" };
+  }
+  // Work on a person's own Otari account isn't under the team's org guardrail (it screens the team's calls in
+  // Otari), so Peeblo screens their message itself, through the same Lakera guardrail it uses for outside text.
+  if (guardMode() === "lakera" && !internal && person) {
+    const { ownKeyForRun } = await import("../otari/own-account.ts");
+    if (await ownKeyForRun(person.id, ctx.run.id)) {
+      const s = await screen(ctx.text, person.end_user_id ?? null).catch(() => null);
+      if (!s || (!s.checked_by && s.disputed))
+        return {
+          text: "I couldn't get this message checked by the guardrail, so I haven't acted on it. Please try again in a moment.",
+          stopReason: "guard_unavailable",
+        };
+      if (s.flagged) {
+        await appendEvent({
+          sessionId: ctx.session.id,
+          runId: ctx.run.id,
+          type: "guard.checked",
+          data: { checked_by: s.checked_by, safe: false, source: "message", score: s.score },
+        });
+        return { text: blockedReply(s.checked_by ?? "Lakera", s.categories), stopReason: "guard_blocked" };
+      }
+    }
   }
   // Budgets are enforced by the proxy on every model call (before it reaches Otari), not here.
   const tPi = Date.now();
@@ -376,6 +398,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     const msgs = await l.rpc.send<{ messages?: any[] }>("get_messages").catch(() => ({ messages: [] as any[] }));
     const lastAssistant = [...(msgs.messages ?? [])].reverse().find((m) => m.role === "assistant");
     let blocked = false;
+    let fired: string[] = [];
     let money: any = null;
     let stuck: any = null;
     if (lastAssistant?.stopReason === "error") {
@@ -384,6 +407,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
         [ctx.run.id],
       );
       blocked = rows.some((r) => r.type === "guard.blocked");
+      fired = rows.find((r) => r.type === "guard.blocked")?.data?.categories ?? [];
       money = rows.find((r) => r.type === "budget.blocked")?.data ?? null;
       stuck = rows.find((r) => r.type === "run.stuck")?.data ?? null;
       if (blocked) await dropRefusedTurn(l, ctx.session.id, ctx.run.id);
@@ -393,6 +417,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
       stopReason: timedOut ? "time_limit" : (lastAssistant?.stopReason ?? null),
       error: lastAssistant?.errorMessage ?? null,
       blocked,
+      fired,
       money,
       stuck,
     };
@@ -406,7 +431,7 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
     .catch(() => {});
   l.queue = job.catch(() => {});
   const r = await job;
-  if (r.blocked) return { text: blockedReply("Lakera, Otari's org guardrail"), stopReason: "guard_blocked" };
+  if (r.blocked) return { text: blockedReply("Lakera, Otari's org guardrail", r.fired), stopReason: "guard_blocked" };
   if (r.stuck) {
     // The tool result already told the teammate it was stopped; the fixed sentence is only a fallback.
     const said = Number(
@@ -423,6 +448,14 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
   // Peeblo's own refusal (before Otari) carries its sentence; Otari's carries its numbers.
   // Peeblo's own budget stop shows its card (Ask the owner for more); no second message with raw numbers.
   // A person's own tier has no card, so it gets the sentence (with Peeblo's numbers) either way.
+  if (r.money?.by === "own_account") {
+    const { ownAccount } = await import("../otari/own-account.ts");
+    const acct = person ? await ownAccount(person.id).catch(() => null) : null;
+    return {
+      text: `I can't run this on your own Otari account: Otari declined the call (${String(r.money.message ?? "no reason given").replace(/\.$/, "")}). Add credit or raise the key's limit on otari.ai${acct?.manageUrl ? ` (${acct.manageUrl})` : ""}, or say "disconnect my Otari account" to go back to the team's budget.`,
+      stopReason: "budget_blocked",
+    };
+  }
   if (r.money) {
     const m = r.money;
     const own =

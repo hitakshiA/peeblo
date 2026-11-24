@@ -223,6 +223,26 @@ async function facePngFor(slug: string): Promise<Buffer | null> {
 const page = (text: string) =>
   `<!doctype html><meta charset="utf-8"><title>Peeblo</title><body style="font:16px system-ui;padding:3rem"><p>${text.replace(/</g, "&lt;")}</p>`;
 
+const OWN_ACCOUNT_CALLBACK = "/otari/callback"; // the redirect Otari's app sign-in was given (src/otari/own-account.ts)
+async function handleOwnAccount(url: URL): Promise<[number, string]> {
+  const { finishConnect } = await import("../otari/own-account.ts");
+  const r = await finishConnect(url.searchParams).catch((e) => ({
+    ok: false as const,
+    personId: null,
+    why: `Peeblo couldn't finish it: ${(e as Error).message}`,
+  }));
+  if (r.personId) {
+    const { dmFromPeeblo } = await import("../otari/connector-watch.ts");
+    await dmFromPeeblo(
+      r.personId,
+      r.ok
+        ? 'Your Otari account is connected. From now on your requests to the crew are paid from your own Otari account and held to its limits, not the team\'s budget. Say "disconnect my Otari account" any time to switch back.'
+        : `Your Otari account wasn't connected. ${r.why}`,
+    ).catch((e) => console.error("own account dm:", (e as Error).message));
+  }
+  return [r.ok ? 200 : 400, page(r.ok ? "Your Otari account is connected to Peeblo. You can close this tab and go back to Slack." : r.why)];
+}
+
 export function startIngress(): Promise<Server> {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://ingress");
@@ -236,6 +256,10 @@ export function startIngress(): Promise<Server> {
       } else if (req.method === "POST" && url.pathname === "/slack/commands") out = await handleCommand(await rawBody(req), req);
       else if (req.method === "GET" && url.pathname === "/slack/oauth/callback") {
         out = await handleOAuth(url);
+        type = "text/html";
+      } else if (req.method === "GET" && url.pathname === OWN_ACCOUNT_CALLBACK) {
+        // Otari's app sign-in returns here: a person connecting their own Otari account.
+        out = await handleOwnAccount(url);
         type = "text/html";
       } else if (req.method === "POST" && /^\/hooks\/source\/(stripe|pagerduty)$/.test(url.pathname)) {
         const { handleSourceHook } = await import("../runs/triggers.ts");

@@ -29,7 +29,8 @@ const adminOnly = async (ctx: ToolContext) =>
 const signInSteps = (link: string, title: string) =>
   `Sign-in link for ${title} (works once, for 30 minutes): ${link}\n` +
   `Hand it to the admin as is. They open it in a browser signed in to otari.ai as the Otari admin Peeblo uses, and approve with the account the whole team should act as (a service account is best). ` +
-  `If the browser then shows Otari's Overview page instead of the MCP servers page, the sign-in isn't finished: they paste that page's full address here and you finish it with otari_finish_connector_sign_in.`;
+  `Otari finishes the sign-in itself and opens its MCP servers page; check it worked with otari_read_setting (mcp_servers). ` +
+  `Only if their browser ends on another Otari page with a code in its address do they paste that address here, for otari_finish_connector_sign_in.`;
 
 export const connectorTools: AgentTool[] = [
   {
@@ -135,7 +136,7 @@ export const connectorTools: AgentTool[] = [
   {
     name: "otari_finish_connector_sign_in",
     description:
-      "Finish a connector sign-in from the otari.ai address an admin's browser ended on after approving (it contains mcp-connections/callback, a code and a state). Use it when an admin pastes such an address. Admins only.",
+      "Finish a connector sign-in by hand from the otari.ai address an admin's browser ended on after approving (it contains mcp-connections/callback, a code and a state), for the rare sign-in Otari didn't finish itself. Use it only when an admin pastes such an address. Admins only.",
     input_schema: object({ address: { type: "string" } }),
     kind: "read",
     authorize: (ctx, a) =>

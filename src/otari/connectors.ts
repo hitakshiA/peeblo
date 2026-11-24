@@ -203,9 +203,9 @@ export async function startSignIn(id: string): Promise<string> {
   return r.authorization_url;
 }
 
-// The address the admin's browser ended on after approving, when Otari's dashboard didn't finish the sign-in
-// itself (otari.ai sends the browser to a dashboard address that doesn't). Its code is single-use and only
-// the Otari user who started the sign-in (Peeblo's session) can spend it.
+// The address the admin's browser ended on after approving, for a sign-in Otari's dashboard didn't finish itself
+// (otari.ai did that for every sign-in until it routed the callback to its gateway, otari#3384). Its code is
+// single-use and only the Otari user who started the sign-in (Peeblo's session) can spend it.
 export function parseCallback(address: string): { code: string; state: string; iss?: string } | null {
   let u: URL;
   try {
