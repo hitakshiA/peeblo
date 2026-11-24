@@ -3,7 +3,7 @@
 // trace", into Otari. Built from the event log; the model never writes any of it.
 import { pool } from "../db.ts";
 import { buildReceipt } from "../runs/receipts.ts";
-import { money, readableModel, readableProvider, stepOutput, stepTitle } from "./look.ts";
+import { money, ownPaidBy, readableModel, readableProvider, stepOutput, stepTitle } from "./look.ts";
 
 // "Maya · $3.10 of $40 this month": the asker's spend against their own Otari limit.
 async function personBudget(runId: string): Promise<string | null> {
@@ -58,7 +58,10 @@ export async function receiptModal(runId: string): Promise<any> {
         fact("Calls", `${r.calls}${r.failed_attempts ? ` (${r.failed_attempts} retried)` : ""}`),
         ...(r.fallbacks && models[1] ? [fact("Fell back to", models[1])] : []),
         fact("Checked by", r.guard.checked_by ? r.guard.checked_by.replace(/ \(.*\)$/, "") : "nothing from outside the company to screen"),
-        fact("Cost", r.tool_cost_usd ? `${fine(r.cost_usd)}\nincl. ${fine(r.tool_cost_usd)} in tool fees` : money(r.cost_usd)),
+        fact(
+          "Cost",
+          `${r.tool_cost_usd ? `${fine(r.cost_usd)}\nincl. ${fine(r.tool_cost_usd)} in tool fees` : money(r.cost_usd)}${r.own_account_usd ? `\n${ownPaidBy(r)}` : ""}`,
+        ),
         ...(budget ? [fact("Budget used", budget)] : []),
       ]
     : [];

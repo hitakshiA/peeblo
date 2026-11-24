@@ -76,6 +76,14 @@ export function stepTitle(tool: string, d: { command?: string; kind?: string; ca
     show_data: "Drew it up",
     skill_save: "Saved a skill",
     channel_watch: "Changed what it watches",
+    own_otari_account: "Checked your Otari account",
+    check_text: "Checked it with the guardrail",
+    connector_find: "Looked for a connector",
+    connector_request: "Asked an admin for a connector",
+    otari_add_connector: "Added a connector",
+    otari_connector_sign_in: "Started a connector sign-in",
+    otari_finish_connector_sign_in: "Finished a connector sign-in",
+    usage_report: "Read Otari's usage",
     // Not steps: the reply itself, the plan, reading a skill, and a hand-off (its own line says who has it).
     slack_post: null,
     slack_react: null,
@@ -213,6 +221,13 @@ export function money(usd: number): string {
   return "$0";
 }
 
+// Who paid, when the asker's own Otari account did (all of the job, or the part on it).
+export function ownPaidBy(r: Receipt): string {
+  return (r.own_account_usd ?? 0) >= r.cost_usd - 1e-6
+    ? "paid from the asker's own Otari account"
+    : `${money(r.own_account_usd ?? 0)} from the asker's own Otari account`;
+}
+
 // The chip: one context block shaped like receipt.tsx. No calls means no chip, only "Nothing was charged."
 export function receiptChip(r: Receipt | null): any {
   if (!r || r.calls === 0) return { type: "context", elements: [{ type: "mrkdwn", text: "Nothing was charged." }] };
@@ -226,6 +241,7 @@ export function receiptChip(r: Receipt | null): any {
       ? [models[1] ? `fell back to ${models[1].name}` : `Otari's fallback answered ${r.fallbacks === 1 ? "once" : `${r.fallbacks} times`}`]
       : []),
     money(r.cost_usd),
+    ...(r.own_account_usd ? [ownPaidBy(r)] : []),
   ];
   // One text element after the logo, as receipt.tsx draws it: "*DeepSeek V4.1 Flash*  via DeepInfra · 6 calls · $0.0017".
   return {

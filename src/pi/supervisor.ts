@@ -16,7 +16,7 @@ import { TurnTimeout } from "./rpc.ts";
 import { live, personSteers, piFor, touch, type Live } from "./sessions.ts";
 import { feedbackNote, liveThreadsNote, otariToolNote, personNote, rosterNote } from "./notes.ts";
 import { stopCheck } from "./stop-check.ts";
-import { blockedReply, freshLakeraState, guardMode, screen, screenOpen } from "../rules/guard.ts";
+import { blockedReply, freshLakeraState, guardMode, screenOpen } from "../rules/guard.ts";
 
 // A session keeps the config version it started with: instructions, model and tools don't change under a
 // running conversation. A person can move a session onto a newer version now (a takeover); the next turn
@@ -257,28 +257,6 @@ async function turn(ctx: RunContext, turnNo: number, internal?: string): Promise
         stopReason: "guard_unavailable",
       };
     if (!g.safe) return { text: blockedReply(config.guardModel, g.categories), stopReason: "guard_blocked" };
-  }
-  // Work on a person's own Otari account isn't under the team's org guardrail (it screens the team's calls in
-  // Otari), so Peeblo screens their message itself, through the same Lakera guardrail it uses for outside text.
-  if (guardMode() === "lakera" && !internal && person) {
-    const { ownKeyForRun } = await import("../otari/own-account.ts");
-    if (await ownKeyForRun(person.id, ctx.run.id)) {
-      const s = await screen(ctx.text, person.end_user_id ?? null).catch(() => null);
-      if (!s || (!s.checked_by && s.disputed))
-        return {
-          text: "I couldn't get this message checked by the guardrail, so I haven't acted on it. Please try again in a moment.",
-          stopReason: "guard_unavailable",
-        };
-      if (s.flagged) {
-        await appendEvent({
-          sessionId: ctx.session.id,
-          runId: ctx.run.id,
-          type: "guard.checked",
-          data: { checked_by: s.checked_by, safe: false, source: "message", score: s.score },
-        });
-        return { text: blockedReply(s.checked_by ?? "Lakera", s.categories), stopReason: "guard_blocked" };
-      }
-    }
   }
   // Budgets are enforced by the proxy on every model call (before it reaches Otari), not here.
   const tPi = Date.now();

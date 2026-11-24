@@ -133,19 +133,11 @@ export async function buildReceipt(runId: string, opts: { links?: boolean } = {}
   };
 }
 
-// Model calls on the person's own Otari account: all of the job, or the part of it.
-const ownPaid = (r: Receipt) =>
-  !r.own_account_usd
-    ? ""
-    : r.own_account_usd >= r.cost_usd - 1e-6
-      ? " · paid from your own Otari account"
-      : ` · ${money(r.own_account_usd)} of it from your own Otari account`;
-
 export function receiptLine(r: Receipt): string {
   if (!r.models.length && r.guard.blocked)
     return `blocked by the guardrail (${r.guard.checked_by}) before the teammate ran · ${money(r.cost_usd)}`;
   const via = r.providers.length ? ` via ${r.providers.join(", ")}` : "";
-  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${r.tool_cost_usd ? ` (incl. ${money(r.tool_cost_usd)} tool fees)` : ""}${ownPaid(r)}${Object.entries(
+  return `${r.models.join(" → ") || "no model"}${via} · ${r.calls} call${r.calls === 1 ? "" : "s"} · ${money(r.cost_usd)}${r.tool_cost_usd ? ` (incl. ${money(r.tool_cost_usd)} tool fees)` : ""}${r.own_account_usd ? ` · ${r.own_account_usd >= r.cost_usd - 1e-6 ? "paid" : money(r.own_account_usd)} from the asker's own Otari account` : ""}${Object.entries(
     r.otari_tools,
   )
     .map(([t, n]) => ` · ${n} ${t.replace("_", " ")}`)
