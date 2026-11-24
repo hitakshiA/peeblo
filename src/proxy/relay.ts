@@ -327,7 +327,7 @@ export function startProxy(): Promise<Server> {
     const raw = req.method === "GET" || req.method === "HEAD" ? undefined : await body(req);
 
     // A person who connected their own Otari account pays for the model calls of the work they asked for.
-    const own = isInference ? await ownKeyForRun(b.personId, b.runId) : null;
+    let own = isInference ? await ownKeyForRun(b.personId, b.runId) : null;
     const headers: Record<string, string> = {
       authorization: `Bearer ${own ?? b.otariKey ?? config.otariKey}`,
       "user-agent": "peeblo/0.1 (pi)",
@@ -412,7 +412,8 @@ export function startProxy(): Promise<Server> {
     // Money is code: a call whose estimate would take the teammate or the person over their budget is
     // refused here, before it reaches Otari, in Otari's own refusal shape.
     // Not on a person's own account: Otari holds that to the limits the person set when they connected it.
-    if (isInference && raw && !own) {
+    const refuseOverBudget = async (): Promise<boolean> => {
+      if (!raw) return false;
       // A budget check that fails refuses the call (fail closed).
       const t1 = Date.now();
       const refusal = await budgetGate(b, raw)
@@ -441,7 +442,7 @@ export function startProxy(): Promise<Server> {
             turn: b.turn,
           },
         }).catch(() => {});
-        return void res
+        res
           .writeHead(403, {
             "content-type": "application/json",
             "otari-error-code": "budget_exceeded",
@@ -449,8 +450,11 @@ export function startProxy(): Promise<Server> {
             "peeblo-refused": "budget",
           })
           .end(text);
+        return true;
       }
-    }
+      return false;
+    };
+    if (isInference && raw && !own && (await refuseOverBudget())) return;
 
     const abort = new AbortController();
     res.on("close", () => abort.abort());
@@ -474,6 +478,22 @@ export function startProxy(): Promise<Server> {
     let a: Awaited<ReturnType<typeof attempt>>;
     try {
       a = await attempt();
+      // A key Otari stopped accepting (revoked on the person's keys page, or past its expiry) is set aside, the
+      // person is told once, and this call goes on the team's budget like any other: checked first, then sent again.
+      if (own && keyStopped(a.upstream.status, await a.upstream.clone().text())) {
+        const why = otariDetail(await a.upstream.clone().text()) ?? `HTTP ${a.upstream.status}`;
+        await record(b, path, a, null, { failed: true, error: why, ...ownMarks });
+        await markBroken(b.personId!, why);
+        const { dmFromPeeblo } = await import("../otari/connector-watch.ts");
+        await dmFromPeeblo(
+          b.personId!,
+          "Otari stopped accepting the key for your own Otari account (it was revoked or it expired), so your requests are paid from the team's budget again. Ask me to connect your Otari account to set up a new one.",
+        ).catch(() => {});
+        own = null;
+        headers.authorization = `Bearer ${b.otariKey ?? config.otariKey}`;
+        if (await refuseOverBudget()) return;
+        a = await attempt();
+      }
       // A sandbox Otari let go of early answers 400; start a fresh one once.
       if (a.upstream.status === 400 && a.sandbox && a.sandbox !== "auto") {
         const detail = await a.upstream.clone().text();
@@ -514,18 +534,10 @@ export function startProxy(): Promise<Server> {
 
     // Written as soon as Otari answers, so a call cut off by a crash still shows on the receipt (and is reconciled).
     if (isInference && b.code) await noteSandbox(b, a.upstream.headers);
-    // The person's own account refused: a key Otari stopped accepting is set aside (their next calls go on the
-    // team's budget, and they're told once); a refusal of money on their account is theirs to fix, said as such.
+    // The person's own account refused this call (no credit, its limit): theirs to fix, said as such.
     if (isInference && own && [401, 402, 403, 429].includes(a.upstream.status)) {
       const text = await a.upstream.clone().text();
-      if (keyStopped(a.upstream.status, text)) {
-        await markBroken(b.personId!, otariDetail(text) ?? `HTTP ${a.upstream.status}`);
-        const { dmFromPeeblo } = await import("../otari/connector-watch.ts");
-        await dmFromPeeblo(
-          b.personId!,
-          "Otari stopped accepting the key for your own Otari account (it was revoked or it expired), so your requests are paid from the team's budget again. Ask me to connect your Otari account to set up a new one.",
-        ).catch(() => {});
-      } else if (!guardrailRefusal(a.upstream.status, text)) {
+      if (!guardrailRefusal(a.upstream.status, text)) {
         b.blocked = { runId: b.runId, turn: b.turn, status: a.upstream.status, body: text };
         await appendEvent({
           sessionId: b.sessionId,
