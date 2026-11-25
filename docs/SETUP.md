@@ -6,11 +6,14 @@ From a fresh machine to a teammate answering in Slack: one command, then your br
 
 - **A Mac with Apple silicon, or a Linux server with `/dev/kvm`** ([On a Linux server](#on-a-linux-server)). Each awake
   teammate computer uses about 250 MB (small) or 1.5 GB (large, with a browser).
-- **Docker** (Compose v2), plus on a Mac:
+- **Docker** (Compose v2), plus on a Mac Node 24, pnpm, QEMU and e2fsprogs. The repo's `Brewfile` installs them all,
+  with OrbStack for Docker (swap its comment for Docker Desktop):
   ```bash
-  brew install node@24 pnpm qemu e2fsprogs
-  brew link --overwrite --force node@24      # node@24 isn't put on your PATH otherwise; `node -v` should say v24
+  brew bundle                                # or: brew install node@24 pnpm qemu e2fsprogs
+  brew link --overwrite --force node@24      # only after a plain brew install; `node -v` should say v24
   ```
+  With a Node version manager, `brew bundle` leaves Node to it: run `nodenv install` (or your manager's equivalent)
+  for the version in `.node-version`.
 - **An [Otari](https://otari.ai) account** with credit. Peeblo calls only Otari; it holds no model-provider keys.
 - **A Slack workspace** where you can add apps. Each teammate is its own Slack app, and Slack's free plan limits how
   many apps a workspace can add, so a crew of more than a few teammates needs a paid plan (or its trial).
