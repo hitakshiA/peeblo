@@ -29,11 +29,11 @@ case "${1:-up}" in
     ensure_env; load_env
     if [ "$(uname)" = Darwin ]; then
       # What a fresh Mac needs, checked before anything starts (docs/SETUP.md, "What you need").
-      command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "peeblo: Docker isn't running (start Docker Desktop or OrbStack)"; exit 1; }
-      [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ] || { echo "peeblo: Node 24 is required (brew install node@24 && brew link --overwrite --force node@24); node -v says $(node -v 2>/dev/null || echo nothing)"; exit 1; }
-      command -v pnpm >/dev/null || { echo "peeblo: pnpm is required (brew install pnpm)"; exit 1; }
-      command -v qemu-system-aarch64 >/dev/null || { echo "peeblo: QEMU is required for teammate computers (brew install qemu)"; exit 1; }
-      command -v mke2fs >/dev/null || [ -x /opt/homebrew/opt/e2fsprogs/sbin/mke2fs ] || [ -x /usr/local/opt/e2fsprogs/sbin/mke2fs ] || { echo "peeblo: e2fsprogs is required to build teammate computers (brew install e2fsprogs)"; exit 1; }
+      command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "peeblo: Docker isn't running (start Docker Desktop or OrbStack; 'brew bundle' installs OrbStack)"; exit 1; }
+      [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ] || { echo "peeblo: Node 24 is required (run 'brew bundle', or install the version in .node-version with nodenv or another version manager); node -v says $(node -v 2>/dev/null || echo nothing)"; exit 1; }
+      command -v pnpm >/dev/null || { echo "peeblo: pnpm is required (run 'brew bundle')"; exit 1; }
+      command -v qemu-system-aarch64 >/dev/null || { echo "peeblo: QEMU is required for teammate computers (run 'brew bundle')"; exit 1; }
+      command -v mke2fs >/dev/null || [ -x /opt/homebrew/opt/e2fsprogs/sbin/mke2fs ] || [ -x /usr/local/opt/e2fsprogs/sbin/mke2fs ] || { echo "peeblo: e2fsprogs is required to build teammate computers (run 'brew bundle')"; exit 1; }
       mac_compose up -d --wait db
       [ -d node_modules ] || pnpm install --frozen-lockfile
       # The console (served by core at http://127.0.0.1:7340/console/), built once.
