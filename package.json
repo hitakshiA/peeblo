@@ -19,20 +19,20 @@
     "format:check": "biome format src test console/src"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "5.4.0",
+    "@dbos-inc/dbos-sdk": "5.5.0",
     "@earendil-works/gondolin": "0.14.0",
-    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.2",
     "@mozilla-ai/pi-otari": "0.6.0",
-    "open-bot-avatar": "0.1.2",
+    "open-bot-avatar": "0.2.1",
     "pg": "8.23.1",
     "sharp": "0.35.5",
     "yaml": "2.9.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.6",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
-    "knip": "6.43.0",
+    "knip": "6.45.0",
     "typescript": "5.9.3"
   }
 }
